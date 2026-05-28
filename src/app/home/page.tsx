@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
+import { productValueProps, publicNavLinks, publicToolCards } from '@/features/public/home-data';
 import {
   User, Menu, X, ArrowRight, Camera, Check, Hammer, Truck, Star,
   ChevronRight, ImageIcon, Video, Workflow,
@@ -37,17 +38,7 @@ function Navbar({ onLoginClick }: { onLoginClick: () => void }) {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  const links = [
-    { href: '/home', label: '首页' },
-    { href: '/shop', label: '商城' },
-    { href: '/membership', label: '会员' },
-    { href: '/user-benefits', label: '用户权益' },
-    { href: '/partner-benefits', label: '合伙人权益' },
-    { href: '/chat', label: 'AI对话' },
-    { href: '/image-gen', label: 'AI生图' },
-    { href: '/video-gen', label: 'AI视频' },
-    { href: '/workflow', label: 'AI工作流' },
-  ];
+  const links = [{ href: '/home', label: '首页' }, ...publicNavLinks];
 
   return (
     <nav className={`fixed top-3 right-0 left-0 z-50 px-4 transition-all duration-500 ${scrolled ? 'opacity-100' : 'opacity-100'}`}>
@@ -277,7 +268,7 @@ function JoinUsSection() {
   const advantages = [
     { title: '产品新奇', desc: '第一次看到"把照片印到石头上"就会产生好奇' },
     { title: '过程好看', desc: '制作过程非常适合做短视频内容' },
-    { title: '定制属性强', desc: '用户上传自己的照片，参与感强' },
+    productValueProps[0],
     { title: '情绪价值高', desc: '宠物、情侣、纪念日，适合做礼物' },
     { title: '成本可控', desc: '材料成本不高，利润可观' },
   ];
@@ -379,9 +370,7 @@ function JoinUsSection() {
 function FeaturesSection() {
   const features = [
     { title: 'AI对话', desc: '多模态智能体，支持文本、图片、视频交互', href: '/chat' },
-    { title: 'AI生图', desc: '高清修复、图片换风格，一键生成创意图片', href: '/image-gen' },
-    { title: 'AI视频', desc: 'Seedance模型驱动，支持多清晰度视频生成', href: '/video-gen' },
-    { title: 'AI工作流', desc: '上传图案→12宫格分镜→场景选择→造梦生成', href: '/workflow' },
+    ...publicToolCards,
   ];
 
   return (

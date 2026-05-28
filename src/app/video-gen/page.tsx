@@ -4,17 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Play, User, Volume2, VolumeX, Music, Settings2, Film, ImageIcon,
+  Play, Volume2, VolumeX, Film, ImageIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
-
-const VIDEO_MODELS = [
-  { id: 'seedance-2-fast-vip', name: 'Seedance 2.0 Fast VIP', badge: 'New', desc: '极速推理，会员专属通道' },
-  { id: 'seedance-2-vip', name: 'Seedance 2.0 VIP', badge: 'New', desc: '全模态能力，会员专属通道' },
-  { id: 'seedance-2-fast', name: 'Seedance 2.0 Fast', badge: 'New', desc: '高性价比' },
-  { id: 'seedance-2', name: 'Seedance 2.0', badge: '', desc: '全能王者' },
-];
+import { requiresActivation } from '@/features/account/account-state';
+import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { videoModels } from '@/features/public/tool-data';
 
 const VIDEO_STYLES = [
   '石头印画', '水墨意境', '赛博朋克', '梦幻童话', '极简抽象', '复古胶片',
@@ -31,7 +27,7 @@ const CLARITIES = [
 export default function VideoGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
-  const [selectedModel, setSelectedModel] = useState(VIDEO_MODELS[2].id);
+  const [selectedModel, setSelectedModel] = useState(videoModels[2].id);
   const [selectedStyle, setSelectedStyle] = useState('石头印画');
   const [selectedDuration, setSelectedDuration] = useState('5秒');
   const [selectedClarity, setSelectedClarity] = useState('720P');
@@ -41,6 +37,7 @@ export default function VideoGenPage() {
 
   const handleGenerate = () => {
     if (!isLoggedIn) { openLoginModal(); return; }
+    if (!user || requiresActivation(user)) return;
     setIsGenerating(true);
     setTimeout(() => setIsGenerating(false), 5000);
   };
@@ -67,6 +64,9 @@ export default function VideoGenPage() {
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-6">
+        {isLoggedIn && user && requiresActivation(user) ? (
+          <ProtectedAccountPanel accountState={user.accountState} title="激活账号后使用 AI 视频" />
+        ) : null}
         <div className="grid gap-6 md:grid-cols-2">
           {/* Left - Controls */}
           <div className="space-y-6">
@@ -74,7 +74,7 @@ export default function VideoGenPage() {
             <div>
               <label className="mb-2 block text-sm font-medium">视频模型</label>
               <div className="space-y-1.5">
-                {VIDEO_MODELS.map((model) => (
+                {videoModels.map((model) => (
                   <button
                     key={model.id}
                     onClick={() => setSelectedModel(model.id)}

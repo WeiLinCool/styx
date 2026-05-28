@@ -52,6 +52,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
       membershipLevel: 'free',
       membershipExpiry: null,
       userLevel: 'free',
+      accountState: 'pending_activation',
       points: 0,
     });
   };
@@ -67,6 +68,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
       membershipLevel: 'free',
       membershipExpiry: null,
       userLevel: 'free',
+      accountState: 'pending_activation',
       points: 0,
     });
   };

@@ -4,6 +4,9 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
+import { requiresActivation } from '@/features/account/account-state';
+import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { userCenterCartFixtures, userCenterPurchaseHistory } from '@/features/public/user-center-data';
 import { ArrowLeft, ShoppingBag, Clock, Star, Crown, Camera, Edit3, Check, X, ChevronRight, Trash2, Minus, Plus } from 'lucide-react';
 
 interface CartItem {
@@ -30,19 +33,29 @@ export default function UserCenterPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'cart' | 'history' | 'profile'>('overview');
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [cart, setCart] = useState<CartItem[]>([
-    { id: '1', name: '7-8cm石头定制', price: 109, quantity: 2, image: '/stone-7-8cm.png', size: '7-8cm' },
-  ]);
-  const [purchaseHistory] = useState([
-    { id: 'h1', name: '会员教程', price: 99, date: '2026-05-20', status: '已完成' },
-    { id: 'h2', name: '8-10cm石头定制', price: 129, date: '2026-05-18', status: '已完成' },
-    { id: 'h3', name: '7-8cm石头定制', price: 109, date: '2026-05-10', status: '已完成' },
-  ]);
+  const [cart, setCart] = useState<CartItem[]>(userCenterCartFixtures);
+  const [purchaseHistory] = useState(userCenterPurchaseHistory);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isLoggedIn || !user) {
     router.push('/home');
     return null;
+  }
+
+  if (requiresActivation(user)) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="sticky top-0 z-50 border-b border-black/[0.06] bg-white/80 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 max-w-2xl items-center px-4">
+            <button onClick={() => router.back()} className="mr-3 cursor-pointer rounded-full p-1.5 hover:bg-[#f5f5f7]">
+              <ArrowLeft className="h-5 w-5 text-[#1d1d1f]" />
+            </button>
+            <h1 className="text-base font-semibold text-[#1d1d1f]">用户中心</h1>
+          </div>
+        </div>
+        <ProtectedAccountPanel accountState={user.accountState} title="激活账号后进入用户中心" />
+      </div>
+    );
   }
 
   const levelInfo = LEVEL_MAP[user.userLevel] || LEVEL_MAP.free;

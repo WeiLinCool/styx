@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
+import { requiresActivation } from '@/features/account/account-state';
+import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 
 interface Message {
   id: string;
@@ -41,6 +43,7 @@ export default function ChatPage() {
     e.preventDefault();
     if (!input.trim()) return;
     if (!isLoggedIn) { openLoginModal(); return; }
+    if (!user || requiresActivation(user)) return;
 
     const now = Date.now();
     msgCounter.current += 1;
@@ -133,23 +136,29 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-4">
-              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-black/5">
-                <Bot size={24} className="text-[#444444]" />
-              </div>
-              <h2 className="mb-2 text-lg font-semibold text-[#1d1d1f]">开始对话</h2>
-              <p className="mb-8 text-sm text-[#444444]">向AI助手提问石头印画创作和AI视频工作流</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {quickPrompts.map((qp) => (
-                  <button
-                    key={qp.text}
-                    onClick={() => { setInput(qp.text); }}
-                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-black/5 bg-white/[0.02] px-4 py-3 text-left text-sm text-[#d1d1d6] transition-colors hover:border-black/8 hover:bg-white/[0.04]"
-                  >
-                    <qp.icon size={16} className="shrink-0 text-[#444444]" />
-                    {qp.text}
-                  </button>
-                ))}
-              </div>
+              {isLoggedIn && user && requiresActivation(user) ? (
+                <ProtectedAccountPanel accountState={user.accountState} title="激活账号后开始 AI 对话" />
+              ) : (
+                <>
+                  <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-black/5">
+                    <Bot size={24} className="text-[#444444]" />
+                  </div>
+                  <h2 className="mb-2 text-lg font-semibold text-[#1d1d1f]">开始对话</h2>
+                  <p className="mb-8 text-sm text-[#444444]">向AI助手提问石头印画创作和AI视频工作流</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {quickPrompts.map((qp) => (
+                      <button
+                        key={qp.text}
+                        onClick={() => { setInput(qp.text); }}
+                        className="flex cursor-pointer items-center gap-2 rounded-xl border border-black/5 bg-white/[0.02] px-4 py-3 text-left text-sm text-[#d1d1d6] transition-colors hover:border-black/8 hover:bg-white/[0.04]"
+                      >
+                        <qp.icon size={16} className="shrink-0 text-[#444444]" />
+                        {qp.text}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-1 p-4">

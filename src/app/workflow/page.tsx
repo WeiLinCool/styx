@@ -3,6 +3,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { requiresActivation } from '@/features/account/account-state';
+import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { workflowImageModels, workflowVideoModels } from '@/features/public/tool-data';
 import {
   ArrowLeft,
   Upload,
@@ -27,104 +30,6 @@ import {
   Loader2,
   XCircle,
 } from 'lucide-react';
-
-// 图片生成模型（Step 1 用）
-const IMAGE_MODELS = [
-  {
-    id: 'gpt-image-2.0',
-    name: 'GPT Image 2.0',
-    desc: 'OpenAI最新图像生成模型，画质精细，适合分镜创作',
-    badge: 'New',
-    badgeColor: 'bg-blue-500 text-white',
-    vip: false,
-    logo: '🤖',
-    logoBg: 'bg-green-50',
-  },
-  {
-    id: 'dall-e-3',
-    name: 'DALL·E 3',
-    desc: 'OpenAI旗舰模型，理解力强，构图精准',
-    badge: null,
-    badgeColor: '',
-    vip: false,
-    logo: '🎨',
-    logoBg: 'bg-purple-50',
-  },
-  {
-    id: 'midjourney-v6',
-    name: 'Midjourney V6',
-    desc: '艺术风格出众，质感细腻，色彩表现力强',
-    badge: 'Hot',
-    badgeColor: 'bg-orange-500 text-white',
-    vip: true,
-    logo: '✨',
-    logoBg: 'bg-orange-50',
-  },
-  {
-    id: 'flux-pro',
-    name: 'FLUX.1 Pro',
-    desc: '极速推理，图像质量与速度兼顾',
-    badge: null,
-    badgeColor: '',
-    vip: false,
-    logo: '⚡',
-    logoBg: 'bg-yellow-50',
-  },
-  {
-    id: 'sdxl',
-    name: 'Stable Diffusion XL',
-    desc: '开源模型，风格多样，可定制性强',
-    badge: null,
-    badgeColor: '',
-    vip: false,
-    logo: '🌊',
-    logoBg: 'bg-blue-50',
-  },
-];
-
-// 视频生成模型（Step 3 用）
-const VIDEO_MODELS = [
-  {
-    id: 'seedance-2.0-fast-vip',
-    name: 'Seedance 2.0 Fast VIP',
-    desc: '极速推理，会员专属通道，音视图文均可参考',
-    badge: 'New',
-    badgeColor: 'bg-blue-500 text-white',
-    vip: true,
-    logo: '🎬',
-    logoBg: 'bg-red-50',
-  },
-  {
-    id: 'seedance-2.0-vip',
-    name: 'Seedance 2.0 VIP',
-    desc: '全模态能力，会员专属通道，音视图文均可参考',
-    badge: 'New',
-    badgeColor: 'bg-blue-500 text-white',
-    vip: true,
-    logo: '🌟',
-    logoBg: 'bg-amber-50',
-  },
-  {
-    id: 'seedance-2.0-fast',
-    name: 'Seedance 2.0 Fast',
-    desc: '高性价比，音视图文均可参考',
-    badge: 'New',
-    badgeColor: 'bg-blue-500 text-white',
-    vip: false,
-    logo: '⚡',
-    logoBg: 'bg-green-50',
-  },
-  {
-    id: 'seedance-2.0',
-    name: 'Seedance 2.0',
-    desc: '全能王者，音视图文均可参考',
-    badge: null,
-    badgeColor: '',
-    vip: false,
-    logo: '🎯',
-    logoBg: 'bg-indigo-50',
-  },
-];
 
 // 默认提示词
 const DEFAULT_PROMPT = '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板';
@@ -254,7 +159,7 @@ function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string 
 
 // 模型选择器（通用）
 function ModelSelector({ models, selectedModel, onSelect, title, icon: Icon }: {
-  models: typeof IMAGE_MODELS | typeof VIDEO_MODELS;
+  models: typeof workflowImageModels | typeof workflowVideoModels;
   selectedModel: string;
   onSelect: (id: string) => void;
   title: string;
@@ -268,7 +173,7 @@ function ModelSelector({ models, selectedModel, onSelect, title, icon: Icon }: {
       </div>
       <div className="space-y-2">
         {models.map((model) => {
-          const m = model as typeof IMAGE_MODELS[number] & typeof VIDEO_MODELS[number];
+          const m = model as typeof workflowImageModels[number] & typeof workflowVideoModels[number];
           return (
             <button
               key={m.id}
@@ -648,6 +553,7 @@ function DreamGeneration({ videoModel }: { videoModel: string }) {
 
 // 主页面
 export default function WorkflowPage() {
+  const { user, isLoggedIn } = useAuth();
   const [step, setStep] = useState(0); // 0: upload, 1: storyboard, 2: scene, 3: dream
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [selectedImageModel, setSelectedImageModel] = useState('gpt-image-2.0');
@@ -660,11 +566,13 @@ export default function WorkflowPage() {
   const [aiSceneGenerated, setAiSceneGenerated] = useState(false);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [dreaming, setDreaming] = useState(false);
+  const activationRequired = isLoggedIn && user ? requiresActivation(user) : false;
 
-  const currentImageModel = IMAGE_MODELS.find(m => m.id === selectedImageModel);
-  const currentVideoModel = VIDEO_MODELS.find(m => m.id === selectedVideoModel);
+  const currentImageModel = workflowImageModels.find(m => m.id === selectedImageModel);
+  const currentVideoModel = workflowVideoModels.find(m => m.id === selectedVideoModel);
 
   const handleSubmitStoryboard = useCallback(() => {
+    if (activationRequired) return;
     if (!uploadedImage) return;
     setStep(1);
     setStoryboardGenerating(true);
@@ -673,7 +581,7 @@ export default function WorkflowPage() {
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
     }, 6000);
-  }, [uploadedImage]);
+  }, [activationRequired, uploadedImage]);
 
   const handleCancelStoryboard = useCallback(() => {
     setStoryboardGenerating(false);
@@ -682,13 +590,14 @@ export default function WorkflowPage() {
   }, []);
 
   const handleRegenerateStoryboard = useCallback(() => {
+    if (activationRequired) return;
     setStoryboardGenerating(true);
     setStoryboardGenerated(false);
     setTimeout(() => {
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
     }, 6000);
-  }, []);
+  }, [activationRequired]);
 
   const handleNextFromStoryboard = useCallback(() => {
     setStep(2);
@@ -707,13 +616,14 @@ export default function WorkflowPage() {
   }, []);
 
   const handleAIGenerateScene = useCallback(() => {
+    if (activationRequired) return;
     setAiSceneGenerating(true);
     setAiSceneGenerated(false);
     setTimeout(() => {
       setAiSceneGenerating(false);
       setAiSceneGenerated(true);
     }, 4000);
-  }, []);
+  }, [activationRequired]);
 
   const handleAiSceneCancel = useCallback(() => {
     setAiSceneGenerating(false);
@@ -721,18 +631,20 @@ export default function WorkflowPage() {
   }, []);
 
   const handleAiSceneRegenerate = useCallback(() => {
+    if (activationRequired) return;
     setAiSceneGenerating(true);
     setAiSceneGenerated(false);
     setTimeout(() => {
       setAiSceneGenerating(false);
       setAiSceneGenerated(true);
     }, 4000);
-  }, []);
+  }, [activationRequired]);
 
   const handleStartDream = useCallback(() => {
+    if (activationRequired) return;
     setStep(3);
     setDreaming(true);
-  }, []);
+  }, [activationRequired]);
 
   const steps = [
     { label: '上传图案', icon: Upload },
@@ -746,6 +658,9 @@ export default function WorkflowPage() {
       <WorkflowNav />
 
       <div className="mx-auto max-w-7xl px-4 pt-20 pb-12 sm:px-6">
+        {activationRequired && (
+          <ProtectedAccountPanel accountState={user?.accountState} title="激活账号后使用 AI 工作流" />
+        )}
         {/* 步骤条 */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
@@ -779,18 +694,18 @@ export default function WorkflowPage() {
                   <PatternUploadZone uploadedImage={uploadedImage} onUpload={setUploadedImage} />
                 </div>
                 <div className="rounded-2xl border border-black/[0.06] bg-white/70 backdrop-blur-md p-6">
-                  <ModelSelector models={IMAGE_MODELS} selectedModel={selectedImageModel} onSelect={setSelectedImageModel} title="选择生图模型" icon={Zap} />
+                  <ModelSelector models={workflowImageModels} selectedModel={selectedImageModel} onSelect={setSelectedImageModel} title="选择生图模型" icon={Zap} />
                 </div>
                 <button
                   onClick={handleSubmitStoryboard}
                   disabled={!uploadedImage}
                   className={`w-full cursor-pointer rounded-xl py-3.5 text-sm font-medium transition-all ${
-                    uploadedImage
+                    uploadedImage && !activationRequired
                       ? 'bg-[#1d1d1f] text-white hover:bg-[#333]'
                       : 'bg-[#f5f5f7] text-[#9ca3af] cursor-not-allowed'
                   }`}
                 >
-                  提交生成分镜
+                  {activationRequired ? '请先激活账号' : '提交生成分镜'}
                 </button>
               </div>
             )}
@@ -875,7 +790,7 @@ export default function WorkflowPage() {
                   />
                 </div>
                 <div className="rounded-2xl border border-black/[0.06] bg-white/70 backdrop-blur-md p-5">
-                  <ModelSelector models={VIDEO_MODELS} selectedModel={selectedVideoModel} onSelect={setSelectedVideoModel} title="视频生成模型" icon={Film} />
+                  <ModelSelector models={workflowVideoModels} selectedModel={selectedVideoModel} onSelect={setSelectedVideoModel} title="视频生成模型" icon={Film} />
                 </div>
               </>
             )}

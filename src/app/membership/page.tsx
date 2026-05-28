@@ -5,17 +5,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
+import { requiresActivation } from '@/features/account/account-state';
+import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { membershipComparisonRows, membershipFaqs, membershipPlans } from '@/features/public/membership-data';
 import {
   ArrowLeft,
   Crown,
   Check,
-  Zap,
-  Star,
-  Shield,
   Gift,
-  Sparkles,
   ChevronDown,
-  User,
 } from 'lucide-react';
 
 function MembershipNav() {
@@ -58,71 +56,11 @@ export default function MembershipPage() {
   const router = useRouter();
   const { user, isLoggedIn, updateUser, openLoginModal } = useAuth();
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
-
-  const plans = [
-    {
-      id: 'free',
-      name: '免费版',
-      price: 0,
-      period: '',
-      desc: '体验基础功能',
-      icon: Sparkles,
-      iconBg: 'bg-[#f5f5f7]',
-      features: [
-        { text: '每日5次AI生图', included: true },
-        { text: '每日1次AI视频生成', included: true },
-        { text: '基础石纹模板', included: true },
-        { text: '社区分享', included: true },
-        { text: '高级石纹模板', included: false },
-        { text: '商城折扣', included: false },
-        { text: '石头定制特权', included: false },
-        { text: '专属客服', included: false },
-      ],
-    },
-    {
-      id: 'monthly',
-      name: '月度会员',
-      price: 29,
-      period: '/月',
-      desc: '解锁进阶创作能力',
-      icon: Zap,
-      iconBg: 'bg-[#1d1d1f]',
-      popular: true,
-      features: [
-        { text: '每日100次AI生图', included: true },
-        { text: '每日20次AI视频生成', included: true },
-        { text: '全部石纹模板', included: true },
-        { text: '社区分享', included: true },
-        { text: '高级石纹模板', included: true },
-        { text: '商城9折优惠', included: true },
-        { text: '优先客服支持', included: true },
-        { text: '石头定制特权', included: false },
-      ],
-    },
-    {
-      id: 'yearly',
-      name: '年度会员',
-      price: 199,
-      period: '/年',
-      originalPrice: 348,
-      desc: '全功能无限使用',
-      icon: Crown,
-      iconBg: 'bg-[#1d1d1f]',
-      features: [
-        { text: '无限AI生图', included: true },
-        { text: '无限AI视频生成', included: true },
-        { text: '全部模板+自定义', included: true },
-        { text: '社区分享', included: true },
-        { text: '高级石纹模板', included: true },
-        { text: '商城8折优惠', included: true },
-        { text: '1对1专属客服', included: true },
-        { text: '石头定制特权', included: true },
-      ],
-    },
-  ];
+  const activationRequired = isLoggedIn && user ? requiresActivation(user) : false;
 
   const handleSubscribe = (planId: string) => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn) { openLoginModal(); return; }
+    if (!user || requiresActivation(user)) return;
     const level = planId === 'yearly' ? 'yearly' : planId === 'monthly' ? 'monthly' : 'free';
     const expiry = level === 'yearly'
       ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
@@ -131,13 +69,6 @@ export default function MembershipPage() {
         : null;
     updateUser({ membershipLevel: level, membershipExpiry: expiry });
   };
-
-  const faqs = [
-    { q: '会员可以随时取消吗？', a: '是的，您可以随时取消订阅，取消后当前周期内仍可使用会员功能。' },
-    { q: '升级会员后原有作品会丢失吗？', a: '不会，所有作品和数据都会完整保留。' },
-    { q: '年度会员支持退款吗？', a: '购买后7天内支持无理由退款，超过7天按剩余时间比例退款。' },
-    { q: '石头定制特权包含什么？', a: '年度会员享有每月1次免费石头定制刻印服务，以及定制服务8折优惠。' },
-  ];
 
   return (
     <div className="min-h-screen bg-white text-[#1d1d1f]">
@@ -194,10 +125,14 @@ export default function MembershipPage() {
           </div>
         )}
 
+        {activationRequired && (
+          <ProtectedAccountPanel accountState={user?.accountState} title="激活账号后订阅会员" />
+        )}
+
         {/* 方案卡片 */}
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {plans.map((plan) => (
+            {membershipPlans.map((plan) => (
               <div
                 key={plan.id}
                 className={`relative overflow-hidden rounded-2xl border p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/[0.08] ${
@@ -265,12 +200,14 @@ export default function MembershipPage() {
                 <button
                   onClick={() => handleSubscribe(plan.id)}
                   className={`w-full cursor-pointer rounded-xl py-3.5 text-sm font-semibold transition-all ${
-                    isLoggedIn && user?.membershipLevel === plan.id
+                    activationRequired
+                      ? 'bg-[#f5f5f7] text-[#86868b]'
+                      : isLoggedIn && user?.membershipLevel === plan.id
                       ? 'bg-[#f5f5f7] text-[#86868b] cursor-default'
                       : 'bg-[#1d1d1f] text-white hover:bg-[#333] active:scale-[0.98]'
                   }`}
                 >
-                  {isLoggedIn && user?.membershipLevel === plan.id ? '当前方案' : plan.price === 0 ? '免费使用' : '立即订阅'}
+                  {activationRequired ? '请先激活' : isLoggedIn && user?.membershipLevel === plan.id ? '当前方案' : plan.price === 0 ? '免费使用' : '立即订阅'}
                 </button>
               </div>
             ))}
@@ -294,15 +231,7 @@ export default function MembershipPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    { name: 'AI生图', free: '5次/天', monthly: '100次/天', yearly: '无限' },
-                    { name: 'AI视频生成', free: '1次/天', monthly: '20次/天', yearly: '无限' },
-                    { name: '模板库', free: '基础', monthly: '全部', yearly: '全部+自定义' },
-                    { name: '输出质量', free: '480P', monthly: '720P', yearly: '1080P' },
-                    { name: '商城折扣', free: '—', monthly: '9折', yearly: '8折' },
-                    { name: '客服支持', free: '—', monthly: '优先', yearly: '1对1' },
-                    { name: '石头定制', free: '—', monthly: '—', yearly: '特权' },
-                  ].map((row, i) => (
+                  {membershipComparisonRows.map((row, i) => (
                     <tr key={row.name} className={`border-b border-black/[0.06] ${i % 2 === 0 ? 'bg-white/50' : ''}`}>
                       <td className="py-4 text-sm font-medium text-[#1d1d1f]">{row.name}</td>
                       <td className="py-4 text-center text-sm text-[#999]">{row.free}</td>
@@ -322,7 +251,7 @@ export default function MembershipPage() {
             常见问题
           </h2>
           <div className="space-y-3">
-            {faqs.map((faq, i) => (
+            {membershipFaqs.map((faq, i) => (
               <div
                 key={faq.q}
                 className="overflow-hidden rounded-xl border border-black/[0.06] bg-white transition-shadow hover:shadow-sm"

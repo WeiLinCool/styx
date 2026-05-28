@@ -2,39 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-
-const benefits = [
-  {
-    emoji: '❤️',
-    title: '专属定制',
-    desc: '支持宠物、情侣、家庭、风景等照片定制',
-  },
-  {
-    emoji: '✨',
-    title: '效果确认',
-    desc: '制作前沟通需求，完成后展示成品效果',
-  },
-  {
-    emoji: '🖌️',
-    title: '手工制作',
-    desc: '刷转印液、照片反贴、搓洗显影，真实手作工艺',
-  },
-  {
-    emoji: '🎁',
-    title: '包装发出',
-    desc: '搭配小木架、礼盒、贺卡，适合送礼',
-  },
-  {
-    emoji: '📋',
-    title: '进度反馈',
-    desc: '下单后可沟通制作进度与发货安排',
-  },
-  {
-    emoji: '🛡️',
-    title: '售后沟通',
-    desc: '收到后如有问题可及时联系处理',
-  },
-];
+import { userBenefits } from '@/features/public/benefits-data';
 
 export default function UserBenefitsPage() {
   const [visible, setVisible] = useState(false);
@@ -60,7 +28,7 @@ export default function UserBenefitsPage() {
 
         {/* Benefits Grid - 3x2 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {benefits.map((b, i) => (
+          {userBenefits.map((b, i) => (
             <div
               key={i}
               className={`group transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}

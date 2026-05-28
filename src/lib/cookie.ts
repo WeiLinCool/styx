@@ -1,4 +1,6 @@
 import Cookies from 'js-cookie';
+import type { AccountState } from '@/server/auth/account-types';
+import { getAccountState } from '@/features/account/account-state';
 
 export type UserLevel = 'free' | 'vip' | 'svip' | 'partner' | 'core_partner';
 
@@ -11,6 +13,7 @@ export interface UserInfo {
   membershipLevel: 'free' | 'monthly' | 'yearly';
   membershipExpiry: string | null;
   userLevel: UserLevel;
+  accountState?: AccountState;
   points: number;
 }
 
@@ -19,14 +22,15 @@ const AUTH_COOKIE_KEY = 'nfai_auth_token';
 const SPLASH_COOKIE_KEY = 'nfai_splash_visited';
 
 export function saveUserToCookie(user: UserInfo): void {
-  Cookies.set(USER_COOKIE_KEY, JSON.stringify(user), { expires: 30, sameSite: 'lax' });
+  Cookies.set(USER_COOKIE_KEY, JSON.stringify({ ...user, accountState: getAccountState(user) }), { expires: 30, sameSite: 'lax' });
 }
 
 export function getUserFromCookie(): UserInfo | null {
   const data = Cookies.get(USER_COOKIE_KEY);
   if (!data) return null;
   try {
-    return JSON.parse(data) as UserInfo;
+    const user = JSON.parse(data) as UserInfo;
+    return { ...user, accountState: getAccountState(user) };
   } catch {
     return null;
   }

@@ -4,42 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Wand2, ImageIcon, Download, Settings2, Sparkles, Layers, User, Menu, X, CheckCircle,
+  Upload, Wand2, ImageIcon, Sparkles, Layers,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
-
-const IMAGE_MODELS = [
-  { id: 'gpt-image-2', name: 'GPT Image 2.0', badge: 'New', desc: 'OpenAI最新图片生成' },
-  { id: 'dall-e-3', name: 'DALL·E 3', badge: '', desc: '高质量创意图片' },
-  { id: 'midjourney-v6', name: 'Midjourney V6', badge: 'Hot', desc: '艺术级图片生成' },
-  { id: 'flux-pro', name: 'FLUX.1 Pro', badge: '', desc: '专业级图片生成' },
-  { id: 'sdxl', name: 'Stable Diffusion XL', badge: '', desc: '开源高质量图片' },
-];
-
-const HD_MODELS = [
-  { id: 'flux-hd', name: 'FLUX.1 HD', desc: '高清修复首选' },
-  { id: 'sdxl-hd', name: 'SD XL HD', desc: '稳定高清放大' },
-  { id: 'esrgan', name: 'ESRGAN', desc: '超分辨率重建' },
-];
-
-const STYLE_OPTIONS = [
-  { id: 'stone-print', name: '石头印画', preview: '🪨' },
-  { id: 'ink-wash', name: '水墨风格', preview: '🖌️' },
-  { id: 'cyberpunk', name: '赛博朋克', preview: '🌆' },
-  { id: 'oil-painting', name: '油画风格', preview: '🎨' },
-  { id: 'anime', name: '二次元', preview: '✨' },
-  { id: 'pixel-art', name: '像素风格', preview: '👾' },
-  { id: 'watercolor', name: '水彩风格', preview: '💧' },
-  { id: 'sketch', name: '素描风格', preview: '✏️' },
-];
-
-const SIZES = [
-  { label: '1:1', w: 1024, h: 1024 },
-  { label: '16:9', w: 1024, h: 576 },
-  { label: '9:16', w: 576, h: 1024 },
-  { label: '4:3', w: 1024, h: 768 },
-];
+import { requiresActivation } from '@/features/account/account-state';
+import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { hdModels, imageModels, styleOptions, toolSizes } from '@/features/public/tool-data';
 
 const TABS = [
   { id: 'generate', name: 'AI生图', icon: Sparkles },
@@ -52,18 +23,18 @@ export default function ImageGenPage() {
   const { user, isLoggedIn, openLoginModal } = useAuth();
   const [activeTab, setActiveTab] = useState('generate');
   const [prompt, setPrompt] = useState('');
-  const [selectedModel, setSelectedModel] = useState(IMAGE_MODELS[0].id);
+  const [selectedModel, setSelectedModel] = useState(imageModels[0].id);
   const [selectedSize, setSelectedSize] = useState('1:1');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [hdModel, setHdModel] = useState(HD_MODELS[0].id);
+  const [hdModel, setHdModel] = useState(hdModels[0].id);
   const [hdScale, setHdScale] = useState('2x');
   const [hdPrompt, setHdPrompt] = useState('高清修复，增强细节，提升画质，保留原始构图');
   const [selectedStyle, setSelectedStyle] = useState('stone-print');
   const [stylePrompt, setStylePrompt] = useState('');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleGenerate = () => {
     if (!isLoggedIn) { openLoginModal(); return; }
+    if (!user || requiresActivation(user)) return;
     setIsGenerating(true);
     setTimeout(() => setIsGenerating(false), 3000);
   };
@@ -113,6 +84,9 @@ export default function ImageGenPage() {
 
       {/* Main Content */}
       <div className="mx-auto max-w-7xl px-4 py-6">
+        {isLoggedIn && user && requiresActivation(user) ? (
+          <ProtectedAccountPanel accountState={user.accountState} title="激活账号后使用 AI 生图" />
+        ) : null}
         <div className="grid gap-6 md:grid-cols-2">
           {/* Left - Controls */}
           <div className="space-y-6">
@@ -133,7 +107,7 @@ export default function ImageGenPage() {
                 <div>
                   <label className="mb-2 block text-sm font-medium">模型选择</label>
                   <div className="space-y-1.5">
-                    {IMAGE_MODELS.map((model) => (
+                    {imageModels.map((model) => (
                       <button
                         key={model.id}
                         onClick={() => setSelectedModel(model.id)}
@@ -167,7 +141,7 @@ export default function ImageGenPage() {
                 <div>
                   <label className="mb-2 block text-sm font-medium">图片尺寸</label>
                   <div className="flex gap-2">
-                    {SIZES.map((s) => (
+                    {toolSizes.map((s) => (
                       <button
                         key={s.label}
                         onClick={() => setSelectedSize(s.label)}
@@ -200,7 +174,7 @@ export default function ImageGenPage() {
                 <div>
                   <label className="mb-2 block text-sm font-medium">修复模型</label>
                   <div className="space-y-1.5">
-                    {HD_MODELS.map((model) => (
+                    {hdModels.map((model) => (
                       <button
                         key={model.id}
                         onClick={() => setHdModel(model.id)}
@@ -256,7 +230,7 @@ export default function ImageGenPage() {
                 <div>
                   <label className="mb-2 block text-sm font-medium">选择风格</label>
                   <div className="grid grid-cols-4 gap-2">
-                    {STYLE_OPTIONS.map((style) => (
+                    {styleOptions.map((style) => (
                       <button
                         key={style.id}
                         onClick={() => setSelectedStyle(style.id)}

@@ -303,7 +303,7 @@ git commit -m "feat: add account activation and binding"
 - Modify: `src/app/user-center/page.tsx`
 - Create: `src/features/public/*`
 
-- [ ] **Step 1: Keep public route parity**
+- [x] **Step 1: Keep public route parity**
 
 Run:
 
@@ -313,19 +313,19 @@ find src/app -maxdepth 2 -type f -name page.tsx | sort
 
 Expected: splash/root, home, chat, image-gen, video-gen, workflow, membership, user-benefits, partner-benefits, shop, and user-center pages exist under root `src/app`.
 
-- [ ] **Step 2: Extract repeated public shell components**
+- [x] **Step 2: Extract repeated public shell components**
 
 Create feature components for public navigation, auth entry, product cards, benefit lists, and tool panels when route files contain duplicated UI.
 
-- [ ] **Step 3: Add public data adapters**
+- [x] **Step 3: Add public data adapters**
 
 Create typed data modules for homepage content, tool model options, membership plans, benefits, shop products, partner content, and user-center fixtures backed by seed-shaped records.
 
-- [ ] **Step 4: Wire protected pages to active account state**
+- [x] **Step 4: Wire protected pages to active account state**
 
 User center, membership purchase actions, checkout actions, and generation history must call the account/session abstraction and render the activation panel when account state is pending.
 
-- [ ] **Step 5: Commit public migration**
+- [x] **Step 5: Commit public migration**
 
 Run:
 
