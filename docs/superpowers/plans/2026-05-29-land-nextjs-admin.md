@@ -44,7 +44,7 @@ base-ref: 911e86a3dd67b024cff4cb2de18bf55abeeaa68d
 - Move: `projects/src` -> `src`
 - Move: `projects/public` -> `public`
 
-- [ ] **Step 1: Move root application files**
+- [x] **Step 1: Move root application files**
 
 Run:
 
@@ -65,7 +65,7 @@ mv projects/public public
 
 Expected: root contains `package.json`, `src/`, and `public/`.
 
-- [ ] **Step 2: Replace Coze runtime scripts**
+- [x] **Step 2: Replace Coze runtime scripts**
 
 Edit `package.json` scripts to:
 
@@ -88,7 +88,7 @@ Edit `package.json` scripts to:
 
 Expected: no root script calls `projects/scripts/*`, `coze dev`, `coze build`, or `coze start`.
 
-- [ ] **Step 3: Simplify Next config**
+- [x] **Step 3: Simplify Next config**
 
 Edit `next.config.ts` to remove Coze-only settings:
 
@@ -112,7 +112,7 @@ export default nextConfig;
 
 Expected: no `turbopack.root: '..'` or `allowedDevOrigins` remains.
 
-- [ ] **Step 4: Install from root**
+- [x] **Step 4: Install from root**
 
 Run:
 
@@ -122,7 +122,7 @@ pnpm install
 
 Expected: dependencies install using root `package.json`.
 
-- [ ] **Step 5: Commit root migration**
+- [x] **Step 5: Commit root migration**
 
 Run:
 
