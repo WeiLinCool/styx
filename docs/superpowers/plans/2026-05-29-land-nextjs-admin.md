@@ -344,19 +344,19 @@ git commit -m "feat: migrate public product experience"
 - Create: `src/features/admin/admin-header.tsx`
 - Create: `src/features/admin/status-badge.tsx`
 
-- [ ] **Step 1: Create guarded admin layout**
+- [x] **Step 1: Create guarded admin layout**
 
 `src/app/admin/layout.tsx` must call `requireAdmin()` on the server and render an access-denied state when unauthorized in development, or throw/redirect according to the guard contract in production.
 
-- [ ] **Step 2: Create admin shell**
+- [x] **Step 2: Create admin shell**
 
 Create sidebar navigation links for dashboard, users, memberships, benefits, orders, AI jobs, partners, content, and settings.
 
-- [ ] **Step 3: Create dashboard page**
+- [x] **Step 3: Create dashboard page**
 
 Create dashboard cards and tables for KPIs, recent users, recent AI jobs, recent orders, partner leads, and notices using repository functions.
 
-- [ ] **Step 4: Commit admin shell**
+- [x] **Step 4: Commit admin shell**
 
 Run:
 
