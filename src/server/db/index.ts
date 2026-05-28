@@ -4,10 +4,6 @@ import * as schema from './schema';
 
 const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString && process.env.NODE_ENV === 'production') {
-  throw new Error('DATABASE_URL is required in production');
-}
-
 const pool = connectionString ? new Pool({ connectionString }) : null;
 
 export const db = pool ? drizzle(pool, { schema }) : null;

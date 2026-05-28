@@ -236,11 +236,11 @@ git commit -m "feat: add postgresql drizzle foundation"
 - Create: `src/app/api/account/activate/route.ts`
 - Create: `src/app/api/account/bind/route.ts`
 
-- [ ] **Step 1: Define account domain types**
+- [x] **Step 1: Define account domain types**
 
 Create `src/server/auth/account-types.ts` with account states, identity provider types, activation input types, and binding result unions.
 
-- [ ] **Step 2: Implement user repository**
+- [x] **Step 2: Implement user repository**
 
 Create repository functions:
 
@@ -256,31 +256,31 @@ setUserAccountState(userId, state, actorId, reason)
 
 Expected: verified identity conflicts return a typed error instead of overwriting.
 
-- [ ] **Step 3: Implement audit service**
+- [x] **Step 3: Implement audit service**
 
 Create `recordAuditEvent({ actorId, targetId, type, metadata })` and use it from account mutations.
 
-- [ ] **Step 4: Implement activation service**
+- [x] **Step 4: Implement activation service**
 
 Create `activateAccountWithToken`, `activateAccountByAdmin`, `reissueActivation`, and `suspendAccount`. Hash tokens before storage and reject expired/consumed tokens.
 
-- [ ] **Step 5: Implement identity binding service**
+- [x] **Step 5: Implement identity binding service**
 
 Create `bindEmailIdentity`, `bindPhoneIdentity`, and `bindProviderIdentity`; enforce one verified identity per active user.
 
-- [ ] **Step 6: Implement session and guards**
+- [x] **Step 6: Implement session and guards**
 
 Create `resolveSession`, `requireActiveAccount`, and `requireAdmin`. Production must fail closed when no session exists. Development fallback must require an explicit env flag.
 
-- [ ] **Step 7: Add account API routes**
+- [x] **Step 7: Add account API routes**
 
 Create `POST /api/account/activate` and `POST /api/account/bind` route handlers with Zod validation and typed JSON errors.
 
-- [ ] **Step 8: Add activation panel UI**
+- [x] **Step 8: Add activation panel UI**
 
 Create an account activation panel that explains pending state, accepts activation code/token, and offers binding actions for email/phone/provider placeholders.
 
-- [ ] **Step 9: Commit account lifecycle**
+- [x] **Step 9: Commit account lifecycle**
 
 Run:
 
