@@ -383,31 +383,31 @@ git commit -m "feat: add admin shell and dashboard"
 - Create: `src/server/repositories/content.ts`
 - Create: `src/server/repositories/settings.ts`
 
-- [ ] **Step 1: Implement users module**
+- [x] **Step 1: Implement users module**
 
 Users page must show search/filter controls, lifecycle state, identities, membership, credits, activity, and audit summary. Include actions for reissue activation, activate, suspend, and archive.
 
-- [ ] **Step 2: Implement memberships and benefits modules**
+- [x] **Step 2: Implement memberships and benefits modules**
 
 Pages must show plan definitions, pricing labels, benefit rules, entitlement summaries, and manual adjustment-ready actions.
 
-- [ ] **Step 3: Implement orders module**
+- [x] **Step 3: Implement orders module**
 
 Orders page must show order status, user, products/SKUs, fulfillment notes, totals, and status update-ready actions.
 
-- [ ] **Step 4: Implement AI jobs module**
+- [x] **Step 4: Implement AI jobs module**
 
 AI jobs page must show job type, user, prompt summary, provider metadata, output references, status, error summary, and review/rerun-ready actions.
 
-- [ ] **Step 5: Implement partners module**
+- [x] **Step 5: Implement partners module**
 
 Partners page must show leads, stage, source, contact details, benefit interest, and next action.
 
-- [ ] **Step 6: Implement content and settings modules**
+- [x] **Step 6: Implement content and settings modules**
 
 Content page must show homepage content, banners, tutorials, examples, and media references. Settings page must show role access, provider placeholders, storage placeholders, and audit events.
 
-- [ ] **Step 7: Commit admin modules**
+- [x] **Step 7: Commit admin modules**
 
 Run:
 

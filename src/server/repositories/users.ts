@@ -1,14 +1,23 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import {
-  AccountDomainError,
   type AccountState,
+  AccountDomainError,
   type ActivationTokenPurpose,
   type BindIdentityInput,
   type IdentityProvider,
   type UserIdentityRecord,
 } from '@/server/auth/account-types';
 import { db, schema } from '@/server/db';
+import {
+  type AdminFilter,
+  type AdminMetric,
+  type AdminModuleData,
+  ensureAdminReadSource,
+  formatIso,
+  metadataNumber,
+  metadataText,
+} from './admin-shared';
 
 function requireDb() {
   if (!db) {
@@ -218,4 +227,162 @@ export async function listAdminRoles(userId: string) {
     .select()
     .from(schema.adminRoles)
     .where(eq(schema.adminRoles.userId, userId));
+}
+
+export type AdminUserRow = {
+  id: string;
+  displayName: string;
+  primaryContact: string;
+  accountState: AccountState;
+  identities: string[];
+  bindingState: string;
+  membership: string;
+  credits: number;
+  activity: string;
+  auditSummary: string;
+  createdAt: string;
+  actions: string[];
+};
+
+function getSeedUsers(): AdminModuleData<AdminUserRow> {
+  const records: AdminUserRow[] = [
+    {
+      id: 'seed-user-1',
+      displayName: 'Styx Admin',
+      primaryContact: 'admin@styx.local',
+      accountState: 'active',
+      identities: ['email: verified', 'github: verified'],
+      bindingState: '2 verified identities',
+      membership: 'Owner / Team Yearly',
+      credits: 980,
+      activity: '登录 12 次 / 近 7 天',
+      auditSummary: '最近操作: seed.database',
+      createdAt: '2026-05-29T08:00:00.000Z',
+      actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+    },
+    {
+      id: 'seed-user-2',
+      displayName: '待激活创作者',
+      primaryContact: 'pending@styx.local',
+      accountState: 'pending_activation',
+      identities: ['email: unverified'],
+      bindingState: 'activation required',
+      membership: 'Free / no active plan',
+      credits: 20,
+      activity: '注册后未激活',
+      auditSummary: '最近操作: activation.reissued',
+      createdAt: '2026-05-29T07:20:00.000Z',
+      actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+    },
+    {
+      id: 'seed-user-3',
+      displayName: '视频团队账号',
+      primaryContact: '+86 138 0000 0000',
+      accountState: 'suspended',
+      identities: ['phone: verified', 'wechat: verified'],
+      bindingState: 'review before restore',
+      membership: 'Pro Monthly',
+      credits: 0,
+      activity: 'AI 任务失败率过高',
+      auditSummary: '最近操作: account.suspended',
+      createdAt: '2026-05-28T11:10:00.000Z',
+      actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+    },
+  ];
+
+  return {
+    source: 'seed',
+    metrics: [
+      { label: '总账号', value: '3', hint: 'seed records', tone: 'info' },
+      { label: '待激活', value: '1', hint: '需跟进', tone: 'warning' },
+      { label: '已绑定身份', value: '5', hint: 'verified + pending', tone: 'success' },
+      { label: '可用额度', value: '1,000', hint: 'sample credits', tone: 'default' },
+    ],
+    filters: [
+      { label: 'All', value: 'all', count: 3 },
+      { label: 'Pending activation', value: 'pending_activation', count: 1 },
+      { label: 'Active', value: 'active', count: 1 },
+      { label: 'Suspended', value: 'suspended', count: 1 },
+    ],
+    records,
+  };
+}
+
+export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
+  const database = ensureAdminReadSource('users');
+
+  if (!database) {
+    return getSeedUsers();
+  }
+
+  const rows = await database
+    .select({
+      user: schema.users,
+      identityCount: sql<number>`count(distinct ${schema.userIdentities.id})::int`,
+      verifiedIdentityCount:
+        sql<number>`count(distinct ${schema.userIdentities.id}) filter (where ${schema.userIdentities.isVerified} = true)::int`,
+      membership:
+        sql<string>`coalesce(max(${schema.membershipPlans.name}), 'Free / no active plan')`,
+      credits:
+        sql<number>`coalesce(sum(${schema.userEntitlements.remainingQuantity}), 0)::int`,
+      lastAuditAction: sql<string>`coalesce(max(${schema.auditEvents.action}), 'none')`,
+    })
+    .from(schema.users)
+    .leftJoin(schema.userIdentities, eq(schema.userIdentities.userId, schema.users.id))
+    .leftJoin(schema.userEntitlements, eq(schema.userEntitlements.userId, schema.users.id))
+    .leftJoin(
+      schema.membershipPlans,
+      eq(schema.membershipPlans.id, schema.userEntitlements.planId),
+    )
+    .leftJoin(schema.auditEvents, eq(schema.auditEvents.targetUserId, schema.users.id))
+    .groupBy(schema.users.id)
+    .orderBy(desc(schema.users.createdAt))
+    .limit(50);
+
+  const records = rows.map((row): AdminUserRow => ({
+    id: row.user.id,
+    displayName: row.user.displayName,
+    primaryContact: row.user.email ?? row.user.phone ?? '未绑定',
+    accountState: row.user.accountState,
+    identities: [
+      `${row.identityCount} identities`,
+      `${row.verifiedIdentityCount} verified`,
+    ],
+    bindingState:
+      row.verifiedIdentityCount > 0
+        ? `${row.verifiedIdentityCount} verified identities`
+        : 'activation required',
+    membership: row.membership,
+    credits: row.credits,
+    activity: metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
+    auditSummary: `最近操作: ${row.lastAuditAction}`,
+    createdAt: formatIso(row.user.createdAt),
+    actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+  }));
+
+  const pendingCount = records.filter((record) => record.accountState === 'pending_activation').length;
+  const activeCount = records.filter((record) => record.accountState === 'active').length;
+  const suspendedCount = records.filter((record) => record.accountState === 'suspended').length;
+  const totalCredits = records.reduce((sum, record) => sum + metadataNumber({ credits: record.credits }, 'credits'), 0);
+
+  const metrics: AdminMetric[] = [
+    { label: '总账号', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+    { label: '待激活', value: String(pendingCount), hint: 'activation queue', tone: 'warning' },
+    { label: '活跃账号', value: String(activeCount), hint: 'active lifecycle', tone: 'success' },
+    { label: '剩余额度', value: String(totalCredits), hint: 'entitlements', tone: 'default' },
+  ];
+
+  const filters: AdminFilter[] = [
+    { label: 'All', value: 'all', count: records.length },
+    { label: 'Pending activation', value: 'pending_activation', count: pendingCount },
+    { label: 'Active', value: 'active', count: activeCount },
+    { label: 'Suspended', value: 'suspended', count: suspendedCount },
+  ];
+
+  return {
+    source: 'database',
+    metrics,
+    filters,
+    records,
+  };
 }

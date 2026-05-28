@@ -57,7 +57,7 @@ export function AdminNav({ className }: AdminNavProps) {
           <Boxes className="h-3.5 w-3.5" />
           Ops Scope
         </div>
-        <p className="leading-5">Task 5 only enables the shell and overview. Module pages remain reserved for Task 6.</p>
+        <p className="leading-5">Management modules are read-only until Task 7 wires mutation APIs.</p>
       </div>
     </nav>
   );
