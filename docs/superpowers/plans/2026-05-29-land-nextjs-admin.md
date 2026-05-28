@@ -141,7 +141,7 @@ git commit -m "chore: migrate next app to repository root"
 - Create: `src/server/db/seed.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: Add database dependencies if missing**
+- [x] **Step 1: Add database dependencies if missing**
 
 Run:
 
@@ -152,7 +152,7 @@ pnpm add -D drizzle-kit tsx @types/pg
 
 Expected: dependencies are present in root `package.json`.
 
-- [ ] **Step 2: Create Drizzle config**
+- [x] **Step 2: Create Drizzle config**
 
 Create `drizzle.config.ts`:
 
@@ -169,11 +169,11 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 3: Create database schema**
+- [x] **Step 3: Create database schema**
 
 Create `src/server/db/schema.ts` with enums and tables for users, identities, activation tokens, sessions, roles, audit events, memberships, products, orders, AI jobs, partners, content, and settings. Include unique indexes for verified identity ownership and activation token hashes.
 
-- [ ] **Step 4: Create database client**
+- [x] **Step 4: Create database client**
 
 Create `src/server/db/index.ts`:
 
@@ -196,15 +196,15 @@ export const db = pool ? drizzle(pool, { schema }) : null;
 export { schema };
 ```
 
-- [ ] **Step 5: Create migration runner**
+- [x] **Step 5: Create migration runner**
 
 Create `src/server/db/migrate.ts` that exits with a clear message when `DATABASE_URL` is missing and otherwise runs Drizzle migrations from `./drizzle`.
 
-- [ ] **Step 6: Create seed script**
+- [x] **Step 6: Create seed script**
 
 Create `src/server/db/seed.ts` that inserts representative users, identities, admin roles, membership plans, products, orders, AI jobs, partner leads, content assets, settings, and audit events. It must be idempotent by using stable ids or upserts.
 
-- [ ] **Step 7: Generate migration**
+- [x] **Step 7: Generate migration**
 
 Run:
 
@@ -214,7 +214,7 @@ pnpm db:generate
 
 Expected: a migration appears under `drizzle/`.
 
-- [ ] **Step 8: Commit database foundation**
+- [x] **Step 8: Commit database foundation**
 
 Run:
 
