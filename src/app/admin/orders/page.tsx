@@ -1,8 +1,8 @@
 import {
-  AdminActionBar,
   AdminModulePage,
   type AdminColumn,
 } from '@/features/admin/module-page';
+import { AdminOrderActions } from '@/features/admin/admin-action-controls';
 import { StatusBadge } from '@/features/admin/status-badge';
 import {
   getAdminOrders,
@@ -56,7 +56,7 @@ const columns: AdminColumn<AdminOrderRow>[] = [
     key: 'actions',
     label: '操作',
     className: 'text-right',
-    render: (order) => <AdminActionBar actions={order.actions} />,
+    render: (order) => <AdminOrderActions orderId={order.id} />,
   },
 ];
 

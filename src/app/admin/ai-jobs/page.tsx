@@ -1,8 +1,8 @@
 import {
-  AdminActionBar,
   AdminModulePage,
   type AdminColumn,
 } from '@/features/admin/module-page';
+import { AdminAiJobActions } from '@/features/admin/admin-action-controls';
 import { StatusBadge } from '@/features/admin/status-badge';
 import {
   getAdminAiJobs,
@@ -56,7 +56,7 @@ const columns: AdminColumn<AdminAiJobRow>[] = [
     key: 'actions',
     label: '操作',
     className: 'text-right',
-    render: (job) => <AdminActionBar actions={job.actions} />,
+    render: (job) => <AdminAiJobActions jobId={job.id} />,
   },
 ];
 

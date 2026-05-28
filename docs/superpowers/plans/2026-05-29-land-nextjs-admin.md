@@ -425,19 +425,19 @@ git commit -m "feat: implement admin management modules"
 - Create: `src/app/api/admin/orders/[orderId]/status/route.ts`
 - Create: `src/app/api/admin/ai-jobs/[jobId]/review/route.ts`
 
-- [ ] **Step 1: Add admin user mutation routes**
+- [x] **Step 1: Add admin user mutation routes**
 
 Each route must call `requireAdmin()`, validate input with Zod, call repository/service functions, and record audit events.
 
-- [ ] **Step 2: Add order and AI job operation routes**
+- [x] **Step 2: Add order and AI job operation routes**
 
 Order status and AI job review routes must call `requireAdmin()`, validate status/action inputs, persist changes, and record audit events.
 
-- [ ] **Step 3: Wire admin action buttons**
+- [x] **Step 3: Wire admin action buttons**
 
 Admin UI actions must call the API routes and surface success/error states with existing UI feedback primitives.
 
-- [ ] **Step 4: Commit API boundaries**
+- [x] **Step 4: Commit API boundaries**
 
 Run:
 

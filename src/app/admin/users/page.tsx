@@ -1,9 +1,9 @@
 import {
-  AdminActionBar,
   AdminModulePage,
   DetailList,
   type AdminColumn,
 } from '@/features/admin/module-page';
+import { AdminUserActions } from '@/features/admin/admin-action-controls';
 import { StatusBadge } from '@/features/admin/status-badge';
 import {
   getAdminUsers,
@@ -62,7 +62,7 @@ const columns: AdminColumn<AdminUserRow>[] = [
     key: 'actions',
     label: '操作',
     className: 'text-right',
-    render: (user) => <AdminActionBar actions={user.actions} />,
+    render: (user) => <AdminUserActions userId={user.id} />,
   },
 ];
 
