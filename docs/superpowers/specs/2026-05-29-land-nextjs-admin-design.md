@@ -1,3 +1,7 @@
+---
+archived-with: 2026-05-29-land-nextjs-admin
+status: final
+---
 # Land Next.js Admin Design
 
 Status: approved for implementation planning

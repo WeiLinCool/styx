@@ -1,10 +1,11 @@
-# Land Next.js Admin Implementation Plan
-
 ---
+archived-with: 2026-05-29-land-nextjs-admin
+status: final
 change: land-nextjs-admin
 design-doc: docs/superpowers/specs/2026-05-29-land-nextjs-admin-design.md
 base-ref: 911e86a3dd67b024cff4cb2de18bf55abeeaa68d
 ---
+# Land Next.js Admin Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
