@@ -25,9 +25,6 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const pool = new Pool({ connectionString });
-const db = drizzle(pool);
-
 const ids = {
   adminUser: '00000000-0000-4000-8000-000000000001',
   memberUser: '00000000-0000-4000-8000-000000000002',
@@ -48,7 +45,11 @@ const ids = {
   auditEvent: '00000000-0000-4000-8000-000000000111',
 };
 
-try {
+async function main() {
+  const pool = new Pool({ connectionString });
+  const db = drizzle(pool);
+
+  try {
   await db
     .insert(users)
     .values([
@@ -352,6 +353,12 @@ try {
     .onConflictDoNothing();
 
   console.log('Database seed completed.');
-} finally {
-  await pool.end();
+  } finally {
+    await pool.end();
+  }
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

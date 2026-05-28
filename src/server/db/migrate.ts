@@ -11,14 +11,21 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const migrationsFolder = path.resolve(__dirname, '../../../drizzle');
-const pool = new Pool({ connectionString });
-const db = drizzle(pool);
+async function main() {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const migrationsFolder = path.resolve(__dirname, '../../../drizzle');
+  const pool = new Pool({ connectionString });
+  const db = drizzle(pool);
 
-try {
-  await migrate(db, { migrationsFolder });
-  console.log('Database migrations completed.');
-} finally {
-  await pool.end();
+  try {
+    await migrate(db, { migrationsFolder });
+    console.log('Database migrations completed.');
+  } finally {
+    await pool.end();
+  }
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

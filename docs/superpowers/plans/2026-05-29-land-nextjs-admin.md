@@ -452,7 +452,7 @@ git commit -m "feat: add admin api boundaries"
 - Modify: `openspec/changes/land-nextjs-admin/tasks.md`
 - Delete: `projects/`
 
-- [ ] **Step 1: Run static verification**
+- [x] **Step 1: Run static verification**
 
 Run:
 
@@ -463,7 +463,7 @@ pnpm build
 
 Expected: both commands pass.
 
-- [ ] **Step 2: Run database verification**
+- [x] **Step 2: Run database verification**
 
 Run:
 
@@ -474,7 +474,7 @@ pnpm db:seed
 
 Expected: both pass when `DATABASE_URL` points to PostgreSQL. If `DATABASE_URL` is unavailable, record the exact blocker in the final verification notes.
 
-- [ ] **Step 3: Start development server**
+- [x] **Step 3: Start development server**
 
 Run:
 
@@ -484,7 +484,7 @@ pnpm dev
 
 Expected: server starts from repository root.
 
-- [ ] **Step 4: Browser verify representative routes**
+- [x] **Step 4: Browser verify representative routes**
 
 Open and inspect:
 
@@ -501,7 +501,7 @@ Open and inspect:
 
 Expected: pages render without blank screens or incoherent layout overlap.
 
-- [ ] **Step 5: Confirm no runtime references to projects**
+- [x] **Step 5: Confirm no runtime references to projects**
 
 Run:
 
@@ -511,7 +511,7 @@ rg "projects/" package.json next.config.ts tsconfig.json src public
 
 Expected: no runtime references.
 
-- [ ] **Step 6: Remove prototype folder**
+- [x] **Step 6: Remove prototype folder**
 
 Run:
 
@@ -521,7 +521,7 @@ rm -rf projects
 
 Expected: root app remains buildable.
 
-- [ ] **Step 7: Check off OpenSpec tasks**
+- [x] **Step 7: Check off OpenSpec tasks**
 
 Update `openspec/changes/land-nextjs-admin/tasks.md` from `- [ ]` to `- [x]` for completed items.
 
