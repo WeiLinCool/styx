@@ -1,4 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
+import { eq } from 'drizzle-orm';
 import { Pool } from 'pg';
 import {
   adminRoles,
@@ -28,6 +29,7 @@ if (!connectionString) {
 const ids = {
   adminUser: '00000000-0000-4000-8000-000000000001',
   memberUser: '00000000-0000-4000-8000-000000000002',
+  superUser: '00000000-0000-4000-8000-000000000004',
   adminEmailIdentity: '00000000-0000-4000-8000-000000000011',
   memberEmailIdentity: '00000000-0000-4000-8000-000000000012',
   activationToken: '00000000-0000-4000-8000-000000000013',
@@ -50,6 +52,14 @@ async function main() {
   const db = drizzle(pool);
 
   try {
+  const [existingSuperUser] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.phone, '18120810787'))
+    .limit(1);
+
+  const superUserId = existingSuperUser?.id ?? ids.superUser;
+
   await db
     .insert(users)
     .values([
@@ -68,6 +78,14 @@ async function main() {
         accountState: 'active',
         activatedAt: new Date('2026-01-02T00:00:00.000Z'),
         metadata: { seed: true },
+      },
+      {
+        id: superUserId,
+        phone: '18120810787',
+        displayName: 'Super Owner',
+        accountState: 'active',
+        activatedAt: new Date('2026-01-06T00:00:00.000Z'),
+        metadata: { seed: true, superuser: true },
       },
     ])
     .onConflictDoUpdate({
@@ -110,11 +128,18 @@ async function main() {
 
   await db
     .insert(adminRoles)
-    .values({
-      userId: ids.adminUser,
-      role: 'owner',
-      grantedByUserId: ids.adminUser,
-    })
+    .values([
+      {
+        userId: ids.adminUser,
+        role: 'owner',
+        grantedByUserId: ids.adminUser,
+      },
+      {
+        userId: superUserId,
+        role: 'owner',
+        grantedByUserId: ids.adminUser,
+      },
+    ])
     .onConflictDoNothing();
 
   await db

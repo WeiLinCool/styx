@@ -1,0 +1,5 @@
+- [x] Audit the current chat page, auth session flow, and agent run API against MVP requirements.
+- [x] Seed or upsert the superuser account `18120810787` with active owner access.
+- [x] Update the chat page to load persisted chat runs, display recent history, and restore transcript on refresh.
+- [x] Keep chat submissions on the existing `agent_runs` pipeline and refresh history from persisted data after send.
+- [ ] Verify the MVP path end to end: login, open chat, submit prompt, refresh, recover history, and confirm superuser access.

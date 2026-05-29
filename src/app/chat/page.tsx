@@ -10,7 +10,8 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
-import { createAgentRun } from '@/features/public/agent-runtime-client';
+import { createAgentRun, listAgentRuns } from '@/features/public/agent-runtime-client';
+import type { AgentRunDto } from '@/server/agent/types';
 
 interface Message {
   id: string;
@@ -18,6 +19,12 @@ interface Message {
   content: string;
   timestamp: number;
 }
+
+type ConversationSummary = {
+  id: string;
+  title: string;
+  time: string;
+};
 
 const quickPrompts = [
   { icon: Lightbulb, text: '帮我设计一个石头印画作品' },
@@ -30,6 +37,7 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [recentRuns, setRecentRuns] = useState<AgentRunDto[]>([]);
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -41,6 +49,26 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user)) {
+      setRecentRuns([]);
+      return;
+    }
+
+    async function loadRuns() {
+      try {
+        const runs = await listAgentRuns();
+        const chatRuns = runs.filter((run) => run.taskType === 'chat');
+        setRecentRuns(chatRuns);
+        setMessages(mapRunsToMessages(chatRuns));
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : '历史记录加载失败');
+      }
+    }
+
+    void loadRuns();
+  }, [isLoggedIn, user]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -69,14 +97,10 @@ export default function ChatPage() {
         setErrorMessage(run.errorMessage ?? 'AI 请求失败');
         return;
       }
-      msgCounter.current += 1;
-      const aiMsg: Message = {
-        id: `msg-${Date.now()}-${msgCounter.current}`,
-        role: 'assistant',
-        content: run.finalMessage ?? 'AI 已完成处理，但没有返回可展示的回复。',
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, aiMsg]);
+      const runs = await listAgentRuns();
+      const chatRuns = runs.filter((item) => item.taskType === 'chat');
+      setRecentRuns(chatRuns);
+      setMessages(mapRunsToMessages(chatRuns));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'AI 请求失败');
     } finally {
@@ -84,11 +108,7 @@ export default function ChatPage() {
     }
   };
 
-  const conversations = [
-    { id: '1', title: '石头印画设计方案', time: '刚刚' },
-    { id: '2', title: 'AI视频提示词优化', time: '1小时前' },
-    { id: '3', title: '分镜脚本生成', time: '昨天' },
-  ];
+  const conversations = recentRuns.map(mapRunToConversationSummary);
 
   return (
     <div className="flex h-screen bg-white text-[#1d1d1f]">
@@ -112,7 +132,7 @@ export default function ChatPage() {
               + 新对话
             </button>
             {conversations.map((c) => (
-              <div key={c.id} className="mb-1 cursor-pointer rounded-xl px-3 py-2 text-[13px] text-[#1d1d1f] transition-colors hover:bg-black/5">
+              <div key={c.id} className="mb-1 rounded-xl px-3 py-2 text-[13px] text-[#1d1d1f]">
                 <div className="truncate font-medium">{c.title}</div>
                 <div className="text-[11px] text-[#999]">{c.time}</div>
               </div>
@@ -222,7 +242,7 @@ export default function ChatPage() {
               <button onClick={() => setMobileMenuOpen(false)} className="cursor-pointer text-[#444444]"><X size={18} /></button>
             </div>
             {conversations.map((c) => (
-              <div key={c.id} className="mb-1 cursor-pointer rounded-xl px-3 py-2 text-[13px] text-[#d1d1d6] hover:bg-black/5">
+              <div key={c.id} className="mb-1 rounded-xl px-3 py-2 text-[13px] text-[#d1d1d6]">
                 <div className="truncate">{c.title}</div>
                 <div className="text-[11px] text-[#444444]">{c.time}</div>
               </div>
@@ -232,4 +252,45 @@ export default function ChatPage() {
       )}
     </div>
   );
+}
+
+function mapRunsToMessages(runs: AgentRunDto[]): Message[] {
+  return runs
+    .slice()
+    .reverse()
+    .flatMap((run) => {
+      const created = new Date(run.createdAt).getTime();
+      const items: Message[] = [
+        {
+          id: `${run.id}-user`,
+          role: 'user',
+          content: run.prompt,
+          timestamp: created,
+        },
+      ];
+
+      if (run.finalMessage) {
+        items.push({
+          id: `${run.id}-assistant`,
+          role: 'assistant',
+          content: run.finalMessage,
+          timestamp: new Date(run.updatedAt).getTime(),
+        });
+      }
+
+      return items;
+    });
+}
+
+function mapRunToConversationSummary(run: AgentRunDto): ConversationSummary {
+  return {
+    id: run.id,
+    title: run.prompt.length > 18 ? `${run.prompt.slice(0, 18)}...` : run.prompt,
+    time: new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(run.createdAt)),
+  };
 }

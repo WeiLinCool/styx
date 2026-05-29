@@ -1,0 +1,12 @@
+workflow: full
+phase: design
+build_mode: null
+isolation: null
+verify_mode: null
+design_doc: null
+plan: null
+verify_result: pending
+verification_report: null
+branch_status: pending
+verified_at: null
+archived: false
