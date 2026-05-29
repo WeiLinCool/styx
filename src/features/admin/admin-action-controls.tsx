@@ -7,6 +7,7 @@ import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { AdminWorkOrderQueueStatus } from '@/server/repositories/admin-activation-work-orders';
+import type { AiModelStatus } from '@/server/repositories/ai-models';
 
 type ActionState = {
   tone: 'success' | 'error';
@@ -341,6 +342,36 @@ export function AdminAgentCapabilityActions({
         }
       : null,
   ].filter((action): action is NonNullable<typeof action> => Boolean(action));
+
+  return <ActionButtons actions={actions} />;
+}
+
+export function AdminAiModelActions({
+  modelId,
+  status,
+}: {
+  modelId: string;
+  status: AiModelStatus;
+}) {
+  const actions =
+    status === 'enabled'
+      ? [
+          {
+            label: '停用',
+            url: `/api/admin/ai-models/${modelId}/status`,
+            body: { status: 'disabled' },
+            successMessage: 'AI 模型已停用。',
+            variant: 'destructive' as const,
+          },
+        ]
+      : [
+          {
+            label: '启用',
+            url: `/api/admin/ai-models/${modelId}/status`,
+            body: { status: 'enabled' },
+            successMessage: 'AI 模型已启用。',
+          },
+        ];
 
   return <ActionButtons actions={actions} />;
 }

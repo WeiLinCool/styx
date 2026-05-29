@@ -4,8 +4,11 @@ import test from 'node:test';
 import type { ActiveUserEntitlement } from '@/server/ai/model-entitlements';
 import {
   buildModelRequirementSeedKey,
+  buildModelStatusActions,
+  getSeedAiModelAdminData,
   getSeedChatModelsForUser,
   resolveSeedChatModelForUser,
+  summarizeProviderCredentialReference,
 } from './ai-models';
 
 const activeProEntitlement: ActiveUserEntitlement = {
@@ -55,4 +58,96 @@ test('buildModelRequirementSeedKey normalizes free requirement null value', () =
     }),
     'model-1:membership_plan:pro-monthly',
   );
+});
+
+test('summarizeProviderCredentialReference validates references without exposing secrets', () => {
+  const original = process.env.TEST_PROVIDER_SECRET;
+  process.env.TEST_PROVIDER_SECRET = 'super-secret-value';
+
+  try {
+    assert.deepEqual(
+      summarizeProviderCredentialReference({
+        providerType: 'openai_compatible',
+        baseUrl: 'https://api.example.com/v1',
+        credentialEnvKey: 'TEST_PROVIDER_SECRET',
+      }),
+      {
+        label: 'TEST_PROVIDER_SECRET',
+        status: 'valid',
+        detail: 'credential reference configured',
+      },
+    );
+  } finally {
+    if (original === undefined) {
+      delete process.env.TEST_PROVIDER_SECRET;
+    } else {
+      process.env.TEST_PROVIDER_SECRET = original;
+    }
+  }
+});
+
+test('summarizeProviderCredentialReference reports missing endpoint or env var', () => {
+  delete process.env.TEST_PROVIDER_MISSING_SECRET;
+
+  assert.deepEqual(
+    summarizeProviderCredentialReference({
+      providerType: 'openai_compatible',
+      baseUrl: null,
+      credentialEnvKey: 'TEST_PROVIDER_MISSING_SECRET',
+    }),
+    {
+      label: 'TEST_PROVIDER_MISSING_SECRET',
+      status: 'invalid',
+      detail: 'missing base URL and environment variable value',
+    },
+  );
+
+  assert.deepEqual(
+    summarizeProviderCredentialReference({
+      providerType: 'development',
+      baseUrl: null,
+      credentialEnvKey: null,
+    }),
+    {
+      label: 'not required',
+      status: 'not_required',
+      detail: 'development provider does not require credentials',
+    },
+  );
+});
+
+test('getSeedAiModelAdminData shows provider, model, default and entitlement details', async () => {
+  const data = await getSeedAiModelAdminData();
+  const freeModel = data.records.find((record) => record.code === 'dev-free-chat');
+  const proModel = data.records.find((record) => record.code === 'dev-pro-chat');
+
+  assert.equal(data.source, 'seed');
+  assert.equal(data.providers.length, 1);
+  assert.equal(freeModel?.isDefaultChat, true);
+  assert.equal(freeModel?.supportsChat, true);
+  assert.equal(freeModel?.entitlementSummary, 'Free');
+  assert.equal(proModel?.entitlementSummary, 'Pro');
+  assert.equal(freeModel?.providerStatus, 'enabled');
+  assert.equal(freeModel?.credential.status, 'not_required');
+});
+
+test('buildModelStatusActions only offers meaningful enabled and disabled transitions', () => {
+  assert.deepEqual(buildModelStatusActions('model-1', 'enabled'), [
+    {
+      label: '停用',
+      url: '/api/admin/ai-models/model-1/status',
+      body: { status: 'disabled' },
+      successMessage: 'AI 模型已停用。',
+      variant: 'destructive',
+    },
+  ]);
+
+  assert.deepEqual(buildModelStatusActions('model-2', 'archived'), [
+    {
+      label: '启用',
+      url: '/api/admin/ai-models/model-2/status',
+      body: { status: 'enabled' },
+      successMessage: 'AI 模型已启用。',
+    },
+  ]);
 });

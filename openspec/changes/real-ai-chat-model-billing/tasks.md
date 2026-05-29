@@ -19,8 +19,8 @@
 
 ## 4. Admin Console
 
-- [ ] 4.1 Add provider/model management UI reachable from admin AI/settings navigation.
-- [ ] 4.2 Show provider status, model support, default model, entitlement requirements, pricing summary, and credential-reference validation without revealing secrets.
+- [x] 4.1 Add provider/model management UI reachable from admin AI/settings navigation.
+- [x] 4.2 Show provider status, model support, default model, entitlement requirements, pricing summary, and credential-reference validation without revealing secrets.
 - [ ] 4.3 Extend AI job/run review views to show model snapshot, usage, billing status, credit cost, and linked ledger entry.
 
 ## 5. Public Chat Experience
