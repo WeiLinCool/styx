@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   Bot,
   Boxes,
+  BrainCircuit,
   FileText,
   Gift,
   Handshake,
@@ -24,6 +25,7 @@ const adminNavItems = [
   { href: '/admin/benefits', label: '权益', icon: Gift },
   { href: '/admin/orders', label: '订单', icon: ReceiptText },
   { href: '/admin/ai-jobs', label: 'AI 任务', icon: Bot },
+  { href: '/admin/ai-models', label: 'AI 模型', icon: BrainCircuit },
   { href: '/admin/agent-capabilities', label: 'Agent 能力', icon: Boxes },
   { href: '/admin/partners', label: '合作', icon: Handshake },
   { href: '/admin/content', label: '内容', icon: FileText },

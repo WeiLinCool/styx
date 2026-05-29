@@ -202,6 +202,69 @@ function agentRunSnapshotSummary(snapshot: AgentCapabilitySnapshot) {
   return codes.length > 0 ? `${snapshot.bundleCode}: ${codes.join(', ')}` : snapshot.bundleCode;
 }
 
+function readNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readSnapshotRecord(snapshot: AgentCapabilitySnapshot, key: string) {
+  const value = (snapshot as AgentCapabilitySnapshot & Record<string, unknown>)[key];
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readAgentRunSelectedModel(snapshot: AgentCapabilitySnapshot | null) {
+  const selectedModel = snapshot ? readSnapshotRecord(snapshot, 'selectedModel') : null;
+  const name = readString(selectedModel?.name);
+  const code = readString(selectedModel?.code);
+  const providerName = readString(selectedModel?.providerName);
+
+  if (name && providerName) {
+    return `${providerName} / ${name}`;
+  }
+
+  return name ?? code;
+}
+
+function readAgentRunUsageSummary(snapshot: AgentCapabilitySnapshot | null) {
+  const usage = snapshot ? readSnapshotRecord(snapshot, 'usage') : null;
+  const totalTokens = readNumber(usage?.totalTokens);
+  const promptTokens = readNumber(usage?.promptTokens);
+  const completionTokens = readNumber(usage?.completionTokens);
+
+  if (totalTokens !== null) {
+    return `${totalTokens} tokens`;
+  }
+
+  if (promptTokens !== null || completionTokens !== null) {
+    return `${promptTokens ?? 0}/${completionTokens ?? 0} tokens`;
+  }
+
+  return null;
+}
+
+function readAgentRunBillingSummary(snapshot: AgentCapabilitySnapshot | null) {
+  const billing = snapshot ? readSnapshotRecord(snapshot, 'billing') : null;
+  const status = readString(billing?.status);
+  const creditCost = readNumber(billing?.creditCost);
+  const ledgerEntryId = readString(billing?.ledgerEntryId);
+  const ledgerSummary = ledgerEntryId ? `ledger ${ledgerEntryId}` : null;
+
+  if (status && creditCost !== null) {
+    return combineSummaryParts([`${creditCost} credits`, status, ledgerSummary]);
+  }
+
+  if (creditCost !== null) {
+    return combineSummaryParts([`${creditCost} credits`, ledgerSummary]);
+  }
+
+  return combineSummaryParts([status, ledgerSummary]) || null;
+}
+
+function combineSummaryParts(parts: Array<string | null>) {
+  return parts.filter((part): part is string => Boolean(part)).join(' · ');
+}
+
 export async function getAdminAiJobs(): Promise<AdminModuleData<AdminAiJobRow>> {
   const database = ensureAdminReadSource('AI jobs');
 
@@ -253,6 +316,15 @@ export async function getAdminAiJobs(): Promise<AdminModuleData<AdminAiJobRow>> 
       ? run.capabilitySnapshot
       : null;
     const completedAt = run.completedAt ?? run.updatedAt;
+    const selectedModelSummary = readAgentRunSelectedModel(snapshot);
+    const usageSummary = readAgentRunUsageSummary(snapshot);
+    const billingSummary = readAgentRunBillingSummary(snapshot);
+    const modelSummary = combineSummaryParts([
+      selectedModelSummary ?? run.model,
+      snapshot ? `能力快照 ${agentRunSnapshotSummary(snapshot)}` : null,
+      usageSummary,
+      billingSummary,
+    ]);
 
     return {
       id: run.id,
@@ -262,7 +334,7 @@ export async function getAdminAiJobs(): Promise<AdminModuleData<AdminAiJobRow>> 
       user: user?.displayName ?? '未知用户',
       promptSummary: summarizeAgentRunPrompt(run.prompt),
       provider: run.provider,
-      model: snapshot ? `${run.model} · 能力快照 ${agentRunSnapshotSummary(snapshot)}` : run.model,
+      model: modelSummary || run.model,
       outputReference: `Agent run ${run.id}`,
       errorSummary: run.errorMessage ?? 'none',
       createdAt: formatIso(run.createdAt),

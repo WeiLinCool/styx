@@ -1,47 +1,36 @@
-## ADDED Requirements
-
-### Requirement: Public Routes
-The system SHALL provide the public product routes currently represented by the prototype.
-
-#### Scenario: Visitor opens public pages
-- **WHEN** a visitor navigates to splash, home, chat, image generation, video generation, workflow, membership, benefits, shop, partner benefits, or user center pages
-- **THEN** the page renders from the root Next.js application
-
-### Requirement: Visual Direction Preservation
-The public product experience SHALL preserve the 南风AI restrained white-background visual direction.
-
-#### Scenario: Public page renders
-- **WHEN** a public page is displayed
-- **THEN** typography, spacing, color, border radius, and motion follow the existing `projects/DESIGN.md` direction
-
-### Requirement: Shared User State
-The system SHALL provide shared user/session state to public pages that need identity-aware rendering.
-
-#### Scenario: User-facing page requests session state
-- **WHEN** a page such as user center, membership, or shop needs user context
-- **THEN** it can consume a shared typed session abstraction
-
-### Requirement: Protected Public Flows Require Active Accounts
-The system SHALL require an active account for protected product flows.
-
-#### Scenario: Pending user opens protected flow
-- **WHEN** a pending activation user opens user center, membership purchase, shop checkout, or AI generation history
-- **THEN** the system directs the user to complete account activation or binding before continuing
-
-### Requirement: Public Flow Fallback Data
-The system SHALL render public flows with stable development data when external services are not configured.
-
-#### Scenario: External credentials are unavailable
-- **WHEN** the app runs in local development without production service credentials
-- **THEN** public pages still render meaningful content and do not crash
+## MODIFIED Requirements
 
 ### Requirement: Public AI Tools Use Agent Runtime
 Protected public AI tools SHALL submit real agent runs through the server runtime instead of relying only on local mock responses.
 
 #### Scenario: User sends chat prompt
-- **WHEN** an active user sends a chat prompt
-- **THEN** the page submits the prompt to the agent runtime API and renders the returned run state or assistant message
+- **WHEN** an active user sends a chat prompt with a selected enabled model
+- **THEN** the page submits the prompt and selected model to the agent runtime API
+- **AND** renders the returned run state, assistant message, selected model, and billing status
 
 #### Scenario: User starts workflow generation
 - **WHEN** an active user starts image, video, or workflow generation
 - **THEN** the page creates an agent run for the selected task type and shows progress, completion, failure, and artifact states from the server
+
+#### Scenario: User cannot afford selected chat model
+- **WHEN** an active user tries to send a chat prompt without enough credits for the selected model
+- **THEN** the page shows an insufficient-credit state
+- **AND** does not append a fake assistant response
+
+### Requirement: Chat Model Selection
+The public chat experience SHALL let active users select from admin-enabled chat models allowed by their current entitlements.
+
+#### Scenario: User opens chat model selector
+- **WHEN** an active user opens the chat page
+- **THEN** the page loads the user's entitled enabled chat models from the server
+- **AND** selects the configured default model when the user has no previous selection
+
+#### Scenario: User sees entitlement-gated models
+- **WHEN** an active user has membership, benefit, or explicit model entitlements
+- **THEN** the model selector shows only models available to that user
+- **AND** each model can show the entitlement tier or benefit label that grants access
+
+#### Scenario: Selected model becomes unavailable
+- **WHEN** a previously selected model is no longer enabled or no longer allowed by the user's entitlements
+- **THEN** the page falls back to the current default enabled model when one exists
+- **AND** otherwise shows that chat is unavailable

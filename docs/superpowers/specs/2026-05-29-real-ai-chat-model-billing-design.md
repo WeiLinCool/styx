@@ -1,3 +1,8 @@
+---
+archived-with: 2026-05-30-real-ai-chat-model-billing
+status: final
+status: final
+---
 # Real AI Chat Model Billing Design
 
 Status: draft

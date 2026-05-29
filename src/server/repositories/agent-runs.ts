@@ -5,8 +5,11 @@ import type {
   AgentArtifactDto,
   AgentArtifactKind,
   AgentCapabilitySnapshot,
+  AgentRunBillingDto,
   AgentRunDto,
+  AgentRunSelectedModelDto,
   AgentTaskType,
+  AiUsage,
 } from '@/server/agent/types';
 import { db, schema } from '@/server/db';
 
@@ -16,7 +19,7 @@ export type CreateAgentRunInput = {
   prompt: string;
   provider: string;
   model: string;
-  capabilitySnapshot: AgentCapabilitySnapshot;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
   input: Record<string, unknown>;
 };
 
@@ -38,8 +41,16 @@ type StoredAgentRun = AgentRunDto & {
   userId: string;
   provider: string;
   model: string;
-  capabilitySnapshot: AgentCapabilitySnapshot;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
   input: Record<string, unknown>;
+};
+
+export type AgentRunFailureInput = {
+  errorMessage: string;
+  finalMessage?: string | null;
+  artifacts?: AgentArtifactInput[];
+  capabilitySnapshot?: AgentCapabilitySnapshot & Record<string, unknown>;
+  input?: Record<string, unknown>;
 };
 
 export type AgentRunRepository = {
@@ -49,9 +60,14 @@ export type AgentRunRepository = {
   markRunRunning(runId: string): Promise<AgentRunDto | null>;
   completeRun(
     runId: string,
-    input: { finalMessage: string | null; artifacts: AgentArtifactInput[] },
+    input: {
+      finalMessage: string | null;
+      artifacts: AgentArtifactInput[];
+      capabilitySnapshot?: AgentCapabilitySnapshot & Record<string, unknown>;
+      input?: Record<string, unknown>;
+    },
   ): Promise<AgentRunDto | null>;
-  failRun(runId: string, errorMessage: string): Promise<AgentRunDto | null>;
+  failRun(runId: string, input: string | AgentRunFailureInput): Promise<AgentRunDto | null>;
   recordEvent(runId: string, input: AgentRunEventInput): Promise<void>;
   addArtifact(runId: string, input: AgentArtifactInput): Promise<AgentRunDto | null>;
 };
@@ -67,7 +83,13 @@ function cloneArtifact(artifact: AgentArtifactDto): AgentArtifactDto {
   };
 }
 
+function toFailureInput(input: string | AgentRunFailureInput): AgentRunFailureInput {
+  return typeof input === 'string' ? { errorMessage: input } : input;
+}
+
 function toAgentRunDto(run: StoredAgentRun): AgentRunDto {
+  const metadata = extractRunMetadata(run.capabilitySnapshot, run.input);
+
   return {
     id: run.id,
     taskType: run.taskType,
@@ -80,6 +102,9 @@ function toAgentRunDto(run: StoredAgentRun): AgentRunDto {
       model: run.capabilitySummary.model,
       capabilities: run.capabilitySummary.capabilities.map((capability) => ({ ...capability })),
     },
+    selectedModel: metadata.selectedModel,
+    usage: metadata.usage,
+    billing: metadata.billing,
     artifacts: run.artifacts.map(cloneArtifact),
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
@@ -103,15 +128,113 @@ function touch(run: StoredAgentRun) {
   run.updatedAt = new Date().toISOString();
 }
 
-function toCapabilitySummary(snapshot: AgentCapabilitySnapshot) {
+function toCapabilitySummary(snapshot: Partial<AgentCapabilitySnapshot>) {
+  const capabilities = Array.isArray(snapshot.capabilities) ? snapshot.capabilities : [];
+
   return {
-    provider: snapshot.provider,
-    model: snapshot.model,
-    capabilities: snapshot.capabilities.map((capability) => ({
+    provider: snapshot.provider ?? 'unknown',
+    model: snapshot.model ?? 'unknown',
+    capabilities: capabilities.map((capability) => ({
       kind: capability.kind,
       code: capability.code,
       name: capability.name,
     })),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown) {
+  return typeof value === 'string' ? value : null;
+}
+
+function readNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readUsage(value: unknown): AiUsage | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const promptTokens = readNumber(value.promptTokens);
+  const completionTokens = readNumber(value.completionTokens);
+  const totalTokens = readNumber(value.totalTokens);
+  if (promptTokens === null || completionTokens === null || totalTokens === null) {
+    return null;
+  }
+
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+function readSelectedModel(value: unknown): AgentRunSelectedModelDto | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readString(value.id);
+  const code = readString(value.code);
+  const name = readString(value.name);
+  const providerName = readString(value.providerName);
+  const entitlementLabel = readString(value.entitlementLabel);
+  if (!id || !code || !name || !providerName || !entitlementLabel) {
+    return null;
+  }
+
+  return { id, code, name, providerName, entitlementLabel };
+}
+
+function readLegacySelectedModel(snapshot: Record<string, unknown>): AgentRunSelectedModelDto | null {
+  const id = readString(snapshot.modelId);
+  const code = readString(snapshot.modelCode);
+  const name = readString(snapshot.modelName);
+  const providerName = readString(snapshot.providerName) ?? readString(snapshot.providerCode);
+  const entitlement = isRecord(snapshot.entitlement) ? snapshot.entitlement : null;
+  const entitlementLabel = readString(entitlement?.label);
+
+  if (!id || !code || !name || !providerName || !entitlementLabel) {
+    return null;
+  }
+
+  return { id, code, name, providerName, entitlementLabel };
+}
+
+function readBilling(value: unknown): AgentRunBillingDto | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const status = readString(value.status);
+  if (
+    status !== 'not_required' &&
+    status !== 'pending' &&
+    status !== 'billed' &&
+    status !== 'failed'
+  ) {
+    return null;
+  }
+
+  return {
+    status,
+    creditCost: readNumber(value.creditCost),
+    ledgerEntryId: readString(value.ledgerEntryId),
+  };
+}
+
+function extractRunMetadata(
+  capabilitySnapshot: Record<string, unknown>,
+  input: Record<string, unknown>,
+) {
+  return {
+    selectedModel:
+      readSelectedModel(capabilitySnapshot.selectedModel) ??
+      readSelectedModel(input.selectedModel) ??
+      readLegacySelectedModel(capabilitySnapshot) ??
+      readLegacySelectedModel(input),
+    usage: readUsage(capabilitySnapshot.usage) ?? readUsage(input.usage),
+    billing: readBilling(capabilitySnapshot.billing) ?? readBilling(input.billing),
   };
 }
 
@@ -124,6 +247,7 @@ function toAgentRunDtoFromDatabase(input: {
   artifacts: Array<typeof schema.agentArtifacts.$inferSelect>;
 }): AgentRunDto {
   const snapshot = input.run.capabilitySnapshot as unknown as AgentCapabilitySnapshot;
+  const metadata = extractRunMetadata(input.run.capabilitySnapshot, input.run.input);
 
   return {
     id: input.run.id,
@@ -133,6 +257,9 @@ function toAgentRunDtoFromDatabase(input: {
     finalMessage: input.run.finalMessage,
     errorMessage: input.run.errorMessage,
     capabilitySummary: toCapabilitySummary(snapshot),
+    selectedModel: metadata.selectedModel,
+    usage: metadata.usage,
+    billing: metadata.billing,
     artifacts: input.artifacts.map((artifact) => ({
       id: artifact.id,
       kind: artifact.kind,
@@ -240,6 +367,10 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
           status: 'succeeded',
           finalMessage: input.finalMessage,
           errorMessage: null,
+          ...(input.capabilitySnapshot
+            ? { capabilitySnapshot: input.capabilitySnapshot as Record<string, unknown> }
+            : {}),
+          ...(input.input ? { input: input.input } : {}),
           completedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -262,15 +393,34 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       return getDatabaseRunDto(database, runId);
     },
     async failRun(runId, errorMessage) {
+      const failure = toFailureInput(errorMessage);
       await database
         .update(schema.agentRuns)
         .set({
           status: 'failed',
-          errorMessage,
+          errorMessage: failure.errorMessage,
+          ...(failure.finalMessage !== undefined ? { finalMessage: failure.finalMessage } : {}),
+          ...(failure.capabilitySnapshot
+            ? { capabilitySnapshot: failure.capabilitySnapshot as Record<string, unknown> }
+            : {}),
+          ...(failure.input ? { input: failure.input } : {}),
           completedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(schema.agentRuns.id, runId));
+      if (failure.artifacts && failure.artifacts.length > 0) {
+        await database.insert(schema.agentArtifacts).values(
+          failure.artifacts.map((artifact) => ({
+            runId,
+            kind: artifact.kind,
+            title: artifact.title,
+            body: artifact.body ?? null,
+            url: artifact.url ?? null,
+            metadata: artifact.metadata ?? {},
+            status: 'failed',
+          })),
+        );
+      }
       return getDatabaseRunDto(database, runId);
     },
     async recordEvent(runId, input) {
@@ -361,18 +511,37 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
       run.status = 'succeeded';
       run.finalMessage = input.finalMessage;
       run.errorMessage = null;
+      if (input.capabilitySnapshot) {
+        run.capabilitySnapshot = structuredClone(input.capabilitySnapshot);
+        run.capabilitySummary = toCapabilitySummary(input.capabilitySnapshot);
+      }
+      if (input.input) {
+        run.input = cloneRecord(input.input);
+      }
       run.artifacts.push(...input.artifacts.map(createArtifact));
       touch(run);
       return toAgentRunDto(run);
     },
-    async failRun(runId, errorMessage) {
+    async failRun(runId, input) {
       const run = runs.get(runId);
       if (!run) {
         return null;
       }
+      const failure = toFailureInput(input);
 
       run.status = 'failed';
-      run.errorMessage = errorMessage;
+      run.finalMessage = failure.finalMessage ?? run.finalMessage;
+      run.errorMessage = failure.errorMessage;
+      if (failure.capabilitySnapshot) {
+        run.capabilitySnapshot = structuredClone(failure.capabilitySnapshot);
+        run.capabilitySummary = toCapabilitySummary(failure.capabilitySnapshot);
+      }
+      if (failure.input) {
+        run.input = cloneRecord(failure.input);
+      }
+      if (failure.artifacts) {
+        run.artifacts.push(...failure.artifacts.map(createArtifact));
+      }
       touch(run);
       return toAgentRunDto(run);
     },

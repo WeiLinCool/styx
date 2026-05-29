@@ -49,6 +49,26 @@ export type AgentArtifactDto = {
   createdAt: string;
 };
 
+export type AiUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+export type AgentRunSelectedModelDto = {
+  id: string;
+  code: string;
+  name: string;
+  providerName: string;
+  entitlementLabel: string;
+};
+
+export type AgentRunBillingDto = {
+  status: 'not_required' | 'pending' | 'billed' | 'failed';
+  creditCost: number | null;
+  ledgerEntryId: string | null;
+};
+
 export type AgentRunDto = {
   id: string;
   taskType: AgentTaskType;
@@ -61,6 +81,9 @@ export type AgentRunDto = {
     model: string;
     capabilities: Array<Pick<ResolvedAgentCapability, 'kind' | 'code' | 'name'>>;
   };
+  selectedModel?: AgentRunSelectedModelDto | null;
+  usage?: AiUsage | null;
+  billing?: AgentRunBillingDto | null;
   artifacts: AgentArtifactDto[];
   createdAt: string;
   updatedAt: string;

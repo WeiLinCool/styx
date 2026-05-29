@@ -1,9 +1,12 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Pool } from 'pg';
 import {
   adminRoles,
   activationTokens,
+  aiModelEntitlementRequirements,
+  aiModels,
+  aiProviders,
   aiJobs,
   auditEvents,
   benefits,
@@ -45,6 +48,11 @@ const ids = {
   partnerLead: '00000000-0000-4000-8000-000000000091',
   contentAsset: '00000000-0000-4000-8000-000000000101',
   auditEvent: '00000000-0000-4000-8000-000000000111',
+  aiProviderDevelopment: '00000000-0000-4000-8000-000000000121',
+  aiModelFree: '00000000-0000-4000-8000-000000000122',
+  aiModelPro: '00000000-0000-4000-8000-000000000123',
+  aiModelFreeRequirement: '00000000-0000-4000-8000-000000000124',
+  aiModelProRequirement: '00000000-0000-4000-8000-000000000125',
 };
 
 async function main() {
@@ -232,6 +240,137 @@ async function main() {
         updatedAt: new Date(),
       },
     });
+
+  await db
+    .insert(aiProviders)
+    .values({
+      id: ids.aiProviderDevelopment,
+      code: 'development',
+      name: 'Development Provider',
+      providerType: 'development',
+      status: 'enabled',
+      metadata: { seed: true },
+    })
+    .onConflictDoUpdate({
+      target: aiProviders.code,
+      set: {
+        name: 'Development Provider',
+        providerType: 'development',
+        status: 'enabled',
+        baseUrl: null,
+        credentialEnvKey: null,
+        metadata: { seed: true },
+        updatedAt: new Date(),
+      },
+    });
+
+  const [developmentProvider] = await db
+    .select({ id: aiProviders.id })
+    .from(aiProviders)
+    .where(eq(aiProviders.code, 'development'))
+    .limit(1);
+
+  if (!developmentProvider) {
+    throw new Error('Development AI provider seed row was not created.');
+  }
+
+  await db
+    .insert(aiModels)
+    .values([
+      {
+        id: ids.aiModelFree,
+        providerId: developmentProvider.id,
+        code: 'dev-free-chat',
+        name: 'Development Free Chat',
+        model: 'development-free-chat',
+        status: 'enabled',
+        supportsChat: true,
+        isDefaultChat: true,
+        sortOrder: 10,
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 1,
+          completionCreditsPer1k: 2,
+          minimumCredits: 1,
+        },
+        metadata: { seed: true },
+      },
+      {
+        id: ids.aiModelPro,
+        providerId: developmentProvider.id,
+        code: 'dev-pro-chat',
+        name: 'Development Pro Chat',
+        model: 'development-pro-chat',
+        status: 'enabled',
+        supportsChat: true,
+        isDefaultChat: false,
+        sortOrder: 20,
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 2,
+          completionCreditsPer1k: 4,
+          minimumCredits: 2,
+        },
+        metadata: { seed: true },
+      },
+    ])
+    .onConflictDoUpdate({
+      target: aiModels.code,
+      set: {
+        providerId: developmentProvider.id,
+        name: sql.raw(`excluded.name`),
+        model: sql.raw(`excluded.model`),
+        status: 'enabled',
+        supportsChat: true,
+        isDefaultChat: sql.raw(`excluded.is_default_chat`),
+        sortOrder: sql.raw(`excluded.sort_order`),
+        pricing: sql.raw(`excluded.pricing`),
+        metadata: sql.raw(`excluded.metadata`),
+        updatedAt: new Date(),
+      },
+    });
+
+  const seededModels = await db
+    .select({ id: aiModels.id, code: aiModels.code })
+    .from(aiModels)
+    .where(sql`${aiModels.code} in ('dev-free-chat', 'dev-pro-chat')`);
+  const freeModel = seededModels.find((model) => model.code === 'dev-free-chat');
+  const proModel = seededModels.find((model) => model.code === 'dev-pro-chat');
+
+  if (!freeModel || !proModel) {
+    throw new Error('Development AI model seed rows were not created.');
+  }
+
+  await db.execute(sql`
+    insert into ${aiModelEntitlementRequirements} (
+      id,
+      model_id,
+      requirement_type,
+      requirement_value,
+      label
+    )
+    values
+      (
+        ${ids.aiModelFreeRequirement},
+        ${freeModel.id},
+        'none',
+        null,
+        'Free'
+      ),
+      (
+        ${ids.aiModelProRequirement},
+        ${proModel.id},
+        'membership_plan',
+        'pro-monthly',
+        'Pro'
+      )
+    on conflict (
+      model_id,
+      requirement_type,
+      (coalesce(requirement_value, ''))
+    )
+    do update set label = excluded.label
+  `);
 
   await db
     .insert(products)

@@ -36,6 +36,13 @@
       "when": 1780027800000,
       "tag": "0004_password_reset_work_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780068339103,
+      "tag": "0005_blue_mandarin",
+      "breakpoints": true
     }
   ]
 }
