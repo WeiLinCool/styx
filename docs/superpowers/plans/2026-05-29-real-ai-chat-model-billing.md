@@ -972,7 +972,7 @@ git commit -m "feat: execute chat through selected AI model"
 - Create: `src/app/api/admin/ai-models/route.ts` if mutations are implemented through API.
 - Modify: `src/server/repositories/ai-jobs.ts`
 
-- [ ] **Step 1: Update route parsing tests**
+- [x] **Step 1: Update route parsing tests**
 
 Modify `src/app/api/agent/runs/route.test.ts`:
 
@@ -995,7 +995,7 @@ test('parseCreateAgentRunBody accepts chat modelId', () => {
 });
 ```
 
-- [ ] **Step 2: Add chat models route**
+- [x] **Step 2: Add chat models route**
 
 Create `src/app/api/agent/chat-models/route.ts`:
 
@@ -1018,7 +1018,7 @@ export async function GET() {
 }
 ```
 
-- [ ] **Step 3: Update agent runs route**
+- [x] **Step 3: Update agent runs route**
 
 Modify `src/app/api/agent/runs/route.ts`:
 - Add `modelId: z.string().min(1).optional()`.
@@ -1028,15 +1028,17 @@ Modify `src/app/api/agent/runs/route.ts`:
 - Map `InsufficientCreditsError` to `{ code: 'insufficient_credits' }`.
 - Map `ProviderConfigurationError` to `{ code: 'provider_unconfigured' }`.
 
-- [ ] **Step 4: Add admin API or server mutation surface**
+- [x] **Step 4: Add admin API or server mutation surface**
+
+Deferred admin mutations to Task 5 because this slice only needs read surfaces; admin UI can use the existing repository data path.
 
 If following the existing admin action pattern, add server actions in `src/features/admin/admin-action-controls.tsx`. If API routes are preferred, create `src/app/api/admin/ai-models/route.ts` with admin session checks and provider/model payload validation. Keep secrets as env key names.
 
-- [ ] **Step 5: Extend AI job review metadata**
+- [x] **Step 5: Extend AI job review metadata**
 
 Modify `src/server/repositories/ai-jobs.ts` to read selected model and billing metadata from agent run snapshots and include it in model/config summaries.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 ```bash
 pnpm exec tsx --test src/app/api/agent/runs/route.test.ts
@@ -1045,7 +1047,7 @@ pnpm run ts-check
 
 Expected: route tests and typecheck pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/app/api/agent/chat-models/route.ts src/app/api/agent/runs/route.ts src/app/api/agent/runs/route.test.ts src/server/repositories/ai-jobs.ts src/app/api/admin/ai-models
