@@ -101,6 +101,41 @@ test('memory agent run repository lifecycle methods mark running and complete wi
   assert.equal(completed?.artifacts[0].metadata.source, 'test');
 });
 
+test('memory agent run repository extracts selected model, usage, and billing metadata', async () => {
+  const repo = createMemoryAgentRunRepository();
+  const run = await repo.createRun({
+    userId: 'user-alice',
+    taskType: 'chat',
+    prompt: 'hello',
+    provider: 'development',
+    model: 'development-free-chat',
+    capabilitySnapshot: {
+      bundleId: 'chat-model-model-1',
+      bundleCode: 'chat-dev-free-chat',
+      provider: 'development',
+      model: 'development-free-chat',
+      capabilities: [],
+      modelId: 'model-1',
+      modelCode: 'dev-free-chat',
+      modelName: 'Development Free Chat',
+      providerCode: 'development',
+      entitlement: { label: 'Free' },
+      usage: { promptTokens: 3, completionTokens: 4, totalTokens: 7 },
+      billing: { status: 'billed', creditCost: 1, ledgerEntryId: 'ledger-1' },
+    },
+    input: {},
+  });
+
+  assert.equal(run.selectedModel?.id, 'model-1');
+  assert.equal(run.selectedModel?.code, 'dev-free-chat');
+  assert.deepEqual(run.usage, { promptTokens: 3, completionTokens: 4, totalTokens: 7 });
+  assert.deepEqual(run.billing, {
+    status: 'billed',
+    creditCost: 1,
+    ledgerEntryId: 'ledger-1',
+  });
+});
+
 test('memory agent run repository lifecycle methods fail runs', async () => {
   const repo = createMemoryAgentRunRepository();
   const run = await createChatRun(repo);
