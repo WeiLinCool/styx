@@ -1,10 +1,10 @@
 workflow: full
-phase: design
+phase: open
 build_mode: null
 isolation: null
 verify_mode: null
-design_doc: null
-plan: null
+design_doc: docs/superpowers/specs/2026-05-29-admin-auth-nav-workorders-design.md
+plan: docs/superpowers/plans/2026-05-29-admin-auth-nav-workorders.md
 verify_result: pending
 verification_report: null
 branch_status: pending
