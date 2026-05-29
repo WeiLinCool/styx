@@ -10,13 +10,23 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
-import { createAgentRun, listAgentRuns } from '@/features/public/agent-runtime-client';
+import {
+  AgentRuntimeApiError,
+  createAgentRun,
+  listAgentRuns,
+  listChatModels,
+  selectChatModelId,
+  type ChatModelOption,
+} from '@/features/public/agent-runtime-client';
 import type { AgentRunDto } from '@/server/agent/types';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  modelLabel?: string;
+  billingLabel?: string;
+  usageLabel?: string;
   timestamp: number;
 }
 
@@ -33,11 +43,16 @@ const quickPrompts = [
   { icon: Globe, text: '如何用AI做短视频获客？' },
 ];
 
+const chatModelSelectionStorageKey = 'styx.chat.selectedModelId';
+
 export default function ChatPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [recentRuns, setRecentRuns] = useState<AgentRunDto[]>([]);
+  const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -53,22 +68,45 @@ export default function ChatPage() {
   useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user)) {
       setRecentRuns([]);
+      setChatModels([]);
+      setSelectedModelId(null);
       return;
     }
 
-    async function loadRuns() {
+    async function loadChatState() {
+      setModelLoading(true);
       try {
-        const runs = await listAgentRuns();
+        const [models, runs] = await Promise.all([listChatModels(), listAgentRuns()]);
         const chatRuns = runs.filter((run) => run.taskType === 'chat');
+        const storedModelId =
+          typeof window === 'undefined' ? null : window.localStorage.getItem(chatModelSelectionStorageKey);
+        const nextModelId = selectChatModelId(models, storedModelId);
+
+        setChatModels(models);
+        setSelectedModelId(nextModelId);
         setRecentRuns(chatRuns);
         setMessages(mapRunsToMessages(chatRuns));
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : '历史记录加载失败');
+        setErrorMessage(readRuntimeErrorMessage(error, '对话数据加载失败'));
+      } finally {
+        setModelLoading(false);
       }
     }
 
-    void loadRuns();
+    void loadChatState();
   }, [isLoggedIn, user]);
+
+  const selectedModel = chatModels.find((model) => model.id === selectedModelId) ?? null;
+
+  const handleModelChange = (modelId: string) => {
+    const nextModelId = selectChatModelId(chatModels, modelId);
+    setSelectedModelId(nextModelId);
+    if (nextModelId) {
+      window.localStorage.setItem(chatModelSelectionStorageKey, nextModelId);
+    } else {
+      window.localStorage.removeItem(chatModelSelectionStorageKey);
+    }
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -76,6 +114,10 @@ export default function ChatPage() {
     if (isSubmitting) return;
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
+    if (!selectedModelId) {
+      setErrorMessage(modelLoading ? '模型列表加载中' : '当前账号没有可用模型');
+      return;
+    }
 
     const prompt = input.trim();
     const now = Date.now();
@@ -92,7 +134,7 @@ export default function ChatPage() {
     setIsSubmitting(true);
 
     try {
-      const run = await createAgentRun({ taskType: 'chat', prompt });
+      const run = await createAgentRun({ taskType: 'chat', prompt, modelId: selectedModelId });
       if (run.status === 'failed') {
         setErrorMessage(run.errorMessage ?? 'AI 请求失败');
         return;
@@ -102,7 +144,7 @@ export default function ChatPage() {
       setRecentRuns(chatRuns);
       setMessages(mapRunsToMessages(chatRuns));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'AI 请求失败');
+      setErrorMessage(readRuntimeErrorMessage(error, 'AI 请求失败'));
     } finally {
       setIsSubmitting(false);
     }
@@ -185,7 +227,7 @@ export default function ChatPage() {
                       <button
                         key={qp.text}
                         onClick={() => { setInput(qp.text); }}
-                        className="flex cursor-pointer items-center gap-2 rounded-xl border border-black/5 bg-white/[0.02] px-4 py-3 text-left text-sm text-[#d1d1d6] transition-colors hover:border-black/8 hover:bg-white/[0.04]"
+                        className="flex cursor-pointer items-center gap-2 rounded-xl border border-black/5 bg-white px-4 py-3 text-left text-sm text-[#444444] transition-colors hover:border-black/8 hover:bg-[#f5f5f7]"
                       >
                         <qp.icon size={16} className="shrink-0 text-[#444444]" />
                         {qp.text}
@@ -204,7 +246,18 @@ export default function ChatPage() {
                       ? 'bg-[#1d1d1f] text-white'
                       : 'bg-[#f5f5f7] text-[#1d1d1f]'
                   }`}>
-                    {msg.content}
+                    <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                    {(msg.modelLabel || msg.billingLabel || msg.usageLabel) && (
+                      <div className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 text-[11px] ${
+                        msg.role === 'user'
+                          ? 'border-white/15 text-white/70'
+                          : 'border-black/5 text-[#6e6e73]'
+                      }`}>
+                        {msg.modelLabel && <span>{msg.modelLabel}</span>}
+                        {msg.billingLabel && <span>{msg.billingLabel}</span>}
+                        {msg.usageLabel && <span>{msg.usageLabel}</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -218,15 +271,42 @@ export default function ChatPage() {
           {errorMessage && (
             <p className="mb-2 text-sm text-red-500">{errorMessage}</p>
           )}
+          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <label className="sr-only" htmlFor="chat-model-selector">聊天模型</label>
+            <select
+              id="chat-model-selector"
+              value={selectedModelId ?? ''}
+              onChange={(event) => handleModelChange(event.target.value)}
+              disabled={modelLoading || chatModels.length === 0 || isSubmitting}
+              className="h-9 w-full min-w-0 rounded-lg border border-black/10 bg-white px-3 text-xs text-[#1d1d1f] outline-none transition-colors focus:border-black/20 disabled:cursor-not-allowed disabled:bg-[#f5f5f7] disabled:text-[#999999] sm:w-[360px]"
+              title={selectedModel ? `${selectedModel.name} · ${selectedModel.entitlementLabel} · ${selectedModel.pricingSummary}` : undefined}
+            >
+              {chatModels.length === 0 ? (
+                <option value="">{modelLoading ? '模型加载中' : '无可用模型'}</option>
+              ) : (
+                chatModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} · {model.entitlementLabel} · {model.pricingSummary}
+                  </option>
+                ))
+              )}
+            </select>
+            {selectedModel && (
+              <div className="min-w-0 text-xs text-[#6e6e73] sm:text-right">
+                <span className="block truncate">{selectedModel.providerName}</span>
+                <span className="block truncate">{selectedModel.entitlementLabel} · {selectedModel.pricingSummary}</span>
+              </div>
+            )}
+          </div>
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="输入消息..."
-              disabled={isSubmitting}
+              disabled={isSubmitting || modelLoading || chatModels.length === 0}
               className="flex-1 rounded-xl border border-black/8 bg-white/[0.03] px-4 py-2.5 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none transition-colors focus:border-black/10"
             />
-            <button type="submit" disabled={isSubmitting} className="apple-btn apple-btn-primary cursor-pointer rounded-xl px-4 py-2.5 text-sm">
+            <button type="submit" disabled={isSubmitting || modelLoading || chatModels.length === 0} className="apple-btn apple-btn-primary cursor-pointer rounded-xl px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50">
               <Send size={16} />
             </button>
           </form>
@@ -274,12 +354,63 @@ function mapRunsToMessages(runs: AgentRunDto[]): Message[] {
           id: `${run.id}-assistant`,
           role: 'assistant',
           content: run.finalMessage,
+          modelLabel: formatModelLabel(run),
+          billingLabel: formatBillingLabel(run),
+          usageLabel: formatUsageLabel(run),
           timestamp: new Date(run.updatedAt).getTime(),
         });
       }
 
       return items;
     });
+}
+
+function formatModelLabel(run: AgentRunDto) {
+  const modelName = run.selectedModel?.name ?? run.capabilitySummary.model;
+  return modelName ? `模型：${modelName}` : undefined;
+}
+
+function formatBillingLabel(run: AgentRunDto) {
+  if (!run.billing) {
+    return undefined;
+  }
+
+  if (typeof run.billing.creditCost === 'number') {
+    return `消耗：${run.billing.creditCost} 积分`;
+  }
+
+  return `计费：${run.billing.status}`;
+}
+
+function formatUsageLabel(run: AgentRunDto) {
+  if (!run.usage) {
+    return undefined;
+  }
+
+  return `用量：${run.usage.totalTokens} tokens`;
+}
+
+function readRuntimeErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof AgentRuntimeApiError) {
+    if (error.code === 'insufficient_credits') {
+      return '积分不足，无法使用当前模型';
+    }
+    if (error.code === 'model_entitlement_required') {
+      return '当前账号无权使用所选模型';
+    }
+    if (error.code === 'model_not_available') {
+      return '所选模型不可用，请切换模型后重试';
+    }
+    if (error.code === 'provider_unconfigured') {
+      return '模型服务暂未配置，请稍后再试';
+    }
+    if (error.code === 'provider_error') {
+      return '模型服务请求失败，请稍后再试';
+    }
+    return error.message;
+  }
+
+  return error instanceof Error ? error.message : fallback;
 }
 
 function mapRunToConversationSummary(run: AgentRunDto): ConversationSummary {
