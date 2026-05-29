@@ -4,6 +4,9 @@ import { Pool } from 'pg';
 import {
   adminRoles,
   activationTokens,
+  aiModelEntitlementRequirements,
+  aiModels,
+  aiProviders,
   aiJobs,
   auditEvents,
   benefits,
@@ -45,6 +48,11 @@ const ids = {
   partnerLead: '00000000-0000-4000-8000-000000000091',
   contentAsset: '00000000-0000-4000-8000-000000000101',
   auditEvent: '00000000-0000-4000-8000-000000000111',
+  aiProviderDevelopment: '00000000-0000-4000-8000-000000000121',
+  aiModelFree: '00000000-0000-4000-8000-000000000122',
+  aiModelPro: '00000000-0000-4000-8000-000000000123',
+  aiModelFreeRequirement: '00000000-0000-4000-8000-000000000124',
+  aiModelProRequirement: '00000000-0000-4000-8000-000000000125',
 };
 
 async function main() {
@@ -232,6 +240,95 @@ async function main() {
         updatedAt: new Date(),
       },
     });
+
+  await db
+    .insert(aiProviders)
+    .values({
+      id: ids.aiProviderDevelopment,
+      code: 'development',
+      name: 'Development Provider',
+      providerType: 'development',
+      status: 'enabled',
+      metadata: { seed: true },
+    })
+    .onConflictDoUpdate({
+      target: aiProviders.id,
+      set: {
+        name: 'Development Provider',
+        providerType: 'development',
+        status: 'enabled',
+        updatedAt: new Date(),
+      },
+    });
+
+  await db
+    .insert(aiModels)
+    .values([
+      {
+        id: ids.aiModelFree,
+        providerId: ids.aiProviderDevelopment,
+        code: 'dev-free-chat',
+        name: 'Development Free Chat',
+        model: 'development-free-chat',
+        status: 'enabled',
+        supportsChat: true,
+        isDefaultChat: true,
+        sortOrder: 10,
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 1,
+          completionCreditsPer1k: 2,
+          minimumCredits: 1,
+        },
+        metadata: { seed: true },
+      },
+      {
+        id: ids.aiModelPro,
+        providerId: ids.aiProviderDevelopment,
+        code: 'dev-pro-chat',
+        name: 'Development Pro Chat',
+        model: 'development-pro-chat',
+        status: 'enabled',
+        supportsChat: true,
+        isDefaultChat: false,
+        sortOrder: 20,
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 2,
+          completionCreditsPer1k: 4,
+          minimumCredits: 2,
+        },
+        metadata: { seed: true },
+      },
+    ])
+    .onConflictDoUpdate({
+      target: aiModels.id,
+      set: {
+        status: 'enabled',
+        supportsChat: true,
+        updatedAt: new Date(),
+      },
+    });
+
+  await db
+    .insert(aiModelEntitlementRequirements)
+    .values([
+      {
+        id: ids.aiModelFreeRequirement,
+        modelId: ids.aiModelFree,
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+      {
+        id: ids.aiModelProRequirement,
+        modelId: ids.aiModelPro,
+        requirementType: 'membership_plan',
+        requirementValue: 'pro-monthly',
+        label: 'Pro',
+      },
+    ])
+    .onConflictDoNothing();
 
   await db
     .insert(products)
