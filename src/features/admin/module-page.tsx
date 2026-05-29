@@ -94,7 +94,7 @@ export function AdminModulePage<TRecord extends { id: string }>({
   records,
   columns,
   searchPlaceholder,
-  emptyLabel = 'No records',
+  emptyLabel = '暂无记录',
 }: AdminModulePageProps<TRecord>) {
   return (
     <div className="space-y-4">
@@ -104,7 +104,7 @@ export function AdminModulePage<TRecord extends { id: string }>({
           <p className="mt-1 text-sm text-neutral-600">{description}</p>
         </div>
         <StatusBadge
-          value={source === 'database' ? 'PostgreSQL' : 'Seed fallback'}
+          value={source === 'database' ? 'PostgreSQL' : '种子数据'}
           tone={source === 'database' ? 'success' : 'warning'}
         />
       </div>
@@ -129,7 +129,7 @@ export function AdminModulePage<TRecord extends { id: string }>({
       <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
         <CardHeader className="gap-3 border-b border-neutral-200 px-4 py-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <CardTitle className="text-sm font-semibold">Operational queue</CardTitle>
+            <CardTitle className="text-sm font-semibold">运营队列</CardTitle>
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="relative w-full md:w-80">
                 <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-neutral-400" />
@@ -141,7 +141,7 @@ export function AdminModulePage<TRecord extends { id: string }>({
               </div>
               <Button type="button" variant="outline" disabled className="h-9 rounded-md">
                 <SlidersHorizontal className="h-4 w-4" />
-                Filters
+                筛选
               </Button>
             </div>
           </div>

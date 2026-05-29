@@ -65,14 +65,14 @@ export default async function AdminPartnersPage() {
 
   return (
     <AdminModulePage
-      title="Partners"
+      title="合作管理"
       description="合作线索阶段、来源、联系人、权益兴趣与下一步动作。"
       source={data.source}
       metrics={data.metrics}
       filters={data.filters}
       records={data.records}
       columns={columns}
-      searchPlaceholder="Search company, contact, source..."
+      searchPlaceholder="搜索公司、联系人或来源..."
     />
   );
 }

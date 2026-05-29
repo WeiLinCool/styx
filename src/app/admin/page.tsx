@@ -97,11 +97,11 @@ export default async function AdminDashboardPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-neutral-950">Dashboard</h2>
+          <h2 className="text-base font-semibold text-neutral-950">仪表盘</h2>
           <p className="mt-1 text-sm text-neutral-600">账号、订单、AI 任务与合作线索的运营概览。</p>
         </div>
         <StatusBadge
-          value={dashboard.source === 'database' ? 'PostgreSQL' : 'Seed fallback'}
+          value={dashboard.source === 'database' ? 'PostgreSQL' : '种子数据'}
           tone={dashboard.source === 'database' ? 'success' : 'warning'}
         />
       </div>
@@ -109,7 +109,7 @@ export default async function AdminDashboardPage() {
       <KpiGrid dashboard={dashboard} />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <SectionCard title="Recent Users" icon={<Users className="h-4 w-4" />}>
+        <SectionCard title="最近用户" icon={<Users className="h-4 w-4" />}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -137,7 +137,7 @@ export default async function AdminDashboardPage() {
           </Table>
         </SectionCard>
 
-        <SectionCard title="Recent AI Jobs" icon={<Bot className="h-4 w-4" />}>
+        <SectionCard title="最近 AI 任务" icon={<Bot className="h-4 w-4" />}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -165,7 +165,7 @@ export default async function AdminDashboardPage() {
           </Table>
         </SectionCard>
 
-        <SectionCard title="Recent Orders" icon={<ReceiptText className="h-4 w-4" />}>
+        <SectionCard title="最近订单" icon={<ReceiptText className="h-4 w-4" />}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -191,7 +191,7 @@ export default async function AdminDashboardPage() {
           </Table>
         </SectionCard>
 
-        <SectionCard title="Partner Leads" icon={<Handshake className="h-4 w-4" />}>
+        <SectionCard title="合作线索" icon={<Handshake className="h-4 w-4" />}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -218,7 +218,7 @@ export default async function AdminDashboardPage() {
         </SectionCard>
       </div>
 
-      <SectionCard title="Notices" icon={<AlertTriangle className="h-4 w-4" />}>
+      <SectionCard title="系统提示" icon={<AlertTriangle className="h-4 w-4" />}>
         <div className="divide-y divide-neutral-200">
           {dashboard.notices.map((notice) => (
             <div key={notice.id} className="flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">

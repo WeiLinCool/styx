@@ -65,14 +65,14 @@ export default async function AdminBenefitsPage() {
 
   return (
     <AdminModulePage
-      title="Benefits"
+      title="权益管理"
       description="权益规则、额度单位、适用会员方案与手动调整入口。"
       source={data.source}
       metrics={data.metrics}
       filters={data.filters}
       records={data.records}
       columns={columns}
-      searchPlaceholder="Search benefit, code, plan..."
+      searchPlaceholder="搜索权益、代码或方案..."
     />
   );
 }

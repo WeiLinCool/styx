@@ -42,8 +42,8 @@ const columns: AdminColumn<AdminMembershipRow>[] = [
     label: '权益与授权',
     render: (plan) => (
       <div>
-        <div className="text-xs text-neutral-700">{plan.benefitCount} benefit rules</div>
-        <div className="mt-1 text-xs text-neutral-500">{plan.entitlementCount} entitlements</div>
+        <div className="text-xs text-neutral-700">{plan.benefitCount} 条权益规则</div>
+        <div className="mt-1 text-xs text-neutral-500">{plan.entitlementCount} 条授权</div>
       </div>
     ),
   },
@@ -65,14 +65,14 @@ export default async function AdminMembershipsPage() {
 
   return (
     <AdminModulePage
-      title="Memberships"
+      title="会员管理"
       description="会员方案定义、价格周期、权益数量与授权用户概览。"
       source={data.source}
       metrics={data.metrics}
       filters={data.filters}
       records={data.records}
       columns={columns}
-      searchPlaceholder="Search plan, code, pricing..."
+      searchPlaceholder="搜索方案、代码或价格..."
     />
   );
 }

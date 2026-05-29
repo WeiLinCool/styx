@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { createAgentRun } from '@/features/public/agent-runtime-client';
 
 interface Message {
   id: string;
@@ -30,6 +31,8 @@ export default function ChatPage() {
   const { user, isLoggedIn, openLoginModal } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -39,34 +42,46 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
+    if (isSubmitting) return;
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
 
+    const prompt = input.trim();
     const now = Date.now();
     msgCounter.current += 1;
     const userMsg: Message = {
       id: `msg-${now}-${msgCounter.current}`,
       role: 'user',
-      content: input.trim(),
+      content: prompt,
       timestamp: now,
     };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setErrorMessage(null);
+    setIsSubmitting(true);
 
-    // 模拟AI回复
-    setTimeout(() => {
+    try {
+      const run = await createAgentRun({ taskType: 'chat', prompt });
+      if (run.status === 'failed') {
+        setErrorMessage(run.errorMessage ?? 'AI 请求失败');
+        return;
+      }
       msgCounter.current += 1;
       const aiMsg: Message = {
         id: `msg-${Date.now()}-${msgCounter.current}`,
         role: 'assistant',
-        content: '您好！我是南风AI助手，专注于石头印画创作和AI视频工作流。请问有什么可以帮助您的？',
+        content: run.finalMessage ?? 'AI 已完成处理，但没有返回可展示的回复。',
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, aiMsg]);
-    }, 1200);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'AI 请求失败');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const conversations = [
@@ -180,14 +195,18 @@ export default function ChatPage() {
 
         {/* 输入区 */}
         <div className="border-t border-black/5 p-4">
+          {errorMessage && (
+            <p className="mb-2 text-sm text-red-500">{errorMessage}</p>
+          )}
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="输入消息..."
+              disabled={isSubmitting}
               className="flex-1 rounded-xl border border-black/8 bg-white/[0.03] px-4 py-2.5 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none transition-colors focus:border-black/10"
             />
-            <button type="submit" className="apple-btn apple-btn-primary cursor-pointer rounded-xl px-4 py-2.5 text-sm">
+            <button type="submit" disabled={isSubmitting} className="apple-btn apple-btn-primary cursor-pointer rounded-xl px-4 py-2.5 text-sm">
               <Send size={16} />
             </button>
           </form>

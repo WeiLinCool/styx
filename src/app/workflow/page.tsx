@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { createAgentRun } from '@/features/public/agent-runtime-client';
 import { workflowImageModels, workflowVideoModels } from '@/features/public/tool-data';
 import {
   ArrowLeft,
@@ -553,7 +554,7 @@ function DreamGeneration({ videoModel }: { videoModel: string }) {
 
 // 主页面
 export default function WorkflowPage() {
-  const { user, isLoggedIn } = useAuth();
+  const { user, isLoggedIn, openLoginModal } = useAuth();
   const [step, setStep] = useState(0); // 0: upload, 1: storyboard, 2: scene, 3: dream
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [selectedImageModel, setSelectedImageModel] = useState('gpt-image-2.0');
@@ -566,38 +567,97 @@ export default function WorkflowPage() {
   const [aiSceneGenerated, setAiSceneGenerated] = useState(false);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [dreaming, setDreaming] = useState(false);
+  const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const storyboardOperationRef = useRef(0);
+  const sceneOperationRef = useRef(0);
+  const dreamOperationRef = useRef(0);
   const activationRequired = isLoggedIn && user ? requiresActivation(user) : false;
 
   const currentImageModel = workflowImageModels.find(m => m.id === selectedImageModel);
   const currentVideoModel = workflowVideoModels.find(m => m.id === selectedVideoModel);
 
-  const handleSubmitStoryboard = useCallback(() => {
+  const runWorkflowAgent = useCallback(async (
+    runPrompt: string,
+    input: Record<string, unknown>,
+    fallbackMessage: string,
+  ) => {
+    const run = await createAgentRun({
+      taskType: 'workflow',
+      prompt: runPrompt,
+      input,
+    });
+    if (run.status === 'failed') {
+      throw new Error(run.errorMessage ?? 'AI 工作流请求失败');
+    }
+    return run.finalMessage ?? fallbackMessage;
+  }, []);
+
+  const handleSubmitStoryboard = useCallback(async () => {
+    if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
     if (!uploadedImage) return;
+    if (storyboardGenerating) return;
+    const operationId = storyboardOperationRef.current + 1;
+    storyboardOperationRef.current = operationId;
     setStep(1);
     setStoryboardGenerating(true);
     setStoryboardGenerated(false);
-    setTimeout(() => {
+    setRuntimeStatus(null);
+    setRuntimeError(null);
+    try {
+      const message = await runWorkflowAgent(prompt, {
+        stage: 'storyboard',
+        imageModel: selectedImageModel,
+        hasUploadedImage: Boolean(uploadedImage),
+      }, '分镜任务已完成，但没有返回可展示的结果说明。');
+      if (storyboardOperationRef.current !== operationId) return;
+      setRuntimeStatus(message);
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
-    }, 6000);
-  }, [activationRequired, uploadedImage]);
+    } catch (error) {
+      if (storyboardOperationRef.current !== operationId) return;
+      setStoryboardGenerating(false);
+      setStoryboardGenerated(false);
+      setRuntimeError(error instanceof Error ? error.message : '分镜生成请求失败');
+    }
+  }, [activationRequired, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, storyboardGenerating, uploadedImage]);
 
   const handleCancelStoryboard = useCallback(() => {
+    storyboardOperationRef.current += 1;
     setStoryboardGenerating(false);
     setStoryboardGenerated(false);
+    setRuntimeStatus(null);
     setStep(0);
   }, []);
 
-  const handleRegenerateStoryboard = useCallback(() => {
+  const handleRegenerateStoryboard = useCallback(async () => {
+    if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
+    if (storyboardGenerating) return;
+    const operationId = storyboardOperationRef.current + 1;
+    storyboardOperationRef.current = operationId;
     setStoryboardGenerating(true);
     setStoryboardGenerated(false);
-    setTimeout(() => {
+    setRuntimeStatus(null);
+    setRuntimeError(null);
+    try {
+      const message = await runWorkflowAgent(prompt, {
+        stage: 'storyboard-regenerate',
+        imageModel: selectedImageModel,
+        hasUploadedImage: Boolean(uploadedImage),
+      }, '分镜重新生成已完成，但没有返回可展示的结果说明。');
+      if (storyboardOperationRef.current !== operationId) return;
+      setRuntimeStatus(message);
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
-    }, 6000);
-  }, [activationRequired]);
+    } catch (error) {
+      if (storyboardOperationRef.current !== operationId) return;
+      setStoryboardGenerating(false);
+      setStoryboardGenerated(false);
+      setRuntimeError(error instanceof Error ? error.message : '分镜重新生成请求失败');
+    }
+  }, [activationRequired, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, storyboardGenerating, uploadedImage]);
 
   const handleNextFromStoryboard = useCallback(() => {
     setStep(2);
@@ -615,36 +675,98 @@ export default function WorkflowPage() {
     setAiSceneGenerated(false);
   }, []);
 
-  const handleAIGenerateScene = useCallback(() => {
+  const handleAIGenerateScene = useCallback(async () => {
+    if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
+    if (aiSceneGenerating) return;
+    const operationId = sceneOperationRef.current + 1;
+    sceneOperationRef.current = operationId;
     setAiSceneGenerating(true);
     setAiSceneGenerated(false);
-    setTimeout(() => {
+    setRuntimeStatus(null);
+    setRuntimeError(null);
+    try {
+      const message = await runWorkflowAgent(prompt, {
+        stage: 'scene',
+        selectedImageModel,
+        selectedScene,
+        hasCustomScene: Boolean(customSceneUrl),
+      }, 'AI 场景任务已完成，但没有返回可展示的结果说明。');
+      if (sceneOperationRef.current !== operationId) return;
+      setRuntimeStatus(message);
       setAiSceneGenerating(false);
       setAiSceneGenerated(true);
-    }, 4000);
-  }, [activationRequired]);
+    } catch (error) {
+      if (sceneOperationRef.current !== operationId) return;
+      setAiSceneGenerating(false);
+      setAiSceneGenerated(false);
+      setRuntimeError(error instanceof Error ? error.message : 'AI 场景生成请求失败');
+    }
+  }, [activationRequired, aiSceneGenerating, customSceneUrl, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, selectedScene]);
 
   const handleAiSceneCancel = useCallback(() => {
+    sceneOperationRef.current += 1;
     setAiSceneGenerating(false);
     setAiSceneGenerated(false);
+    setRuntimeStatus(null);
   }, []);
 
-  const handleAiSceneRegenerate = useCallback(() => {
+  const handleAiSceneRegenerate = useCallback(async () => {
+    if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
+    if (aiSceneGenerating) return;
+    const operationId = sceneOperationRef.current + 1;
+    sceneOperationRef.current = operationId;
     setAiSceneGenerating(true);
     setAiSceneGenerated(false);
-    setTimeout(() => {
+    setRuntimeStatus(null);
+    setRuntimeError(null);
+    try {
+      const message = await runWorkflowAgent(prompt, {
+        stage: 'scene-regenerate',
+        selectedImageModel,
+        selectedScene,
+        hasCustomScene: Boolean(customSceneUrl),
+      }, 'AI 场景重新生成已完成，但没有返回可展示的结果说明。');
+      if (sceneOperationRef.current !== operationId) return;
+      setRuntimeStatus(message);
       setAiSceneGenerating(false);
       setAiSceneGenerated(true);
-    }, 4000);
-  }, [activationRequired]);
+    } catch (error) {
+      if (sceneOperationRef.current !== operationId) return;
+      setAiSceneGenerating(false);
+      setAiSceneGenerated(false);
+      setRuntimeError(error instanceof Error ? error.message : 'AI 场景重新生成请求失败');
+    }
+  }, [activationRequired, aiSceneGenerating, customSceneUrl, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, selectedScene]);
 
-  const handleStartDream = useCallback(() => {
+  const handleStartDream = useCallback(async () => {
+    if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
+    if (dreaming) return;
+    const operationId = dreamOperationRef.current + 1;
+    dreamOperationRef.current = operationId;
     setStep(3);
     setDreaming(true);
-  }, [activationRequired]);
+    setRuntimeStatus(null);
+    setRuntimeError(null);
+    try {
+      const message = await runWorkflowAgent(prompt, {
+        stage: 'dream',
+        videoModel: selectedVideoModel,
+        selectedScene,
+        hasCustomScene: Boolean(customSceneUrl),
+        hasAiScene: aiSceneGenerated,
+      }, '造梦任务已提交，但没有返回可展示的结果说明。');
+      if (dreamOperationRef.current !== operationId) return;
+      setRuntimeStatus(message);
+      setDreaming(false);
+    } catch (error) {
+      if (dreamOperationRef.current !== operationId) return;
+      setDreaming(false);
+      setRuntimeError(error instanceof Error ? error.message : '造梦请求失败');
+    }
+  }, [activationRequired, aiSceneGenerated, customSceneUrl, dreaming, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedScene, selectedVideoModel]);
 
   const steps = [
     { label: '上传图案', icon: Upload },
@@ -660,6 +782,16 @@ export default function WorkflowPage() {
       <div className="mx-auto max-w-7xl px-4 pt-20 pb-12 sm:px-6">
         {activationRequired && (
           <ProtectedAccountPanel accountState={user?.accountState} title="激活账号后使用 AI 工作流" />
+        )}
+        {(runtimeError || runtimeStatus) && (
+          <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+            runtimeError
+              ? 'border-red-500/20 bg-red-500/5 text-red-500'
+              : 'border-black/[0.06] bg-[#f5f5f7] text-[#555555]'
+          }`}
+          >
+            {runtimeError ?? runtimeStatus}
+          </div>
         )}
         {/* 步骤条 */}
         <div className="mb-8">

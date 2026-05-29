@@ -20,7 +20,7 @@ function getAccessErrorMessage(error: unknown) {
     return error.message;
   }
 
-  return 'Admin access is unavailable.';
+  return '后台访问不可用。';
 }
 
 function createDeniedSession(): SessionContext {
@@ -37,8 +37,8 @@ function AdminAccessDenied({ reason }: { reason: string }) {
     <AdminShell session={createDeniedSession()} dataSource="seed">
       <section className="rounded-lg border border-amber-200 bg-white p-5 shadow-sm">
         <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-base font-semibold text-neutral-950">Admin access denied</h2>
-          <StatusBadge value="development" tone="warning" />
+          <h2 className="text-base font-semibold text-neutral-950">后台访问被拒绝</h2>
+          <StatusBadge value="开发环境" tone="warning" />
         </div>
         <p className="max-w-2xl text-sm leading-6 text-neutral-600">
           后台内容已阻断。开发环境需要配置可解析的管理员会话，或显式设置

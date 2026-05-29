@@ -15,15 +15,16 @@ import {
 import { cn } from '@/lib/utils';
 
 const adminNavItems = [
-  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/users', label: 'Users', icon: Users },
-  { href: '/admin/memberships', label: 'Memberships', icon: ShieldCheck },
-  { href: '/admin/benefits', label: 'Benefits', icon: Gift },
-  { href: '/admin/orders', label: 'Orders', icon: ReceiptText },
-  { href: '/admin/ai-jobs', label: 'AI Jobs', icon: Bot },
-  { href: '/admin/partners', label: 'Partners', icon: Handshake },
-  { href: '/admin/content', label: 'Content', icon: FileText },
-  { href: '/admin/settings', label: 'Settings', icon: Settings },
+  { href: '/admin', label: '仪表盘', icon: LayoutDashboard },
+  { href: '/admin/users', label: '用户', icon: Users },
+  { href: '/admin/memberships', label: '会员', icon: ShieldCheck },
+  { href: '/admin/benefits', label: '权益', icon: Gift },
+  { href: '/admin/orders', label: '订单', icon: ReceiptText },
+  { href: '/admin/ai-jobs', label: 'AI 任务', icon: Bot },
+  { href: '/admin/agent-capabilities', label: 'Agent 能力', icon: Boxes },
+  { href: '/admin/partners', label: '合作', icon: Handshake },
+  { href: '/admin/content', label: '内容', icon: FileText },
+  { href: '/admin/settings', label: '设置', icon: Settings },
 ];
 
 type AdminNavProps = {
@@ -32,7 +33,7 @@ type AdminNavProps = {
 
 export function AdminNav({ className }: AdminNavProps) {
   return (
-    <nav className={cn('flex flex-col gap-1', className)} aria-label="Admin navigation">
+    <nav className={cn('flex flex-col gap-1', className)} aria-label="后台导航">
       {adminNavItems.map((item) => {
         const Icon = item.icon;
         const isDashboard = item.href === '/admin';
@@ -55,9 +56,9 @@ export function AdminNav({ className }: AdminNavProps) {
       <div className="mt-3 rounded-md border border-neutral-200 bg-white p-3 text-xs text-neutral-600">
         <div className="mb-2 flex items-center gap-2 font-semibold text-neutral-950">
           <Boxes className="h-3.5 w-3.5" />
-          Ops Scope
+          运营范围
         </div>
-        <p className="leading-5">Management modules are read-only until Task 7 wires mutation APIs.</p>
+        <p className="leading-5">客服可处理账号激活、订单和 AI 任务等运营事项。</p>
       </div>
     </nav>
   );

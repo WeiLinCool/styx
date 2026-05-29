@@ -24,7 +24,7 @@ async function postAdminAction(url: string, body: Record<string, unknown>) {
     const message =
       typeof payload?.error?.message === 'string'
         ? payload.error.message
-        : 'Admin action failed.';
+        : '后台操作失败。';
     throw new Error(message);
   }
 
@@ -58,7 +58,7 @@ function ActionButtons({
     } catch (error) {
       setState({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Admin action failed.',
+        message: error instanceof Error ? error.message : '后台操作失败。',
       });
     } finally {
       setPendingAction(null);
@@ -111,22 +111,44 @@ export function AdminUserActions({ userId }: { userId: string }) {
     <ActionButtons
       actions={[
         {
-          label: 'Reissue activation',
+          label: '重发激活',
           url: `/api/admin/users/${userId}/activation`,
           body: { purpose: 'account_activation' },
-          successMessage: 'Activation token reissued.',
+          successMessage: '激活 token 已重发。',
         },
         {
-          label: 'Activate',
+          label: '直接激活',
           url: `/api/admin/users/${userId}/activate`,
-          body: { reason: 'admin_action' },
-          successMessage: 'Account activated.',
+          body: { reason: '客服后台操作' },
+          successMessage: '账号已激活。',
         },
         {
-          label: 'Suspend',
+          label: '停用',
           url: `/api/admin/users/${userId}/suspend`,
-          body: { reason: 'admin_action' },
-          successMessage: 'Account suspended.',
+          body: { reason: '客服后台操作' },
+          successMessage: '账号已停用。',
+          variant: 'destructive',
+        },
+      ]}
+    />
+  );
+}
+
+export function AdminActivationWorkOrderActions({ workOrderId }: { workOrderId: string }) {
+  return (
+    <ActionButtons
+      actions={[
+        {
+          label: '通过',
+          url: `/api/admin/activation-work-orders/${workOrderId}/approve`,
+          body: { reason: '客服审核通过' },
+          successMessage: '激活工单已通过，账号已激活。',
+        },
+        {
+          label: '拒绝',
+          url: `/api/admin/activation-work-orders/${workOrderId}/reject`,
+          body: { reason: '客服审核拒绝' },
+          successMessage: '激活工单已拒绝。',
           variant: 'destructive',
         },
       ]}
@@ -139,33 +161,33 @@ export function AdminOrderActions({ orderId }: { orderId: string }) {
     <ActionButtons
       actions={[
         {
-          label: 'Mark paid',
+          label: '标记已支付',
           url: `/api/admin/orders/${orderId}/status`,
-          body: { action: 'update_status', status: 'paid', note: 'Marked paid by admin.' },
-          successMessage: 'Order marked paid.',
+          body: { action: 'update_status', status: 'paid', note: '客服标记为已支付。' },
+          successMessage: '订单已标记为已支付。',
         },
         {
-          label: 'Fulfill',
+          label: '标记履约',
           url: `/api/admin/orders/${orderId}/status`,
           body: {
             action: 'update_status',
             status: 'fulfilled',
-            note: 'Fulfilled by admin.',
+            note: '客服标记为已履约。',
           },
-          successMessage: 'Order fulfilled.',
+          successMessage: '订单已标记为已履约。',
         },
         {
-          label: 'Cancel',
+          label: '取消',
           url: `/api/admin/orders/${orderId}/status`,
-          body: { action: 'update_status', status: 'cancelled', note: 'Cancelled by admin.' },
-          successMessage: 'Order cancelled.',
+          body: { action: 'update_status', status: 'cancelled', note: '客服取消订单。' },
+          successMessage: '订单已取消。',
           variant: 'destructive',
         },
         {
-          label: 'Add note',
+          label: '备注',
           url: `/api/admin/orders/${orderId}/status`,
-          body: { action: 'add_note', note: 'Reviewed by admin.' },
-          successMessage: 'Order note added.',
+          body: { action: 'add_note', note: '客服已复核。' },
+          successMessage: '订单备注已添加。',
         },
       ]}
     />
@@ -177,31 +199,70 @@ export function AdminAiJobActions({ jobId }: { jobId: string }) {
     <ActionButtons
       actions={[
         {
-          label: 'Review',
+          label: '复核',
           url: `/api/admin/ai-jobs/${jobId}/review`,
-          body: { action: 'review', note: 'Reviewed by admin.' },
-          successMessage: 'AI job reviewed.',
+          body: { action: 'review', note: '客服已复核。' },
+          successMessage: 'AI 任务已复核。',
         },
         {
-          label: 'Rerun',
+          label: '重跑',
           url: `/api/admin/ai-jobs/${jobId}/review`,
-          body: { action: 'rerun', note: 'Queued for rerun by admin.' },
-          successMessage: 'AI job queued.',
+          body: { action: 'rerun', note: '客服加入重跑队列。' },
+          successMessage: 'AI 任务已加入队列。',
         },
         {
-          label: 'Resolve',
+          label: '解决',
           url: `/api/admin/ai-jobs/${jobId}/review`,
-          body: { action: 'mark_resolved', note: 'Marked resolved by admin.' },
-          successMessage: 'AI job resolved.',
+          body: { action: 'mark_resolved', note: '客服标记为已解决。' },
+          successMessage: 'AI 任务已解决。',
         },
         {
-          label: 'Cancel',
+          label: '取消',
           url: `/api/admin/ai-jobs/${jobId}/review`,
-          body: { action: 'cancel', note: 'Cancelled by admin.' },
-          successMessage: 'AI job cancelled.',
+          body: { action: 'cancel', note: '客服取消任务。' },
+          successMessage: 'AI 任务已取消。',
           variant: 'destructive',
         },
       ]}
     />
   );
+}
+
+export function AdminAgentCapabilityActions({
+  capabilityId,
+  status,
+}: {
+  capabilityId: string;
+  status: 'enabled' | 'disabled' | 'archived';
+}) {
+  const actions = [
+    status !== 'enabled'
+      ? {
+          label: '启用',
+          url: `/api/admin/agent-capabilities/${capabilityId}/status`,
+          body: { status: 'enabled' },
+          successMessage: 'Agent 能力已启用。',
+        }
+      : null,
+    status !== 'disabled'
+      ? {
+          label: '停用',
+          url: `/api/admin/agent-capabilities/${capabilityId}/status`,
+          body: { status: 'disabled' },
+          successMessage: 'Agent 能力已停用。',
+          variant: 'destructive' as const,
+        }
+      : null,
+    status !== 'archived'
+      ? {
+          label: '归档',
+          url: `/api/admin/agent-capabilities/${capabilityId}/status`,
+          body: { status: 'archived' },
+          successMessage: 'Agent 能力已归档。',
+          variant: 'destructive' as const,
+        }
+      : null,
+  ].filter((action): action is NonNullable<typeof action> => Boolean(action));
+
+  return <ActionButtons actions={actions} />;
 }

@@ -70,14 +70,14 @@ export default async function AdminContentPage() {
 
   return (
     <AdminModulePage
-      title="Content"
+      title="内容管理"
       description="首页内容、banner、教程、示例资产与媒体引用管理视图。"
       source={data.source}
       metrics={data.metrics}
       filters={data.filters}
       records={data.records}
       columns={columns}
-      searchPlaceholder="Search slug, title, placement..."
+      searchPlaceholder="搜索 slug、标题或位置..."
     />
   );
 }

@@ -35,6 +35,13 @@ export const activationTokenPurpose = pgEnum('activation_token_purpose', [
   'password_reset',
 ]);
 
+export const activationWorkOrderStatus = pgEnum('activation_work_order_status', [
+  'pending',
+  'approved',
+  'rejected',
+  'expired',
+]);
+
 export const adminRole = pgEnum('admin_role', [
   'owner',
   'admin',
@@ -100,6 +107,36 @@ export const aiJobStatus = pgEnum('ai_job_status', [
   'succeeded',
   'failed',
   'cancelled',
+]);
+
+export const agentCapabilityKind = pgEnum('agent_capability_kind', [
+  'model',
+  'skill',
+  'mcp_server',
+  'plugin',
+]);
+
+export const agentCapabilityStatus = pgEnum('agent_capability_status', [
+  'enabled',
+  'disabled',
+  'archived',
+]);
+
+export const agentRunStatus = pgEnum('agent_run_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+]);
+
+export const agentArtifactKind = pgEnum('agent_artifact_kind', [
+  'text',
+  'image',
+  'video',
+  'document',
+  'workflow',
+  'json',
 ]);
 
 export const partnerLeadStatus = pgEnum('partner_lead_status', [
@@ -205,6 +242,37 @@ export const activationTokens = pgTable(
   (table) => [
     index('activation_tokens_user_id_idx').on(table.userId),
     uniqueIndex('activation_tokens_token_hash_unique_idx').on(table.tokenHash),
+  ],
+);
+
+export const activationWorkOrders = pgTable(
+  'activation_work_orders',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    status: activationWorkOrderStatus('status').notNull().default('pending'),
+    fingerprintDigest: text('fingerprint_digest').notNull(),
+    deviceMetadata: jsonb('device_metadata').$type<Record<string, unknown>>().notNull().default({}),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    approvedByUserId: uuid('approved_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    rejectedByUserId: uuid('rejected_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('activation_work_orders_user_id_idx').on(table.userId),
+    index('activation_work_orders_status_idx').on(table.status),
+    uniqueIndex('activation_work_orders_code_unique_idx').on(table.code),
   ],
 );
 
@@ -443,6 +511,134 @@ export const aiJobs = pgTable(
     index('ai_jobs_user_id_idx').on(table.userId),
     index('ai_jobs_status_idx').on(table.status),
     index('ai_jobs_type_idx').on(table.type),
+  ],
+);
+
+export const agentCapabilities = pgTable(
+  'agent_capabilities',
+  {
+    id,
+    kind: agentCapabilityKind('kind').notNull(),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    status: agentCapabilityStatus('status').notNull().default('enabled'),
+    scope: text('scope').notNull().default('global'),
+    config: jsonb('config').$type<Record<string, unknown>>().notNull().default({}),
+    secretMetadata: jsonb('secret_metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('agent_capabilities_code_unique_idx').on(table.code),
+    index('agent_capabilities_kind_idx').on(table.kind),
+    index('agent_capabilities_status_idx').on(table.status),
+  ],
+);
+
+export const agentCapabilityBundles = pgTable(
+  'agent_capability_bundles',
+  {
+    id,
+    code: text('code').notNull(),
+    taskType: aiJobType('task_type').notNull(),
+    name: text('name').notNull(),
+    status: agentCapabilityStatus('status').notNull().default('enabled'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('agent_capability_bundles_code_unique_idx').on(table.code),
+    index('agent_capability_bundles_task_type_idx').on(table.taskType),
+  ],
+);
+
+export const agentCapabilityBundleItems = pgTable(
+  'agent_capability_bundle_items',
+  {
+    bundleId: uuid('bundle_id')
+      .notNull()
+      .references(() => agentCapabilityBundles.id, { onDelete: 'cascade' }),
+    capabilityId: uuid('capability_id')
+      .notNull()
+      .references(() => agentCapabilities.id, { onDelete: 'cascade' }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: now,
+  },
+  (table) => [
+    primaryKey({ columns: [table.bundleId, table.capabilityId] }),
+    index('agent_capability_bundle_items_capability_idx').on(table.capabilityId),
+  ],
+);
+
+export const agentRuns = pgTable(
+  'agent_runs',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    taskType: aiJobType('task_type').notNull(),
+    status: agentRunStatus('status').notNull().default('queued'),
+    prompt: text('prompt').notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    capabilitySnapshot: jsonb('capability_snapshot')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    input: jsonb('input').$type<Record<string, unknown>>().notNull().default({}),
+    finalMessage: text('final_message'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('agent_runs_user_id_idx').on(table.userId),
+    index('agent_runs_status_idx').on(table.status),
+    index('agent_runs_task_type_idx').on(table.taskType),
+  ],
+);
+
+export const agentRunEvents = pgTable(
+  'agent_run_events',
+  {
+    id,
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    type: text('type').notNull(),
+    message: text('message'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+  },
+  (table) => [
+    index('agent_run_events_run_id_idx').on(table.runId),
+    index('agent_run_events_type_idx').on(table.type),
+  ],
+);
+
+export const agentArtifacts = pgTable(
+  'agent_artifacts',
+  {
+    id,
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    kind: agentArtifactKind('kind').notNull(),
+    title: text('title').notNull(),
+    status: text('status').notNull().default('ready'),
+    body: text('body'),
+    url: text('url'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('agent_artifacts_run_id_idx').on(table.runId),
+    index('agent_artifacts_kind_idx').on(table.kind),
   ],
 );
 

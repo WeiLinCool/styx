@@ -29,12 +29,12 @@ const columns: AdminColumn<AdminAiJobRow>[] = [
   },
   {
     key: 'prompt',
-    label: 'Prompt',
+    label: '提示词',
     render: (job) => <div className="max-w-xs text-xs text-neutral-700">{job.promptSummary}</div>,
   },
   {
     key: 'provider',
-    label: 'Provider',
+    label: '供应商',
     render: (job) => (
       <div>
         <div className="text-sm text-neutral-900">{job.provider}</div>
@@ -56,7 +56,12 @@ const columns: AdminColumn<AdminAiJobRow>[] = [
     key: 'actions',
     label: '操作',
     className: 'text-right',
-    render: (job) => <AdminAiJobActions jobId={job.id} />,
+    render: (job) =>
+      job.sourceKind === 'ai_job' ? (
+        <AdminAiJobActions jobId={job.id} />
+      ) : (
+        <div className="text-xs text-neutral-500">Agent run 记录</div>
+      ),
   },
 ];
 
@@ -65,14 +70,14 @@ export default async function AdminAiJobsPage() {
 
   return (
     <AdminModulePage
-      title="AI Jobs"
-      description="AI 任务类型、用户、prompt、供应商模型、输出引用、错误与复跑入口。"
+      title="AI 任务"
+      description="AI 任务与 Agent runs 的类型、用户、prompt、供应商模型、能力快照、输出引用、错误与复跑入口。"
       source={data.source}
       metrics={data.metrics}
       filters={data.filters}
       records={data.records}
       columns={columns}
-      searchPlaceholder="Search prompt, user, provider, status..."
+      searchPlaceholder="搜索提示词、用户、供应商或状态..."
     />
   );
 }

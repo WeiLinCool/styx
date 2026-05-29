@@ -65,14 +65,14 @@ export default async function AdminOrdersPage() {
 
   return (
     <AdminModulePage
-      title="Orders"
+      title="订单管理"
       description="订单状态、用户、商品 SKU、金额、支付与履约备注。"
       source={data.source}
       metrics={data.metrics}
       filters={data.filters}
       records={data.records}
       columns={columns}
-      searchPlaceholder="Search order number, user, SKU..."
+      searchPlaceholder="搜索订单号、用户或 SKU..."
     />
   );
 }

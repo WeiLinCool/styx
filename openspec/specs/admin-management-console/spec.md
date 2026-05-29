@@ -11,6 +11,13 @@ The system SHALL require an authorized admin session for management routes.
 - **WHEN** an authorized admin opens `/admin`
 - **THEN** the system renders the management console layout
 
+### Requirement: Chinese Admin Console Copy
+The system SHALL present admin-console navigation, headers, controls, action labels, placeholders, empty states, and operation feedback in Chinese.
+
+#### Scenario: Admin browses localized console
+- **WHEN** an authorized admin opens any admin management page
+- **THEN** the visible operator-facing shell, navigation, module controls, table empty states, and action labels are shown in Chinese
+
 ### Requirement: Admin Navigation
 The system SHALL provide persistent navigation for all management modules.
 
@@ -39,6 +46,17 @@ The system SHALL allow admins to inspect and manage user records.
 #### Scenario: Admin assists activation
 - **WHEN** an authorized admin activates or reissues activation for a user
 - **THEN** the account lifecycle changes are persisted and an audit event is recorded
+
+### Requirement: Activation Binding Work Order Review
+The system SHALL expose browser-bound activation binding work orders in the admin console for customer support review.
+
+#### Scenario: Support reviews pending activation work orders
+- **WHEN** an authorized admin opens the relevant user or activation work order management view
+- **THEN** pending work orders show work order code, target user, status, expiry, request time, and limited device review metadata
+
+#### Scenario: Support completes activation binding
+- **WHEN** an authorized admin approves or rejects an activation work order
+- **THEN** the admin console shows localized success or error feedback and refreshes the work order state
 
 ### Requirement: Membership And Benefits Management
 The system SHALL allow admins to manage membership plans, benefit definitions, and entitlement adjustments.
@@ -81,3 +99,21 @@ The system SHALL expose settings placeholders and audit events for operational t
 #### Scenario: Admin opens settings
 - **WHEN** an admin opens settings
 - **THEN** role access, provider configuration placeholders, storage configuration placeholders, and recent audit events are visible
+
+### Requirement: Agent Capability Management
+The system SHALL allow authorized admins to maintain model routing, skills, MCP servers, plugins, and capability bundles from the admin console.
+
+#### Scenario: Admin reviews agent capabilities
+- **WHEN** an authorized admin opens the agent capability management surface
+- **THEN** the console shows enabled models, skills, MCP servers, plugins, default bundles, status, scope, and last update metadata
+
+#### Scenario: Admin updates capability bundle
+- **WHEN** an authorized admin changes a capability bundle
+- **THEN** the system persists the change, records audit metadata, and uses the new bundle only for future agent runs
+
+### Requirement: Agent Run Operations
+The system SHALL allow authorized admins to inspect user agent runs and their resolved capability snapshots.
+
+#### Scenario: Admin reviews agent run
+- **WHEN** an authorized admin opens the AI operations view for a user run
+- **THEN** the console shows user, task type, status, provider/model, prompt summary, resolved skills/MCP/plugins, output references, error summary, and timestamps

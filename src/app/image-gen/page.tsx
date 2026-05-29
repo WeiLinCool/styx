@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { createAgentRun } from '@/features/public/agent-runtime-client';
 import { hdModels, imageModels, styleOptions, toolSizes } from '@/features/public/tool-data';
 
 const TABS = [
@@ -26,17 +27,58 @@ export default function ImageGenPage() {
   const [selectedModel, setSelectedModel] = useState(imageModels[0].id);
   const [selectedSize, setSelectedSize] = useState('1:1');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationMessage, setGenerationMessage] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const [hdModel, setHdModel] = useState(hdModels[0].id);
   const [hdScale, setHdScale] = useState('2x');
   const [hdPrompt, setHdPrompt] = useState('高清修复，增强细节，提升画质，保留原始构图');
   const [selectedStyle, setSelectedStyle] = useState('stone-print');
   const [stylePrompt, setStylePrompt] = useState('');
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
+    if (isGenerating) return;
+
+    const promptByTab = {
+      generate: prompt,
+      'hd-fix': hdPrompt,
+      'style-transfer': stylePrompt || `转换为 ${styleOptions.find((style) => style.id === selectedStyle)?.name ?? selectedStyle} 风格`,
+    };
+
+    const runPrompt = promptByTab[activeTab as keyof typeof promptByTab]?.trim();
+    if (!runPrompt) {
+      setGenerationMessage(null);
+      setGenerationError('请输入提示词后再开始生成。');
+      return;
+    }
+
     setIsGenerating(true);
-    setTimeout(() => setIsGenerating(false), 3000);
+    setGenerationError(null);
+    setGenerationMessage(null);
+
+    try {
+      const run = await createAgentRun({
+        taskType: 'image',
+        prompt: runPrompt,
+        input: {
+          mode: activeTab,
+          model: activeTab === 'hd-fix' ? hdModel : selectedModel,
+          size: selectedSize,
+          hdScale,
+          style: selectedStyle,
+        },
+      });
+      if (run.status === 'failed') {
+        setGenerationError(run.errorMessage ?? '图片生成请求失败');
+        return;
+      }
+      setGenerationMessage(run.finalMessage ?? '图片任务已完成，但没有返回可展示的结果说明。');
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : '图片生成请求失败');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -261,6 +303,22 @@ export default function ImageGenPage() {
               <div className="flex flex-col items-center">
                 <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-black/8 border-t-white" />
                 <p className="text-sm text-[#444444]">AI 正在创作中...</p>
+              </div>
+            ) : generationError ? (
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/10">
+                  <ImageIcon size={28} className="text-red-500" />
+                </div>
+                <p className="mb-1 text-sm font-medium text-red-500">生成失败</p>
+                <p className="text-xs text-[#444444]">{generationError}</p>
+              </div>
+            ) : generationMessage ? (
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
+                  <ImageIcon size={28} className="text-[#444444]" />
+                </div>
+                <p className="mb-1 text-sm font-medium text-[#555555]">生成完成</p>
+                <p className="text-xs text-[#444444]">{generationMessage}</p>
               </div>
             ) : (
               <div className="flex flex-col items-center text-center">

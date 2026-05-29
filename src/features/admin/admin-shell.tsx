@@ -21,7 +21,7 @@ export function AdminShell({ children, session, dataSource = 'database' }: Admin
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-neutral-950">南风 AI Admin</p>
-              <p className="truncate text-xs text-neutral-500">Operations Control</p>
+              <p className="truncate text-xs text-neutral-500">运营控制台</p>
             </div>
           </div>
           <AdminNav />

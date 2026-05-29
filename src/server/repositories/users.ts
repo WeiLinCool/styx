@@ -251,58 +251,58 @@ function getSeedUsers(): AdminModuleData<AdminUserRow> {
       displayName: 'Styx Admin',
       primaryContact: 'admin@styx.local',
       accountState: 'active',
-      identities: ['email: verified', 'github: verified'],
-      bindingState: '2 verified identities',
-      membership: 'Owner / Team Yearly',
+      identities: ['邮箱：已验证', 'GitHub：已验证'],
+      bindingState: '2 个已验证身份',
+      membership: '所有者 / 团队年付',
       credits: 980,
       activity: '登录 12 次 / 近 7 天',
       auditSummary: '最近操作: seed.database',
       createdAt: '2026-05-29T08:00:00.000Z',
-      actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+      actions: ['重发激活', '直接激活', '停用', '归档'],
     },
     {
       id: 'seed-user-2',
       displayName: '待激活创作者',
       primaryContact: 'pending@styx.local',
       accountState: 'pending_activation',
-      identities: ['email: unverified'],
-      bindingState: 'activation required',
-      membership: 'Free / no active plan',
+      identities: ['邮箱：未验证'],
+      bindingState: '需要激活',
+      membership: '免费 / 无有效方案',
       credits: 20,
       activity: '注册后未激活',
       auditSummary: '最近操作: activation.reissued',
       createdAt: '2026-05-29T07:20:00.000Z',
-      actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+      actions: ['重发激活', '直接激活', '停用', '归档'],
     },
     {
       id: 'seed-user-3',
       displayName: '视频团队账号',
       primaryContact: '+86 138 0000 0000',
       accountState: 'suspended',
-      identities: ['phone: verified', 'wechat: verified'],
-      bindingState: 'review before restore',
-      membership: 'Pro Monthly',
+      identities: ['手机：已验证', '微信：已验证'],
+      bindingState: '恢复前需复核',
+      membership: '专业版月付',
       credits: 0,
       activity: 'AI 任务失败率过高',
       auditSummary: '最近操作: account.suspended',
       createdAt: '2026-05-28T11:10:00.000Z',
-      actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+      actions: ['重发激活', '直接激活', '停用', '归档'],
     },
   ];
 
   return {
     source: 'seed',
     metrics: [
-      { label: '总账号', value: '3', hint: 'seed records', tone: 'info' },
+      { label: '总账号', value: '3', hint: '种子记录', tone: 'info' },
       { label: '待激活', value: '1', hint: '需跟进', tone: 'warning' },
-      { label: '已绑定身份', value: '5', hint: 'verified + pending', tone: 'success' },
-      { label: '可用额度', value: '1,000', hint: 'sample credits', tone: 'default' },
+      { label: '已绑定身份', value: '5', hint: '已验证 + 待处理', tone: 'success' },
+      { label: '可用额度', value: '1,000', hint: '示例额度', tone: 'default' },
     ],
     filters: [
-      { label: 'All', value: 'all', count: 3 },
-      { label: 'Pending activation', value: 'pending_activation', count: 1 },
-      { label: 'Active', value: 'active', count: 1 },
-      { label: 'Suspended', value: 'suspended', count: 1 },
+      { label: '全部', value: 'all', count: 3 },
+      { label: '待激活', value: 'pending_activation', count: 1 },
+      { label: '已激活', value: 'active', count: 1 },
+      { label: '已停用', value: 'suspended', count: 1 },
     ],
     records,
   };
@@ -322,7 +322,7 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
       verifiedIdentityCount:
         sql<number>`count(distinct ${schema.userIdentities.id}) filter (where ${schema.userIdentities.isVerified} = true)::int`,
       membership:
-        sql<string>`coalesce(max(${schema.membershipPlans.name}), 'Free / no active plan')`,
+        sql<string>`coalesce(max(${schema.membershipPlans.name}), '免费 / 无有效方案')`,
       credits:
         sql<number>`coalesce(sum(${schema.userEntitlements.remainingQuantity}), 0)::int`,
       lastAuditAction: sql<string>`coalesce(max(${schema.auditEvents.action}), 'none')`,
@@ -345,19 +345,19 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
     primaryContact: row.user.email ?? row.user.phone ?? '未绑定',
     accountState: row.user.accountState,
     identities: [
-      `${row.identityCount} identities`,
-      `${row.verifiedIdentityCount} verified`,
+      `${row.identityCount} 个身份`,
+      `${row.verifiedIdentityCount} 个已验证`,
     ],
     bindingState:
       row.verifiedIdentityCount > 0
-        ? `${row.verifiedIdentityCount} verified identities`
-        : 'activation required',
+        ? `${row.verifiedIdentityCount} 个已验证身份`
+        : '需要激活',
     membership: row.membership,
     credits: row.credits,
     activity: metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
     auditSummary: `最近操作: ${row.lastAuditAction}`,
     createdAt: formatIso(row.user.createdAt),
-    actions: ['Reissue activation', 'Activate', 'Suspend', 'Archive'],
+    actions: ['重发激活', '直接激活', '停用', '归档'],
   }));
 
   const pendingCount = records.filter((record) => record.accountState === 'pending_activation').length;
@@ -367,16 +367,16 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
 
   const metrics: AdminMetric[] = [
     { label: '总账号', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
-    { label: '待激活', value: String(pendingCount), hint: 'activation queue', tone: 'warning' },
-    { label: '活跃账号', value: String(activeCount), hint: 'active lifecycle', tone: 'success' },
-    { label: '剩余额度', value: String(totalCredits), hint: 'entitlements', tone: 'default' },
+    { label: '待激活', value: String(pendingCount), hint: '激活队列', tone: 'warning' },
+    { label: '活跃账号', value: String(activeCount), hint: '已激活生命周期', tone: 'success' },
+    { label: '剩余额度', value: String(totalCredits), hint: '权益授权', tone: 'default' },
   ];
 
   const filters: AdminFilter[] = [
-    { label: 'All', value: 'all', count: records.length },
-    { label: 'Pending activation', value: 'pending_activation', count: pendingCount },
-    { label: 'Active', value: 'active', count: activeCount },
-    { label: 'Suspended', value: 'suspended', count: suspendedCount },
+    { label: '全部', value: 'all', count: records.length },
+    { label: '待激活', value: 'pending_activation', count: pendingCount },
+    { label: '已激活', value: 'active', count: activeCount },
+    { label: '已停用', value: 'suspended', count: suspendedCount },
   ];
 
   return {

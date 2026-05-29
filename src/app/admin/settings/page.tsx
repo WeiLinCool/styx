@@ -27,7 +27,7 @@ const columns: AdminColumn<AdminSettingRow>[] = [
     label: '敏感',
     render: (setting) => (
       <StatusBadge
-        value={setting.isSecret ? 'secret' : 'plain'}
+        value={setting.isSecret ? '敏感' : '明文'}
         tone={setting.isSecret ? 'warning' : 'success'}
       />
     ),
@@ -65,14 +65,14 @@ export default async function AdminSettingsPage() {
 
   return (
     <AdminModulePage
-      title="Settings"
+      title="系统设置"
       description="角色访问、AI provider、存储占位配置与审计入口。"
       source={data.source}
       metrics={data.metrics}
       filters={data.filters}
       records={data.records}
       columns={columns}
-      searchPlaceholder="Search settings, provider, storage..."
+      searchPlaceholder="搜索设置、供应商或存储..."
     />
   );
 }

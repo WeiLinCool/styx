@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { createAgentRun } from '@/features/public/agent-runtime-client';
 import { videoModels } from '@/features/public/tool-data';
 
 const VIDEO_STYLES = [
@@ -34,12 +35,45 @@ export default function VideoGenPage() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationMessage, setGenerationMessage] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
+    if (isGenerating) return;
+    if (!prompt.trim()) {
+      setGenerationMessage(null);
+      setGenerationError('请输入提示词后再开始生成。');
+      return;
+    }
+
     setIsGenerating(true);
-    setTimeout(() => setIsGenerating(false), 5000);
+    setGenerationError(null);
+    setGenerationMessage(null);
+
+    try {
+      const run = await createAgentRun({
+        taskType: 'video',
+        prompt: prompt.trim(),
+        input: {
+          model: selectedModel,
+          style: selectedStyle,
+          duration: selectedDuration,
+          clarity: selectedClarity,
+          audioEnabled,
+        },
+      });
+      if (run.status === 'failed') {
+        setGenerationError(run.errorMessage ?? '视频生成请求失败');
+        return;
+      }
+      setGenerationMessage(run.finalMessage ?? '视频任务已完成，但没有返回可展示的结果说明。');
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : '视频生成请求失败');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -213,6 +247,22 @@ export default function VideoGenPage() {
                 <div className="h-1 w-32 overflow-hidden rounded-full bg-black/5">
                   <div className="h-full animate-pulse rounded-full bg-white/40" style={{ width: '60%' }} />
                 </div>
+              </div>
+            ) : generationError ? (
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/10">
+                  <Play size={28} className="text-red-500" />
+                </div>
+                <p className="mb-1 text-sm font-medium text-red-500">生成失败</p>
+                <p className="text-xs text-[#444444]">{generationError}</p>
+              </div>
+            ) : generationMessage ? (
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
+                  <Play size={28} className="text-[#444444]" />
+                </div>
+                <p className="mb-1 text-sm font-medium text-[#555555]">生成完成</p>
+                <p className="text-xs text-[#444444]">{generationMessage}</p>
               </div>
             ) : (
               <div className="flex flex-col items-center text-center">
