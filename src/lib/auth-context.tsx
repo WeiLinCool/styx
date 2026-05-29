@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { getUserFromCookie, saveUserToCookie, removeUserFromCookie, type UserInfo } from '@/lib/cookie';
 import { X, Phone, Lock, User, Camera, Upload, Check, Ticket } from 'lucide-react';
 
@@ -18,6 +19,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user: UserInfo) => void }) {
+  const router = useRouter();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -29,6 +31,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
   const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -45,14 +48,21 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
   const handleLogin = async () => {
     if (!phone || !password) return;
     setSubmitting(true);
+    setErrorMessage('');
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, password }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.user) {
+        const message = typeof payload?.error?.message === 'string' ? payload.error.message : '登录失败，请重试。';
+        setErrorMessage(message);
+        if (payload?.error?.code === 'password_setup_required') {
+          onClose();
+          router.push(`/auth/set-password?phone=${encodeURIComponent(phone)}`);
+        }
         return;
       }
       onLogin(payload.user);
@@ -64,14 +74,18 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
   const handleRegister = async () => {
     if (!nickname || nickname.length < 2 || !phone || !code || !password || !agreed) return;
     setSubmitting(true);
+    setErrorMessage('');
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone, nickname }),
+        body: JSON.stringify({ phone, nickname, password }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.user) {
+        setErrorMessage(
+          typeof payload?.error?.message === 'string' ? payload.error.message : '设置密码失败，请重试。',
+        );
         return;
       }
       onLogin({
@@ -156,6 +170,21 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
               >
                 登录
               </button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    router.push('/auth/forgot-password');
+                  }}
+                  className="text-sm text-[#6e6e73] hover:text-[#1d1d1f] hover:underline"
+                >
+                  忘记密码
+                </button>
+              </div>
+              {errorMessage ? (
+                <p className="text-center text-sm text-[#b42318]">{errorMessage}</p>
+              ) : null}
               <div className="flex items-center justify-center gap-1 text-sm">
                 <span className="text-[#86868b]">还没有账号？</span>
                 <button onClick={() => setMode('register')} className="text-[#1d1d1f] font-medium hover:underline">
@@ -167,6 +196,11 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
 
           {mode === 'register' && (
             <div className="space-y-4">
+              {errorMessage ? (
+                <div className="rounded-xl bg-[#fff1f3] px-4 py-3 text-sm text-[#b42318]">
+                  {errorMessage}
+                </div>
+              ) : null}
               {/* 1. Avatar Selection */}
               <div className="flex flex-col items-center gap-2.5">
                 <p className="text-sm font-medium text-[#1d1d1f]">选择头像</p>
@@ -342,6 +376,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [mounted, setMounted] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -359,6 +394,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (response.ok && payload.authenticated && payload.user) {
           saveUserToCookie(payload.user);
           setUser(payload.user);
+          if (payload.user.mustResetPassword && payload.user.phone) {
+            router.push(`/auth/reset-password?phone=${encodeURIComponent(payload.user.phone)}`);
+          }
         } else {
           removeUserFromCookie();
           setUser(null);
@@ -369,13 +407,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     void hydrate();
-  }, []);
+  }, [router]);
 
   const login = useCallback((userData: UserInfo) => {
     saveUserToCookie(userData);
     setUser(userData);
     setShowLoginModal(false);
-  }, []);
+    if (userData.mustResetPassword && userData.phone) {
+      router.push(`/auth/reset-password?phone=${encodeURIComponent(userData.phone)}`);
+      return;
+    }
+    router.refresh();
+  }, [router]);
 
   const logout = useCallback(() => {
     void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);

@@ -4,9 +4,9 @@ import { recordAuditEvent } from '@/server/audit/audit-service';
 import { db, schema } from '@/server/db';
 import {
   AccountDomainError,
-  hashSecret,
   type AccountState,
 } from './account-types';
+import { hashSecret } from './account-crypto';
 import { getUserById, setUserAccountState } from '@/server/repositories/users';
 
 export type ActivationWorkOrderStatus = 'pending' | 'processing' | 'closed' | 'archived';

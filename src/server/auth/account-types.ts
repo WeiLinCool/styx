@@ -1,5 +1,3 @@
-import { createHash, randomBytes } from 'node:crypto';
-
 export type AccountState = 'pending_activation' | 'active' | 'suspended' | 'archived';
 
 export type IdentityProvider = 'email' | 'phone' | 'github' | 'google' | 'wechat';
@@ -12,6 +10,7 @@ export type ActivationTokenPurpose =
 export type AccountErrorCode =
   | 'account_not_found'
   | 'account_not_active'
+  | 'password_setup_required'
   | 'activation_token_invalid'
   | 'activation_token_expired'
   | 'activation_token_consumed'
@@ -107,14 +106,6 @@ export type BindingResult =
       ok: false;
       error: AccountDomainError;
     };
-
-export function hashSecret(secret: string): string {
-  return createHash('sha256').update(secret).digest('hex');
-}
-
-export function createOpaqueToken(byteLength = 32): string {
-  return randomBytes(byteLength).toString('base64url');
-}
 
 export function assertActivationTokenUsable(
   token: Pick<ActivationTokenRecord, 'consumedAt' | 'expiresAt'> | null,

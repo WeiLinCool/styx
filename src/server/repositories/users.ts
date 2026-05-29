@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import {
   type AccountState,
@@ -101,6 +101,27 @@ export async function createUser(input: {
       metadata: input.metadata ?? {},
     })
     .returning();
+
+  return user;
+}
+
+export async function updateUserMetadata(
+  userId: string,
+  metadata: Record<string, unknown>,
+) {
+  const database = requireDb();
+  const [user] = await database
+    .update(schema.users)
+    .set({
+      metadata,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.users.id, userId))
+    .returning();
+
+  if (!user) {
+    throw new AccountDomainError('account_not_found', 'Account not found.', 404);
+  }
 
   return user;
 }

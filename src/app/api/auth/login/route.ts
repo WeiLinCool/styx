@@ -7,6 +7,7 @@ import { DEV_AUTH_BYPASS_COOKIE } from '@/server/auth/session';
 
 const bodySchema = z.object({
   phone: z.string().min(6).max(32),
+  password: z.string().min(6).max(128),
   nickname: z.string().min(2).max(120).optional(),
   email: z.string().email().optional(),
 });
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
     const body = bodySchema.parse(await request.json());
     const result = await registerOrLoginUser({
       phone: body.phone,
+      password: body.password,
       displayName: body.nickname,
       email: body.email,
       userAgent: request.headers.get('user-agent'),
@@ -30,6 +32,7 @@ export async function POST(request: Request) {
         phone: result.user.phone,
         email: result.user.email,
         accountState: result.user.accountState,
+        mustResetPassword: result.user.metadata?.mustResetPassword === true,
       },
     });
 

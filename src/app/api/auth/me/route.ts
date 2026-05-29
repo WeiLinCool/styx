@@ -21,6 +21,7 @@ export async function GET() {
             userLevel: 'free',
             accountState: session.user.accountState,
             displayName: session.user.displayName,
+            mustResetPassword: session.user.metadata?.mustResetPassword === true,
             points: 0,
           }
         : null,

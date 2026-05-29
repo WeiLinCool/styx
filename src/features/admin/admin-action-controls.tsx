@@ -190,6 +190,50 @@ export function AdminActivationWorkOrderActions({
   );
 }
 
+export function AdminPasswordResetWorkOrderActions({
+  workOrderId,
+  queueStatus,
+}: {
+  workOrderId: string;
+  queueStatus: 'pending' | 'processing' | 'closed' | 'archived';
+}) {
+  const actions =
+    queueStatus === 'pending'
+      ? [
+          {
+            label: '开始处理',
+            url: `/api/admin/password-reset-work-orders/${workOrderId}/processing`,
+            body: {},
+            successMessage: '密码重置工单已进入处理中。',
+          },
+        ]
+      : queueStatus === 'processing'
+        ? [
+            {
+              label: '生成临时密码',
+              url: `/api/admin/password-reset-work-orders/${workOrderId}/approve`,
+              body: {},
+              successMessage: '临时密码已生成，请复制后提供给用户。',
+            },
+          ]
+        : queueStatus === 'closed'
+          ? [
+              {
+                label: '归档',
+                url: `/api/admin/password-reset-work-orders/${workOrderId}/archive`,
+                body: {},
+                successMessage: '密码重置工单已归档。',
+              },
+            ]
+          : [];
+
+  if (actions.length === 0) {
+    return null;
+  }
+
+  return <ActionButtons actions={actions} />;
+}
+
 export function AdminOrderActions({ orderId }: { orderId: string }) {
   return (
     <ActionButtons

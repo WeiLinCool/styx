@@ -42,6 +42,13 @@ export const activationWorkOrderStatus = pgEnum('activation_work_order_status', 
   'archived',
 ]);
 
+export const passwordResetWorkOrderStatus = pgEnum('password_reset_work_order_status', [
+  'pending',
+  'processing',
+  'closed',
+  'archived',
+]);
+
 export const adminRole = pgEnum('admin_role', [
   'owner',
   'admin',
@@ -273,6 +280,35 @@ export const activationWorkOrders = pgTable(
     index('activation_work_orders_user_id_idx').on(table.userId),
     index('activation_work_orders_status_idx').on(table.status),
     uniqueIndex('activation_work_orders_code_unique_idx').on(table.code),
+  ],
+);
+
+export const passwordResetWorkOrders = pgTable(
+  'password_reset_work_orders',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    phone: text('phone').notNull(),
+    reason: text('reason').notNull(),
+    status: passwordResetWorkOrderStatus('status').notNull().default('pending'),
+    temporaryPassword: text('temporary_password'),
+    processedByUserId: uuid('processed_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    archivedByUserId: uuid('archived_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('password_reset_work_orders_user_id_idx').on(table.userId),
+    index('password_reset_work_orders_status_idx').on(table.status),
+    index('password_reset_work_orders_created_at_idx').on(table.createdAt),
   ],
 );
 

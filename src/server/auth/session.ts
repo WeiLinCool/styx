@@ -2,9 +2,9 @@ import { cookies } from 'next/headers';
 
 import {
   AccountDomainError,
-  hashSecret,
   type SessionContext,
 } from './account-types';
+import { hashSecret } from './account-crypto';
 import {
   getSessionByTokenHash,
   getUserById,

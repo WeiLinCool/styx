@@ -5,8 +5,8 @@ import {
   AccountDomainError,
   assertActivationTokenUsable,
   assertIdentityCanBind,
-  hashSecret,
 } from './account-types';
+import { hashSecret } from './account-crypto';
 
 test('hashSecret returns a stable sha256 hash without exposing the token', () => {
   const token = 'activation-token-123';

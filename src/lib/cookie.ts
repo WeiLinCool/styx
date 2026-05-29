@@ -14,6 +14,7 @@ export interface UserInfo {
   membershipExpiry: string | null;
   userLevel: UserLevel;
   accountState?: AccountState;
+  mustResetPassword?: boolean;
   points: number;
 }
 

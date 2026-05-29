@@ -1,11 +1,11 @@
 import {
   AccountDomainError,
   assertActivationTokenUsable,
-  createOpaqueToken,
-  hashSecret,
   type BindIdentityInput,
   type IdentityProvider,
 } from './account-types';
+import { createOpaqueToken, hashSecret } from './account-crypto';
+import { hashUserPassword, verifyStoredUserPassword } from './public-auth';
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import {
   bindVerifiedIdentity,
@@ -198,6 +198,7 @@ export async function bindProviderIdentity(input: {
 
 export async function registerOrLoginUser(input: {
   phone: string;
+  password: string;
   displayName?: string | null;
   email?: string | null;
   userAgent?: string | null;
@@ -206,6 +207,7 @@ export async function registerOrLoginUser(input: {
   const normalizedPhone = input.phone.trim();
   const normalizedEmail = input.email?.trim().toLowerCase() ?? null;
   const displayName = input.displayName?.trim() || `用户${normalizedPhone.slice(-4)}`;
+  const password = input.password;
 
   let user =
     (normalizedPhone ? await getUserByPhone(normalizedPhone) : null) ??
@@ -216,7 +218,10 @@ export async function registerOrLoginUser(input: {
       phone: normalizedPhone,
       email: normalizedEmail,
       displayName,
-      metadata: { registrationSource: 'web_auth' },
+      metadata: {
+        registrationSource: 'web_auth',
+        passwordHash: hashUserPassword(password),
+      },
     });
 
     await recordAuditEvent({
@@ -225,6 +230,14 @@ export async function registerOrLoginUser(input: {
       type: 'account.registered',
       metadata: { phone: normalizedPhone, email: normalizedEmail },
     });
+  } else if (!('passwordHash' in (user.metadata ?? {}))) {
+    throw new AccountDomainError(
+      'password_setup_required',
+      '当前账号尚未设置密码，请先设置密码后再登录。',
+      403,
+    );
+  } else if (!verifyStoredUserPassword(password, user.metadata)) {
+    throw new AccountDomainError('session_required', '手机号或密码错误。', 401);
   }
 
   await revokeSessionsForUser(user.id);

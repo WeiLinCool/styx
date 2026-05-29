@@ -1,12 +1,16 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { cookies } from 'next/headers';
 
 import { recordAuditEvent } from '@/server/audit/audit-service';
+import { ADMIN_SESSION_COOKIE, getAdminAuthSecret } from './admin-auth-config';
 import { AccountDomainError, type SessionContext } from './account-types';
+import {
+  createAdminSessionToken,
+  readAdminSessionToken,
+} from './admin-session-token';
 import { getUserById, listAdminRoles } from '@/server/repositories/users';
 
-export const ADMIN_SESSION_COOKIE = 'styx_admin_session';
 const DEFAULT_ADMIN_SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 
 export type AdminAccountConfig = {
@@ -16,54 +20,6 @@ export type AdminAccountConfig = {
   phone: string | null;
   allowWhitelistBypass?: boolean;
 };
-
-type SignedAdminPayload = {
-  userId: string;
-  username: string;
-  expiresAt: string;
-};
-
-export type AdminSessionPayload = SignedAdminPayload & {
-  authMode: 'password_whitelist';
-};
-
-function base64UrlEncode(value: string) {
-  return Buffer.from(value, 'utf8').toString('base64url');
-}
-
-function base64UrlDecode(value: string) {
-  return Buffer.from(value, 'base64url').toString('utf8');
-}
-
-function signPayload(payload: string, secret: string) {
-  return createHmac('sha256', secret).update(payload).digest('base64url');
-}
-
-function encodeSignedToken(payload: object, secret: string) {
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  const signature = signPayload(encodedPayload, secret);
-  return `${encodedPayload}.${signature}`;
-}
-
-function decodeSignedToken<T extends { expiresAt: string }>(token: string, secret: string): T | null {
-  const [encodedPayload, signature] = token.split('.');
-  if (!encodedPayload || !signature) {
-    return null;
-  }
-
-  const expectedSignature = signPayload(encodedPayload, secret);
-  const matches = timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
-  if (!matches) {
-    return null;
-  }
-
-  const payload = JSON.parse(base64UrlDecode(encodedPayload)) as T;
-  if (new Date(payload.expiresAt).getTime() <= Date.now()) {
-    return null;
-  }
-
-  return payload;
-}
 
 export function hashAdminPassword(password: string) {
   return createHash('sha256').update(password).digest('hex');
@@ -78,7 +34,17 @@ export function parseAdminAccountsConfig(rawConfig: string | undefined) {
     return [] as AdminAccountConfig[];
   }
 
-  const parsed = JSON.parse(rawConfig) as AdminAccountConfig[];
+  let parsed: AdminAccountConfig[];
+  try {
+    parsed = JSON.parse(rawConfig) as AdminAccountConfig[];
+  } catch {
+    throw new AccountDomainError('admin_required', '管理端账号配置无效。', 503);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new AccountDomainError('admin_required', '管理端账号配置无效。', 503);
+  }
+
   return parsed.map((account) => ({
     ...account,
     username: account.username.trim(),
@@ -97,21 +63,11 @@ export function getAdminWhitelistConfig(accounts: AdminAccountConfig[]) {
   };
 }
 
-export function getAdminAuthSecret() {
-  return process.env.STYX_ADMIN_AUTH_SECRET ?? null;
-}
-
 export function getConfiguredAdminAccounts() {
   return parseAdminAccountsConfig(process.env.STYX_ADMIN_ACCOUNTS_JSON);
 }
 
-export function createAdminSessionToken(payload: AdminSessionPayload, secret: string) {
-  return encodeSignedToken(payload, secret);
-}
-
-export function readAdminSessionToken(token: string, secret: string) {
-  return decodeSignedToken<AdminSessionPayload>(token, secret);
-}
+export { createAdminSessionToken, readAdminSessionToken } from './admin-session-token';
 
 function requireAdminAuthSecret() {
   const secret = getAdminAuthSecret();

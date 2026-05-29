@@ -3,8 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   ADMIN_SESSION_COOKIE,
   getAdminAuthSecret,
-  readAdminSessionToken,
-} from '@/server/auth/admin-auth';
+} from '@/server/auth/admin-auth-config';
+import { readAdminSessionTokenEdge } from '@/server/auth/admin-session-token-edge';
 
 const ADMIN_PUBLIC_PATHS = new Set(['/admin/login']);
 
@@ -12,7 +12,7 @@ function isAdminPublicPath(pathname: string) {
   return ADMIN_PUBLIC_PATHS.has(pathname);
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const requestHeaders = new Headers(request.headers);
 
@@ -33,7 +33,7 @@ export function middleware(request: NextRequest) {
     }
 
     const sessionToken = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
-    const session = sessionToken ? readAdminSessionToken(sessionToken, secret) : null;
+    const session = sessionToken ? await readAdminSessionTokenEdge(sessionToken, secret) : null;
     if (session) {
       return NextResponse.redirect(new URL('/admin', request.url));
     }
@@ -46,7 +46,7 @@ export function middleware(request: NextRequest) {
   }
 
   const sessionToken = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
-  if (!secret || !sessionToken || !readAdminSessionToken(sessionToken, secret)) {
+  if (!secret || !sessionToken || !(await readAdminSessionTokenEdge(sessionToken, secret))) {
     const loginUrl = new URL('/admin/login', request.url);
     return NextResponse.redirect(loginUrl);
   }

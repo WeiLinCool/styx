@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import {
-  ADMIN_SESSION_COOKIE,
   createAdminSessionFromCredentials,
 } from '@/server/auth/admin-auth';
+import { ADMIN_SESSION_COOKIE } from '@/server/auth/admin-auth-config';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 
 const bodySchema = z.object({

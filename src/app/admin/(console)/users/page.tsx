@@ -1,9 +1,13 @@
 import { AdminUsersModule } from '@/features/admin/admin-users-module';
-import { AdminWorkOrderQueue } from '@/features/admin/admin-work-order-queue';
+import {
+  AdminPasswordResetWorkOrderQueue,
+  AdminWorkOrderQueue,
+} from '@/features/admin/admin-work-order-queue';
 import {
   getAdminActivationWorkOrders,
   type AdminWorkOrderQueueStatus,
 } from '@/server/repositories/admin-activation-work-orders';
+import { getAdminPasswordResetWorkOrders } from '@/server/repositories/admin-password-reset-work-orders';
 import { getAdminUsers } from '@/server/repositories/users';
 
 export const dynamic = 'force-dynamic';
@@ -30,15 +34,25 @@ export default async function AdminUsersPage({
     typeof params.status === 'string' ? params.status : undefined,
   );
   const page = resolvePage(typeof params.page === 'string' ? params.page : undefined);
+  const resetStatus = resolveQueueStatus(
+    typeof params.resetStatus === 'string' ? params.resetStatus : undefined,
+  );
+  const resetPage = resolvePage(typeof params.resetPage === 'string' ? params.resetPage : undefined);
   const workOrders = await getAdminActivationWorkOrders({
     status,
     page,
+    pageSize: 10,
+  });
+  const passwordResetOrders = await getAdminPasswordResetWorkOrders({
+    status: resetStatus,
+    page: resetPage,
     pageSize: 10,
   });
 
   return (
     <div className="space-y-4">
       <AdminWorkOrderQueue queue={workOrders} />
+      <AdminPasswordResetWorkOrderQueue queue={passwordResetOrders} />
 
       <AdminUsersModule
         source={data.source}
