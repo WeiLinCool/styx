@@ -5,6 +5,7 @@ import {
 } from '@/server/billing/credits';
 import {
   createChatProviderAdapter as defaultCreateChatProviderAdapter,
+  type ChatProviderResult,
   type ChatProviderAdapter,
 } from '@/server/ai/provider-adapters';
 import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
@@ -149,6 +150,49 @@ function toChatRunInput(input: Record<string, unknown>, model: ResolvedChatModel
   };
 }
 
+function toFailedChatSnapshot(input: {
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  providerResult?: ChatProviderResult;
+  creditCost?: number | null;
+  errorMessage: string;
+}) {
+  return {
+    ...input.capabilitySnapshot,
+    ...(input.providerResult
+      ? {
+          usage: input.providerResult.usage,
+          rawMetadata: input.providerResult.rawMetadata,
+        }
+      : {}),
+    billing: {
+      status: 'failed',
+      creditCost: input.creditCost ?? null,
+      ledgerEntryId: null,
+    },
+    failure: {
+      message: input.errorMessage,
+    },
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+}
+
+function providerArtifact(input: {
+  model: ResolvedChatModel;
+  providerResult: ChatProviderResult;
+  billing: Record<string, unknown>;
+}) {
+  return {
+    kind: 'text' as const,
+    title: 'AI 回复',
+    body: input.providerResult.finalMessage,
+    metadata: {
+      provider: input.model.providerCode,
+      model: input.model.model,
+      usage: input.providerResult.usage,
+      billing: input.billing,
+    },
+  };
+}
+
 export function createAgentRunService({
   repository,
   runtime,
@@ -289,14 +333,49 @@ async function createAndRunChatAgentRun(input: {
       usage: providerResult.usage,
       pricing: model.pricing,
     });
-    const debit = await input.debitForAgentRun({
-      userId: request.userId,
-      runId: running.id,
-      usage: providerResult.usage,
-      pricing: model.pricing,
-      modelSnapshot: model,
-      amount: creditCost,
-    });
+    let debit: { entryId: string; balanceAfter: number };
+    try {
+      debit = await input.debitForAgentRun({
+        userId: request.userId,
+        runId: running.id,
+        usage: providerResult.usage,
+        pricing: model.pricing,
+        modelSnapshot: model,
+        amount: creditCost,
+      });
+    } catch (error) {
+      const errorMessage = toErrorMessage(error);
+      const failedSnapshot = toFailedChatSnapshot({
+        capabilitySnapshot,
+        providerResult,
+        creditCost,
+        errorMessage,
+      });
+      await recordEventIfSupported(repository, running.id, 'failed', errorMessage, {
+        reason: 'billing_failed',
+        creditCost,
+      });
+      return requireUpdatedRun(
+        await repository.failRun(running.id, {
+          errorMessage,
+          finalMessage: providerResult.finalMessage,
+          artifacts: [
+            providerArtifact({
+              model,
+              providerResult,
+              billing: failedSnapshot.billing as Record<string, unknown>,
+            }),
+          ],
+          capabilitySnapshot: failedSnapshot,
+          input: {
+            ...runInput,
+            usage: providerResult.usage,
+            billing: failedSnapshot.billing as Record<string, unknown>,
+          },
+        }),
+        'fail run',
+      );
+    }
     const completedSnapshot = {
       ...capabilitySnapshot,
       usage: providerResult.usage,
@@ -311,19 +390,7 @@ async function createAndRunChatAgentRun(input: {
     const completed = requireUpdatedRun(
       await repository.completeRun(running.id, {
         finalMessage: providerResult.finalMessage,
-        artifacts: [
-          {
-            kind: 'text',
-            title: 'AI 回复',
-            body: providerResult.finalMessage,
-            metadata: {
-              provider: model.providerCode,
-              model: model.model,
-              usage: providerResult.usage,
-              billing: completedSnapshot.billing,
-            },
-          },
-        ],
+        artifacts: [providerArtifact({ model, providerResult, billing: completedSnapshot.billing })],
         capabilitySnapshot: completedSnapshot,
         input: {
           ...runInput,
@@ -343,7 +410,18 @@ async function createAndRunChatAgentRun(input: {
     return completed;
   } catch (error) {
     const errorMessage = toErrorMessage(error);
+    const failedSnapshot = toFailedChatSnapshot({ capabilitySnapshot, errorMessage });
     await recordEventIfSupported(repository, created.id, 'failed', errorMessage);
-    return requireUpdatedRun(await repository.failRun(created.id, errorMessage), 'fail run');
+    return requireUpdatedRun(
+      await repository.failRun(created.id, {
+        errorMessage,
+        capabilitySnapshot: failedSnapshot,
+        input: {
+          ...runInput,
+          billing: failedSnapshot.billing as Record<string, unknown>,
+        },
+      }),
+      'fail run',
+    );
   }
 }

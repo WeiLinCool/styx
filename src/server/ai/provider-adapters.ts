@@ -99,23 +99,30 @@ export function createOpenAiCompatibleChatProviderAdapter(input: {
         );
       }
 
-      const response = await fetchImpl(new URL('chat/completions', ensureTrailingSlash(baseUrl)), {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: request.model.model,
-          messages: request.messages,
-        }),
-      });
-
-      const raw = (await response.json()) as unknown;
-      if (!response.ok) {
-        throw new ProviderRequestError(`Provider request failed with status ${response.status}.`);
+      let response: Response;
+      try {
+        response = await fetchImpl(new URL('chat/completions', ensureTrailingSlash(baseUrl)), {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: request.model.model,
+            messages: request.messages,
+          }),
+        });
+      } catch (error) {
+        throw new ProviderRequestError(`Provider request failed: ${toErrorMessage(error)}`);
       }
 
+      if (!response.ok) {
+        throw new ProviderRequestError(
+          `Provider request failed with status ${response.status}: ${await readSafeErrorBody(response)}`,
+        );
+      }
+
+      const raw = await readJsonResponse(response);
       return parseOpenAiCompatibleResponse(raw, request.messages);
     },
   };
@@ -131,6 +138,27 @@ export function createChatProviderAdapter(model: ResolvedChatModel): ChatProvide
 
 function ensureTrailingSlash(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function readSafeErrorBody(response: Response) {
+  try {
+    const body = await response.text();
+    return body.trim().slice(0, 500) || 'empty response body';
+  } catch {
+    return 'unreadable response body';
+  }
+}
+
+async function readJsonResponse(response: Response) {
+  try {
+    return (await response.json()) as unknown;
+  } catch (error) {
+    throw new ProviderRequestError(`Provider returned invalid JSON: ${toErrorMessage(error)}`);
+  }
 }
 
 function parseOpenAiCompatibleResponse(

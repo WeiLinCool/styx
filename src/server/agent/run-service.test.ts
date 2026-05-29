@@ -224,6 +224,78 @@ test('createAndRunAgentRun routes chat through selected model adapter and bills 
   assert.equal(debits[0].modelCode, 'dev-free-chat');
 });
 
+test('createAndRunAgentRun persists failed billing metadata when debit fails after provider success', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveChatModelForUser: async () => resolvedChatModel(),
+    assertCanAffordMinimum: async () => {},
+    createChatProviderAdapter: () => ({
+      kind: 'development',
+      async runChat() {
+        return {
+          finalMessage: 'provider response before billing failed',
+          usage: { promptTokens: 11, completionTokens: 22, totalTokens: 33 },
+          rawMetadata: { completionId: 'completion-1' },
+        };
+      },
+    }),
+    debitForAgentRun: async () => {
+      throw new Error('ledger unavailable');
+    },
+  });
+
+  const run = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'chat',
+    prompt: 'hello',
+    modelId: 'seed-model-free',
+    input: {},
+  });
+
+  assert.equal(run.status, 'failed');
+  assert.equal(run.finalMessage, 'provider response before billing failed');
+  assert.deepEqual(run.usage, { promptTokens: 11, completionTokens: 22, totalTokens: 33 });
+  assert.equal(run.selectedModel?.code, 'dev-free-chat');
+  assert.equal(run.billing?.status, 'failed');
+  assert.equal(run.billing?.creditCost, 1);
+  assert.equal(run.billing?.ledgerEntryId, null);
+  assert.equal(run.artifacts.length, 1);
+  assert.equal(run.artifacts[0].body, 'provider response before billing failed');
+});
+
+test('createAndRunAgentRun marks billing failed when provider fails after run creation', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveChatModelForUser: async () => resolvedChatModel(),
+    assertCanAffordMinimum: async () => {},
+    createChatProviderAdapter: () => ({
+      kind: 'development',
+      async runChat() {
+        throw new Error('provider unavailable');
+      },
+    }),
+  });
+
+  const run = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'chat',
+    prompt: 'hello',
+    modelId: 'seed-model-free',
+    input: {},
+  });
+
+  assert.equal(run.status, 'failed');
+  assert.equal(run.usage, null);
+  assert.equal(run.selectedModel?.code, 'dev-free-chat');
+  assert.equal(run.billing?.status, 'failed');
+  assert.equal(run.billing?.creditCost, null);
+  assert.equal(run.billing?.ledgerEntryId, null);
+});
+
 test('createAndRunAgentRun does not call provider when model resolution fails', async () => {
   const repository = createMemoryAgentRunRepository();
   let providerCalled = false;

@@ -41,8 +41,16 @@ type StoredAgentRun = AgentRunDto & {
   userId: string;
   provider: string;
   model: string;
-  capabilitySnapshot: AgentCapabilitySnapshot;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
   input: Record<string, unknown>;
+};
+
+export type AgentRunFailureInput = {
+  errorMessage: string;
+  finalMessage?: string | null;
+  artifacts?: AgentArtifactInput[];
+  capabilitySnapshot?: AgentCapabilitySnapshot & Record<string, unknown>;
+  input?: Record<string, unknown>;
 };
 
 export type AgentRunRepository = {
@@ -59,7 +67,7 @@ export type AgentRunRepository = {
       input?: Record<string, unknown>;
     },
   ): Promise<AgentRunDto | null>;
-  failRun(runId: string, errorMessage: string): Promise<AgentRunDto | null>;
+  failRun(runId: string, input: string | AgentRunFailureInput): Promise<AgentRunDto | null>;
   recordEvent(runId: string, input: AgentRunEventInput): Promise<void>;
   addArtifact(runId: string, input: AgentArtifactInput): Promise<AgentRunDto | null>;
 };
@@ -73,6 +81,10 @@ function cloneArtifact(artifact: AgentArtifactDto): AgentArtifactDto {
     ...artifact,
     metadata: cloneRecord(artifact.metadata),
   };
+}
+
+function toFailureInput(input: string | AgentRunFailureInput): AgentRunFailureInput {
+  return typeof input === 'string' ? { errorMessage: input } : input;
 }
 
 function toAgentRunDto(run: StoredAgentRun): AgentRunDto {
@@ -381,15 +393,34 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       return getDatabaseRunDto(database, runId);
     },
     async failRun(runId, errorMessage) {
+      const failure = toFailureInput(errorMessage);
       await database
         .update(schema.agentRuns)
         .set({
           status: 'failed',
-          errorMessage,
+          errorMessage: failure.errorMessage,
+          ...(failure.finalMessage !== undefined ? { finalMessage: failure.finalMessage } : {}),
+          ...(failure.capabilitySnapshot
+            ? { capabilitySnapshot: failure.capabilitySnapshot as Record<string, unknown> }
+            : {}),
+          ...(failure.input ? { input: failure.input } : {}),
           completedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(schema.agentRuns.id, runId));
+      if (failure.artifacts && failure.artifacts.length > 0) {
+        await database.insert(schema.agentArtifacts).values(
+          failure.artifacts.map((artifact) => ({
+            runId,
+            kind: artifact.kind,
+            title: artifact.title,
+            body: artifact.body ?? null,
+            url: artifact.url ?? null,
+            metadata: artifact.metadata ?? {},
+            status: 'failed',
+          })),
+        );
+      }
       return getDatabaseRunDto(database, runId);
     },
     async recordEvent(runId, input) {
@@ -491,14 +522,26 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
       touch(run);
       return toAgentRunDto(run);
     },
-    async failRun(runId, errorMessage) {
+    async failRun(runId, input) {
       const run = runs.get(runId);
       if (!run) {
         return null;
       }
+      const failure = toFailureInput(input);
 
       run.status = 'failed';
-      run.errorMessage = errorMessage;
+      run.finalMessage = failure.finalMessage ?? run.finalMessage;
+      run.errorMessage = failure.errorMessage;
+      if (failure.capabilitySnapshot) {
+        run.capabilitySnapshot = structuredClone(failure.capabilitySnapshot);
+        run.capabilitySummary = toCapabilitySummary(failure.capabilitySnapshot);
+      }
+      if (failure.input) {
+        run.input = cloneRecord(failure.input);
+      }
+      if (failure.artifacts) {
+        run.artifacts.push(...failure.artifacts.map(createArtifact));
+      }
       touch(run);
       return toAgentRunDto(run);
     },

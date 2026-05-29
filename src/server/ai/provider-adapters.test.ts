@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { ResolvedChatModel } from '@/server/repositories/ai-models';
 import {
   ProviderConfigurationError,
+  ProviderRequestError,
   createChatProviderAdapter,
   createDevelopmentChatProviderAdapter,
   createOpenAiCompatibleChatProviderAdapter,
@@ -138,6 +139,104 @@ test('OpenAI-compatible adapter rejects missing configuration before fetch', asy
     ProviderConfigurationError,
   );
   assert.equal(called, false);
+});
+
+test('OpenAI-compatible adapter normalizes non-JSON error responses', async () => {
+  const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
+  process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';
+
+  try {
+    const adapter = createOpenAiCompatibleChatProviderAdapter({
+      fetch: async () => new Response('upstream failed', { status: 500 }),
+    });
+
+    await assert.rejects(
+      () =>
+        adapter.runChat({
+          runId: 'run-1',
+          userId: 'user-1',
+          model: resolvedModel({
+            providerType: 'openai_compatible',
+            baseUrl: 'https://provider.example/v1',
+            credentialEnvKey: 'TEST_OPENAI_COMPATIBLE_KEY',
+          }),
+          messages: [{ role: 'user', content: 'Hello' }],
+        }),
+      (error) => error instanceof ProviderRequestError && /status 500/.test(error.message),
+    );
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TEST_OPENAI_COMPATIBLE_KEY;
+    } else {
+      process.env.TEST_OPENAI_COMPATIBLE_KEY = originalKey;
+    }
+  }
+});
+
+test('OpenAI-compatible adapter normalizes invalid JSON success responses', async () => {
+  const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
+  process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';
+
+  try {
+    const adapter = createOpenAiCompatibleChatProviderAdapter({
+      fetch: async () => new Response('not json', { status: 200 }),
+    });
+
+    await assert.rejects(
+      () =>
+        adapter.runChat({
+          runId: 'run-1',
+          userId: 'user-1',
+          model: resolvedModel({
+            providerType: 'openai_compatible',
+            baseUrl: 'https://provider.example/v1',
+            credentialEnvKey: 'TEST_OPENAI_COMPATIBLE_KEY',
+          }),
+          messages: [{ role: 'user', content: 'Hello' }],
+        }),
+      ProviderRequestError,
+    );
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TEST_OPENAI_COMPATIBLE_KEY;
+    } else {
+      process.env.TEST_OPENAI_COMPATIBLE_KEY = originalKey;
+    }
+  }
+});
+
+test('OpenAI-compatible adapter normalizes fetch exceptions', async () => {
+  const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
+  process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';
+
+  try {
+    const adapter = createOpenAiCompatibleChatProviderAdapter({
+      fetch: async () => {
+        throw new Error('socket closed');
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        adapter.runChat({
+          runId: 'run-1',
+          userId: 'user-1',
+          model: resolvedModel({
+            providerType: 'openai_compatible',
+            baseUrl: 'https://provider.example/v1',
+            credentialEnvKey: 'TEST_OPENAI_COMPATIBLE_KEY',
+          }),
+          messages: [{ role: 'user', content: 'Hello' }],
+        }),
+      (error) => error instanceof ProviderRequestError && /socket closed/.test(error.message),
+    );
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TEST_OPENAI_COMPATIBLE_KEY;
+    } else {
+      process.env.TEST_OPENAI_COMPATIBLE_KEY = originalKey;
+    }
+  }
 });
 
 test('adapter factory selects adapter by provider type', () => {
