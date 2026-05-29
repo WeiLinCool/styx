@@ -367,7 +367,7 @@ async function main() {
     on conflict (
       model_id,
       requirement_type,
-      coalesce(requirement_value, '')
+      (coalesce(requirement_value, ''))
     )
     do update set label = excluded.label
   `);
