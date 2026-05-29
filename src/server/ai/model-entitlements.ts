@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte, or } from 'drizzle-orm';
 
 import { db, schema } from '@/server/db';
 
@@ -12,6 +12,7 @@ export type ActiveUserEntitlement = {
   planCode: string | null;
   benefitCode: string | null;
   source: string;
+  startsAt: string;
   expiresAt: string | null;
 };
 
@@ -23,7 +24,16 @@ export type ModelEntitlementResult = {
 };
 
 function isActive(entitlement: ActiveUserEntitlement, now: Date) {
-  return !entitlement.expiresAt || new Date(entitlement.expiresAt).getTime() > now.getTime();
+  const nowTime = now.getTime();
+
+  return (
+    new Date(entitlement.startsAt).getTime() <= nowTime &&
+    (!entitlement.expiresAt || new Date(entitlement.expiresAt).getTime() > nowTime)
+  );
+}
+
+function hasRequirementValue(requirement: ModelEntitlementRequirement) {
+  return requirement.value !== null && requirement.value.trim().length > 0;
 }
 
 export function evaluateModelEntitlement(input: {
@@ -40,6 +50,10 @@ export function evaluateModelEntitlement(input: {
   for (const requirement of requirements) {
     if (requirement.type === 'none') {
       return { allowed: true, basis: 'none', label: requirement.label, value: null };
+    }
+
+    if (!hasRequirementValue(requirement)) {
+      continue;
     }
 
     const matched = input.entitlements.some((entitlement) => {
@@ -85,6 +99,7 @@ export async function listActiveUserEntitlements(userId: string): Promise<Active
       planCode: schema.membershipPlans.code,
       benefitCode: schema.benefits.code,
       source: schema.userEntitlements.source,
+      startsAt: schema.userEntitlements.startsAt,
       expiresAt: schema.userEntitlements.expiresAt,
     })
     .from(schema.userEntitlements)
@@ -93,6 +108,7 @@ export async function listActiveUserEntitlements(userId: string): Promise<Active
     .where(
       and(
         eq(schema.userEntitlements.userId, userId),
+        lte(schema.userEntitlements.startsAt, new Date()),
         or(isNull(schema.userEntitlements.expiresAt), gt(schema.userEntitlements.expiresAt, new Date())),
       ),
     );
@@ -101,6 +117,7 @@ export async function listActiveUserEntitlements(userId: string): Promise<Active
     planCode: row.planCode,
     benefitCode: row.benefitCode,
     source: row.source,
+    startsAt: row.startsAt.toISOString(),
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
   }));
 }

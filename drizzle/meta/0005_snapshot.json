@@ -1357,7 +1357,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ai_model_entitlement_requirements_value_shape": {
+          "name": "ai_model_entitlement_requirements_value_shape",
+          "value": "(\"ai_model_entitlement_requirements\".\"requirement_type\" = 'none' and \"ai_model_entitlement_requirements\".\"requirement_value\" is null) or (\"ai_model_entitlement_requirements\".\"requirement_type\" <> 'none' and \"ai_model_entitlement_requirements\".\"requirement_value\" is not null)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.ai_models": {

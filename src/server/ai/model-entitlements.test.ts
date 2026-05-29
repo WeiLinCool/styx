@@ -11,6 +11,7 @@ const activePlanEntitlement: ActiveUserEntitlement = {
   planCode: 'pro-monthly',
   benefitCode: null,
   source: 'membership',
+  startsAt: '2026-01-01T00:00:00.000Z',
   expiresAt: null,
 };
 
@@ -18,7 +19,16 @@ const expiredPlanEntitlement: ActiveUserEntitlement = {
   planCode: 'pro-monthly',
   benefitCode: null,
   source: 'membership',
+  startsAt: '2026-01-01T00:00:00.000Z',
   expiresAt: '2026-01-01T00:00:00.000Z',
+};
+
+const futurePlanEntitlement: ActiveUserEntitlement = {
+  planCode: 'pro-monthly',
+  benefitCode: null,
+  source: 'membership',
+  startsAt: '2026-06-01T00:00:00.000Z',
+  expiresAt: null,
 };
 
 test('evaluateModelEntitlement allows free model', () => {
@@ -56,6 +66,38 @@ test('evaluateModelEntitlement rejects expired membership plan requirement', () 
       { type: 'membership_plan', value: 'pro-monthly', label: 'Pro' },
     ],
     entitlements: [expiredPlanEntitlement],
+    now: new Date('2026-05-29T00:00:00.000Z'),
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.basis, 'none');
+});
+
+test('evaluateModelEntitlement rejects future-dated membership plan requirement', () => {
+  const result = evaluateModelEntitlement({
+    requirements: [
+      { type: 'membership_plan', value: 'pro-monthly', label: 'Pro' },
+    ],
+    entitlements: [futurePlanEntitlement],
+    now: new Date('2026-05-29T00:00:00.000Z'),
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.basis, 'none');
+});
+
+test('evaluateModelEntitlement rejects malformed membership plan requirement with null value', () => {
+  const result = evaluateModelEntitlement({
+    requirements: [{ type: 'membership_plan', value: null, label: 'Pro' }],
+    entitlements: [
+      {
+        planCode: null,
+        benefitCode: null,
+        source: 'membership',
+        startsAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: null,
+      },
+    ],
     now: new Date('2026-05-29T00:00:00.000Z'),
   });
 

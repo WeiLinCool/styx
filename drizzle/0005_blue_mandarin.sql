@@ -9,7 +9,8 @@ CREATE TABLE "ai_model_entitlement_requirements" (
 	"requirement_type" "ai_model_entitlement_requirement_type" NOT NULL,
 	"requirement_value" text,
 	"label" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "ai_model_entitlement_requirements_value_shape" CHECK (("ai_model_entitlement_requirements"."requirement_type" = 'none' and "ai_model_entitlement_requirements"."requirement_value" is null) or ("ai_model_entitlement_requirements"."requirement_type" <> 'none' and "ai_model_entitlement_requirements"."requirement_value" is not null))
 );
 --> statement-breakpoint
 CREATE TABLE "ai_models" (

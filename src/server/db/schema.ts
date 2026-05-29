@@ -694,7 +694,13 @@ export const aiModelEntitlementRequirements = pgTable(
     label: text('label').notNull(),
     createdAt: now,
   },
-  (table) => [index('ai_model_entitlement_requirements_model_id_idx').on(table.modelId)],
+  (table) => [
+    index('ai_model_entitlement_requirements_model_id_idx').on(table.modelId),
+    check(
+      'ai_model_entitlement_requirements_value_shape',
+      sql`(${table.requirementType} = 'none' and ${table.requirementValue} is null) or (${table.requirementType} <> 'none' and ${table.requirementValue} is not null)`,
+    ),
+  ],
 );
 
 export const agentRuns = pgTable(
