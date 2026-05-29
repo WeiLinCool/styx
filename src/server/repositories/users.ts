@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import {
   type AccountState,
@@ -60,6 +60,87 @@ export async function getUserByIdentity(
     .limit(1);
 
   return row?.user ?? null;
+}
+
+export async function getUserByEmail(email: string) {
+  const database = requireDb();
+  const [user] = await database
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.email, email))
+    .limit(1);
+
+  return user ?? null;
+}
+
+export async function getUserByPhone(phone: string) {
+  const database = requireDb();
+  const [user] = await database
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.phone, phone))
+    .limit(1);
+
+  return user ?? null;
+}
+
+export async function createUser(input: {
+  email?: string | null;
+  phone?: string | null;
+  displayName: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const database = requireDb();
+  const [user] = await database
+    .insert(schema.users)
+    .values({
+      email: input.email ?? null,
+      phone: input.phone ?? null,
+      displayName: input.displayName,
+      accountState: 'pending_activation',
+      metadata: input.metadata ?? {},
+    })
+    .returning();
+
+  return user;
+}
+
+export async function createSession(input: {
+  userId: string;
+  sessionTokenHash: string;
+  expiresAt: Date;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  const database = requireDb();
+  const [session] = await database
+    .insert(schema.sessions)
+    .values({
+      userId: input.userId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.expiresAt,
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+    })
+    .returning();
+
+  return session;
+}
+
+export async function revokeSessionsForUser(userId: string) {
+  const database = requireDb();
+  await database
+    .update(schema.sessions)
+    .set({
+      revokedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.sessions.userId, userId),
+        isNull(schema.sessions.revokedAt),
+      ),
+    );
 }
 
 export async function listUserIdentities(userId: string) {
@@ -354,7 +435,10 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
         : '需要激活',
     membership: row.membership,
     credits: row.credits,
-    activity: metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
+      activity:
+        row.user.accountState === 'active'
+          ? '账号已激活'
+          : metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
     auditSummary: `最近操作: ${row.lastAuditAction}`,
     createdAt: formatIso(row.user.createdAt),
     actions: ['重发激活', '直接激活', '停用', '归档'],

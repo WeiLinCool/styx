@@ -28,6 +28,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
   const [avatarUrl, setAvatarUrl] = useState('');
   const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -41,36 +42,45 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
     setCountdown(60);
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!phone || !password) return;
-    onLogin({
-      id: `user_${phone}`,
-      nickname: `用户${phone.slice(-4)}`,
-      avatar: phone.slice(-4),
-      email: '',
-      phone,
-      membershipLevel: 'free',
-      membershipExpiry: null,
-      userLevel: 'free',
-      accountState: 'pending_activation',
-      points: 0,
-    });
+    setSubmitting(true);
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.user) {
+        return;
+      }
+      onLogin(payload.user);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!nickname || nickname.length < 2 || !phone || !code || !password || !agreed) return;
-    onLogin({
-      id: `user_${phone}`,
-      nickname,
-      avatar: avatarUrl || avatarSeed || phone.slice(-4),
-      email: '',
-      phone,
-      membershipLevel: 'free',
-      membershipExpiry: null,
-      userLevel: 'free',
-      accountState: 'pending_activation',
-      points: 0,
-    });
+    setSubmitting(true);
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phone, nickname }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.user) {
+        return;
+      }
+      onLogin({
+        ...payload.user,
+        avatar: avatarUrl || avatarSeed || payload.user.avatar,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // 5 default avatar options
@@ -140,7 +150,8 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
                 />
               </div>
               <button
-                onClick={handleLogin}
+                onClick={() => void handleLogin()}
+                disabled={submitting}
                 className="w-full h-12 rounded-xl bg-[#1d1d1f] text-white font-medium text-[15px] hover:bg-[#333] active:scale-[0.98] transition-all"
               >
                 登录
@@ -309,7 +320,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
 
               {/* 8. Register Button */}
               <button
-                onClick={handleRegister}
+                onClick={() => void handleRegister()}
                 disabled={!agreed || !nickname || nickname.length < 2 || !phone || !code || !password}
                 className="w-full h-12 rounded-xl bg-[#1d1d1f] text-white font-medium text-[15px] hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-40"
               >
@@ -336,11 +347,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
-    const savedUser = getUserFromCookie();
-    if (savedUser) {
-      setUser(savedUser);
+    async function hydrate() {
+      const savedUser = getUserFromCookie();
+      if (savedUser) {
+        setUser(savedUser);
+      }
+
+      try {
+        const response = await fetch('/api/auth/me', { cache: 'no-store' });
+        const payload = await response.json();
+        if (response.ok && payload.authenticated && payload.user) {
+          saveUserToCookie(payload.user);
+          setUser(payload.user);
+        } else {
+          removeUserFromCookie();
+          setUser(null);
+        }
+      } finally {
+        setMounted(true);
+      }
     }
-    setMounted(true);
+
+    void hydrate();
   }, []);
 
   const login = useCallback((userData: UserInfo) => {
@@ -350,6 +378,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     removeUserFromCookie();
     setUser(null);
   }, []);

@@ -1,74 +1,12 @@
-import {
-  AdminModulePage,
-  DetailList,
-  type AdminColumn,
-} from '@/features/admin/module-page';
+import { AdminUsersModule } from '@/features/admin/admin-users-module';
 import {
   AdminActivationWorkOrderActions,
-  AdminUserActions,
 } from '@/features/admin/admin-action-controls';
 import { StatusBadge } from '@/features/admin/status-badge';
 import { getAdminActivationWorkOrders } from '@/server/repositories/admin-activation-work-orders';
-import {
-  getAdminUsers,
-  type AdminUserRow,
-} from '@/server/repositories/users';
+import { getAdminUsers } from '@/server/repositories/users';
 
 export const dynamic = 'force-dynamic';
-
-const columns: AdminColumn<AdminUserRow>[] = [
-  {
-    key: 'user',
-    label: '用户',
-    render: (user) => (
-      <div>
-        <div className="font-medium text-neutral-950">{user.displayName}</div>
-        <div className="text-xs text-neutral-500">{user.primaryContact}</div>
-      </div>
-    ),
-  },
-  {
-    key: 'state',
-    label: '生命周期',
-    render: (user) => <StatusBadge value={user.accountState} />,
-  },
-  {
-    key: 'binding',
-    label: '身份绑定',
-    render: (user) => (
-      <div className="space-y-1">
-        <div className="text-xs font-medium text-neutral-700">{user.bindingState}</div>
-        <DetailList items={user.identities} />
-      </div>
-    ),
-  },
-  {
-    key: 'membership',
-    label: '会员 / 额度',
-    render: (user) => (
-      <div>
-        <div className="text-sm text-neutral-900">{user.membership}</div>
-        <div className="text-xs text-neutral-500">{user.credits} 点额度</div>
-      </div>
-    ),
-  },
-  {
-    key: 'activity',
-    label: '活动 / 审计',
-    render: (user) => (
-      <div>
-        <div className="text-xs text-neutral-700">{user.activity}</div>
-        <div className="mt-1 text-xs text-neutral-500">{user.auditSummary}</div>
-      </div>
-    ),
-  },
-  {
-    key: 'actions',
-    label: '操作',
-    className: 'text-right',
-    render: (user) => <AdminUserActions userId={user.id} />,
-  },
-];
 
 export default async function AdminUsersPage() {
   const data = await getAdminUsers();
@@ -116,15 +54,11 @@ export default async function AdminUsersPage() {
         </div>
       </section>
 
-      <AdminModulePage
-        title="用户管理"
-        description="账号生命周期、身份绑定、会员额度、活动与审计摘要。"
+      <AdminUsersModule
         source={data.source}
         metrics={data.metrics}
         filters={data.filters}
         records={data.records}
-        columns={columns}
-        searchPlaceholder="搜索姓名、邮箱、手机或身份信息..."
       />
     </div>
   );

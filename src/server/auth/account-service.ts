@@ -9,14 +9,20 @@ import {
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import {
   bindVerifiedIdentity,
+  createSession,
+  createUser,
   consumeActivationToken,
   createActivationToken,
   getActivationTokenByHash,
+  getUserByEmail,
   getUserById,
+  getUserByPhone,
+  revokeSessionsForUser,
   setUserAccountState,
 } from '@/server/repositories/users';
 
 const DEFAULT_ACTIVATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
 export async function activateAccountWithToken(input: {
   token: string;
@@ -188,4 +194,57 @@ export async function bindProviderIdentity(input: {
     label: input.label ?? input.providerSubject.trim(),
     metadata: input.metadata,
   });
+}
+
+export async function registerOrLoginUser(input: {
+  phone: string;
+  displayName?: string | null;
+  email?: string | null;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+}) {
+  const normalizedPhone = input.phone.trim();
+  const normalizedEmail = input.email?.trim().toLowerCase() ?? null;
+  const displayName = input.displayName?.trim() || `用户${normalizedPhone.slice(-4)}`;
+
+  let user =
+    (normalizedPhone ? await getUserByPhone(normalizedPhone) : null) ??
+    (normalizedEmail ? await getUserByEmail(normalizedEmail) : null);
+
+  if (!user) {
+    user = await createUser({
+      phone: normalizedPhone,
+      email: normalizedEmail,
+      displayName,
+      metadata: { registrationSource: 'web_auth' },
+    });
+
+    await recordAuditEvent({
+      actorId: user.id,
+      targetId: user.id,
+      type: 'account.registered',
+      metadata: { phone: normalizedPhone, email: normalizedEmail },
+    });
+  }
+
+  await revokeSessionsForUser(user.id);
+
+  const token = createOpaqueToken();
+  const expiresAt = new Date(Date.now() + DEFAULT_SESSION_TTL_MS);
+  await createSession({
+    userId: user.id,
+    sessionTokenHash: hashSecret(token),
+    expiresAt,
+    ipAddress: input.ipAddress ?? null,
+    userAgent: input.userAgent ?? null,
+  });
+
+  await recordAuditEvent({
+    actorId: user.id,
+    targetId: user.id,
+    type: 'account.session_created',
+    metadata: { expiresAt: expiresAt.toISOString() },
+  });
+
+  return { user, token, expiresAt };
 }
