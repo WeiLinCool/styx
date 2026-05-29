@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { AdminAuthActions } from '@/features/admin/admin-auth-actions';
 import { AdminShell } from '@/features/admin/admin-shell';
 import { StatusBadge } from '@/features/admin/status-badge';
 import { AccountDomainError, type SessionContext } from '@/server/auth/account-types';
@@ -48,6 +49,9 @@ function AdminAccessDenied({ reason }: { reason: string }) {
           ，并确保数据库可读取该用户和管理员角色。
         </p>
         <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">{reason}</p>
+        <div className="mt-4 max-w-xl">
+          <AdminAuthActions authenticated={false} />
+        </div>
       </section>
     </AdminShell>
   );

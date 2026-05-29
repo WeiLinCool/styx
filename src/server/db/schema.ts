@@ -37,9 +37,9 @@ export const activationTokenPurpose = pgEnum('activation_token_purpose', [
 
 export const activationWorkOrderStatus = pgEnum('activation_work_order_status', [
   'pending',
-  'approved',
-  'rejected',
-  'expired',
+  'processing',
+  'closed',
+  'archived',
 ]);
 
 export const adminRole = pgEnum('admin_role', [

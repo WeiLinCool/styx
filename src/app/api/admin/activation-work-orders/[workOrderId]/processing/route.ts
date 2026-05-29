@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { approveActivationWorkOrder } from '@/server/auth/activation-work-orders';
+import { startProcessingActivationWorkOrder } from '@/server/auth/activation-work-orders';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 
@@ -9,34 +9,23 @@ const paramsSchema = z.object({
   workOrderId: z.uuid(),
 });
 
-const bodySchema = z.object({
-  reason: z.string().max(240).optional(),
-});
-
 export async function POST(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ workOrderId: string }> },
 ) {
   try {
     const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
-    const body = bodySchema.parse(await request.json().catch(() => ({})));
-    const result = await approveActivationWorkOrder({
+    const workOrder = await startProcessingActivationWorkOrder({
       workOrderId: params.workOrderId,
       actorId: session.user.id,
-      reason: body.reason ?? '客服审核通过',
     });
 
     return NextResponse.json({
       ok: true,
       workOrder: {
-        id: result.workOrder.id,
-        status: result.workOrder.status,
-        closedAt: result.workOrder.approvedAt,
-      },
-      user: {
-        id: result.user.id,
-        accountState: result.user.accountState,
+        id: workOrder.id,
+        status: workOrder.status,
       },
     });
   } catch (error) {
@@ -45,7 +34,7 @@ export async function POST(
         {
           error: {
             code: 'validation_error',
-            message: '激活工单审批请求无效。',
+            message: '开始处理激活工单请求无效。',
             issues: error.issues,
           },
         },

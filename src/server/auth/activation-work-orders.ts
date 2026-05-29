@@ -9,8 +9,12 @@ import {
 } from './account-types';
 import { getUserById, setUserAccountState } from '@/server/repositories/users';
 
-export type ActivationWorkOrderStatus = 'pending' | 'approved' | 'rejected' | 'expired';
-export type ActivationWorkOrderAction = 'approve' | 'reject';
+export type ActivationWorkOrderStatus = 'pending' | 'processing' | 'closed' | 'archived';
+export type ActivationWorkOrderAction =
+  | 'start_processing'
+  | 'approve'
+  | 'reject'
+  | 'archive';
 
 export type BrowserFingerprintInput = {
   userAgent?: unknown;
@@ -89,23 +93,36 @@ export function getActivationWorkOrderTransition(input: {
   expiresAt: Date;
   action: ActivationWorkOrderAction;
   now?: Date;
-}):
-  | { ok: true; nextStatus: 'approved' | 'rejected' }
+}): 
+  | { ok: true; nextStatus: 'processing' | 'closed' | 'archived' }
   | { ok: false; code: 'work_order_not_pending' | 'work_order_expired' } {
   const now = input.now ?? new Date();
-
-  if (input.currentStatus !== 'pending') {
-    return { ok: false, code: 'work_order_not_pending' };
-  }
 
   if (input.expiresAt <= now) {
     return { ok: false, code: 'work_order_expired' };
   }
 
-  return {
-    ok: true,
-    nextStatus: input.action === 'approve' ? 'approved' : 'rejected',
-  };
+  if (input.action === 'start_processing') {
+    if (input.currentStatus !== 'pending') {
+      return { ok: false, code: 'work_order_not_pending' };
+    }
+
+    return { ok: true, nextStatus: 'processing' };
+  }
+
+  if (input.action === 'approve' || input.action === 'reject') {
+    if (input.currentStatus !== 'processing') {
+      return { ok: false, code: 'work_order_not_pending' };
+    }
+
+    return { ok: true, nextStatus: 'closed' };
+  }
+
+  if (input.currentStatus !== 'closed') {
+    return { ok: false, code: 'work_order_not_pending' };
+  }
+
+  return { ok: true, nextStatus: 'archived' };
 }
 
 export function summarizeDeviceMetadata(payload: BrowserFingerprintInput) {
@@ -211,7 +228,7 @@ export async function approveActivationWorkOrder(input: {
     .where(
       and(
         eq(schema.activationWorkOrders.id, input.workOrderId),
-        eq(schema.activationWorkOrders.status, 'pending'),
+        eq(schema.activationWorkOrders.status, 'processing'),
       ),
     )
     .returning();
@@ -274,7 +291,7 @@ export async function rejectActivationWorkOrder(input: {
     .where(
       and(
         eq(schema.activationWorkOrders.id, input.workOrderId),
-        eq(schema.activationWorkOrders.status, 'pending'),
+        eq(schema.activationWorkOrders.status, 'processing'),
       ),
     )
     .returning();
@@ -291,6 +308,106 @@ export async function rejectActivationWorkOrder(input: {
       workOrderId: workOrder.id,
       code: workOrder.code,
       reason: input.reason,
+    },
+  });
+
+  return updated;
+}
+
+export async function startProcessingActivationWorkOrder(input: {
+  workOrderId: string;
+  actorId: string;
+}) {
+  const database = requireDb();
+  const workOrder = await getWorkOrderById(input.workOrderId);
+  if (!workOrder) {
+    throw new AccountDomainError('work_order_not_found', 'Activation work order not found.', 404);
+  }
+
+  const transition = getActivationWorkOrderTransition({
+    currentStatus: workOrder.status,
+    expiresAt: workOrder.expiresAt,
+    action: 'start_processing',
+  });
+  if (!transition.ok) {
+    throw toDomainError(transition.code);
+  }
+
+  const [updated] = await database
+    .update(schema.activationWorkOrders)
+    .set({
+      status: transition.nextStatus,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.activationWorkOrders.id, input.workOrderId),
+        eq(schema.activationWorkOrders.status, 'pending'),
+      ),
+    )
+    .returning();
+
+  if (!updated) {
+    throw toDomainError('work_order_not_pending');
+  }
+
+  await recordAuditEvent({
+    actorId: input.actorId,
+    targetId: workOrder.userId,
+    type: 'account.activation_work_order_processing_started',
+    metadata: {
+      workOrderId: workOrder.id,
+      code: workOrder.code,
+    },
+  });
+
+  return updated;
+}
+
+export async function archiveActivationWorkOrder(input: {
+  workOrderId: string;
+  actorId: string;
+}) {
+  const database = requireDb();
+  const workOrder = await getWorkOrderById(input.workOrderId);
+  if (!workOrder) {
+    throw new AccountDomainError('work_order_not_found', 'Activation work order not found.', 404);
+  }
+
+  const transition = getActivationWorkOrderTransition({
+    currentStatus: workOrder.status,
+    expiresAt: workOrder.expiresAt,
+    action: 'archive',
+  });
+  if (!transition.ok) {
+    throw toDomainError(transition.code);
+  }
+
+  const [updated] = await database
+    .update(schema.activationWorkOrders)
+    .set({
+      status: transition.nextStatus,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.activationWorkOrders.id, input.workOrderId),
+        eq(schema.activationWorkOrders.status, 'closed'),
+      ),
+    )
+    .returning();
+
+  if (!updated) {
+    throw toDomainError('work_order_not_pending');
+  }
+
+  await recordAuditEvent({
+    actorId: input.actorId,
+    targetId: workOrder.userId,
+    type: 'account.activation_work_order_archived',
+    metadata: {
+      workOrderId: workOrder.id,
+      code: workOrder.code,
     },
   });
 

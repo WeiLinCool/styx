@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   Bot,
   Boxes,
@@ -31,12 +34,22 @@ type AdminNavProps = {
   className?: string;
 };
 
+export function isAdminNavItemActive(href: string, pathname: string) {
+  if (href === '/admin') {
+    return pathname === '/admin';
+  }
+
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function AdminNav({ className }: AdminNavProps) {
+  const pathname = usePathname();
+
   return (
     <nav className={cn('flex flex-col gap-1', className)} aria-label="后台导航">
       {adminNavItems.map((item) => {
         const Icon = item.icon;
-        const isDashboard = item.href === '/admin';
+        const isActive = isAdminNavItemActive(item.href, pathname);
 
         return (
           <Link
@@ -44,7 +57,7 @@ export function AdminNav({ className }: AdminNavProps) {
             href={item.href}
             className={cn(
               'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950',
-              isDashboard && 'bg-neutral-950 text-white hover:bg-neutral-900 hover:text-white',
+              isActive && 'bg-neutral-950 text-white hover:bg-neutral-900 hover:text-white',
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
