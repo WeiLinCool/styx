@@ -2,6 +2,7 @@
 change: real-ai-chat-model-billing
 design-doc: docs/superpowers/specs/2026-05-29-real-ai-chat-model-billing-design.md
 base-ref: 392fdee4ecda2bc14534263868f23f587c7e519f
+archived-with: 2026-05-30-real-ai-chat-model-billing
 ---
 
 # Real AI Chat Model Billing Implementation Plan
@@ -14,6 +15,7 @@ base-ref: 392fdee4ecda2bc14534263868f23f587c7e519f
 
 **Tech Stack:** Next.js 16 App Router, TypeScript, Drizzle ORM/PostgreSQL, Zod, Node test runner via `tsx --test`, existing admin module components, React client pages.
 
+archived-with: 2026-05-30-real-ai-chat-model-billing
 ---
 
 ## File Structure

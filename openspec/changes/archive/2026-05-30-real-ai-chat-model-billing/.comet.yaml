@@ -9,4 +9,4 @@ verify_result: pass
 verification_report: docs/superpowers/verification/2026-05-30-real-ai-chat-model-billing.md
 branch_status: handled
 verified_at: 2026-05-30
-archived: false
+archived: true
