@@ -1,3 +1,8 @@
+---
+archived-with: 2026-05-29-admin-auth-nav-workorders
+status: final
+status: final
+---
 # Admin Auth Nav Workorders Design
 
 ## Summary

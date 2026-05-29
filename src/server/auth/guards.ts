@@ -1,4 +1,5 @@
 import { AccountDomainError } from './account-types';
+import { resolveAdminSession } from './admin-auth';
 import { resolveSession } from './session';
 
 export async function requireActiveAccount() {
@@ -20,7 +21,11 @@ export async function requireActiveAccount() {
 }
 
 export async function requireAdmin() {
-  const session = await requireActiveAccount();
+  const session = await resolveAdminSession();
+
+  if (!session.authenticated) {
+    throw new AccountDomainError('session_required', 'Admin sign in is required.', 401);
+  }
 
   if (!session.user.adminRoles.some((role) => ['owner', 'admin', 'operator'].includes(role))) {
     throw new AccountDomainError('admin_required', 'Admin access is required.', 403);

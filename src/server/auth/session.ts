@@ -12,17 +12,38 @@ import {
 } from '@/server/repositories/users';
 
 const SESSION_COOKIE_NAMES = ['styx_session', 'nfai_auth_token'];
+export const DEV_AUTH_BYPASS_COOKIE = 'styx_dev_auth_disabled';
 
-function getExplicitDevelopmentUserId() {
-  if (process.env.NODE_ENV === 'production') {
-    return null;
+export function shouldUseDevelopmentAuth(input: {
+  nodeEnv: string | undefined;
+  devAuthEnabled: string | undefined;
+  devUserId: string | null | undefined;
+  devAuthBlocked: boolean;
+}) {
+  if (input.nodeEnv === 'production') {
+    return false;
   }
 
-  if (process.env.STYX_ENABLE_DEV_AUTH !== 'true') {
-    return null;
+  if (input.devAuthEnabled !== 'true') {
+    return false;
   }
 
-  return process.env.STYX_DEV_USER_ID ?? null;
+  if (!input.devUserId) {
+    return false;
+  }
+
+  return !input.devAuthBlocked;
+}
+
+function getExplicitDevelopmentUserId(devAuthBlocked: boolean) {
+  return shouldUseDevelopmentAuth({
+    nodeEnv: process.env.NODE_ENV,
+    devAuthEnabled: process.env.STYX_ENABLE_DEV_AUTH,
+    devUserId: process.env.STYX_DEV_USER_ID,
+    devAuthBlocked,
+  })
+    ? process.env.STYX_DEV_USER_ID ?? null
+    : null;
 }
 
 export async function resolveSession(): Promise<SessionContext> {
@@ -47,7 +68,9 @@ export async function resolveSession(): Promise<SessionContext> {
     }
   }
 
-  const developmentUserId = getExplicitDevelopmentUserId();
+  const developmentUserId = getExplicitDevelopmentUserId(
+    cookieStore.get(DEV_AUTH_BYPASS_COOKIE)?.value === 'true',
+  );
   if (developmentUserId) {
     const user = await getUserById(developmentUserId);
     if (!user) {

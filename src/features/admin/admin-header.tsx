@@ -1,6 +1,9 @@
-import { Database, LockKeyhole, UserRoundCheck } from 'lucide-react';
+'use client';
 
-import { AdminAuthActions } from './admin-auth-actions';
+import { Database, Loader2, LockKeyhole, LogOut, UserRoundCheck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+
 import { StatusBadge } from './status-badge';
 import type { SessionContext } from '@/server/auth/account-types';
 
@@ -10,7 +13,20 @@ type AdminHeaderProps = {
 };
 
 export function AdminHeader({ session, dataSource = 'database' }: AdminHeaderProps) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
   const roleLabel = session.authenticated ? session.user.adminRoles.join(', ') : '无角色';
+
+  async function handleLogout() {
+    setPending(true);
+    try {
+      await fetch('/api/admin/logout', { method: 'POST' });
+    } finally {
+      router.push('/admin/login');
+      router.refresh();
+      setPending(false);
+    }
+  }
 
   return (
     <header className="flex min-h-16 flex-col gap-3 border-b border-neutral-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6">
@@ -33,7 +49,15 @@ export function AdminHeader({ session, dataSource = 'database' }: AdminHeaderPro
           <span>数据源</span>
           <StatusBadge value={dataSource === 'database' ? '数据库' : '种子数据'} tone={dataSource === 'database' ? 'success' : 'warning'} />
         </div>
-        <AdminAuthActions authenticated={session.authenticated} />
+        <button
+          type="button"
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={pending}
+          onClick={() => void handleLogout()}
+        >
+          {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+          退出登录
+        </button>
       </div>
     </header>
   );

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { registerOrLoginUser } from '@/server/auth/account-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
+import { DEV_AUTH_BYPASS_COOKIE } from '@/server/auth/session';
 
 const bodySchema = z.object({
   phone: z.string().min(6).max(32),
@@ -34,6 +35,12 @@ export async function POST(request: Request) {
 
     response.cookies.set('nfai_auth_token', result.token, {
       expires: result.expiresAt,
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+    });
+    response.cookies.set(DEV_AUTH_BYPASS_COOKIE, '', {
+      expires: new Date(0),
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
