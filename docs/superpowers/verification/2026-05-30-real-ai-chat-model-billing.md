@@ -36,3 +36,22 @@ Date: 2026-05-30
 
 - The in-app Browser plugin reported `Browser is not available: iab`, so screenshot verification used local Chrome headless instead.
 - No admin credentials were configured in this worktree environment, so authenticated `/admin/ai-models` table interaction was covered by repository/API tests, `next build`, and the route/login-gate screenshot rather than a logged-in browser session.
+
+## Full Verification Checklist
+
+| Check | Result |
+| --- | --- |
+| All tasks in `tasks.md` completed | PASS |
+| Implementation matches `openspec/changes/real-ai-chat-model-billing/design.md` | PASS |
+| Implementation matches `docs/superpowers/specs/2026-05-29-real-ai-chat-model-billing-design.md` | PASS |
+| Delta spec scenarios covered by code/tests | PASS |
+| Proposal goals satisfied | PASS |
+| Delta spec and design doc contradictions | PASS: none found |
+| Associated design document exists | PASS |
+| Hardcoded secrets introduced | PASS: no secret values stored or exposed; credential references use env keys |
+
+`openspec-verify-change` was not installed in this environment, so full verification used the Comet full-verification checklist manually.
+
+## Branch Handling
+
+Branch handling option: keep the worktree and feature branch as-is for archive and any follow-up integration. Worktree path: `/Users/wlz/Documents/codeSpace/styx/.worktrees/real-ai-chat-model-billing`.
