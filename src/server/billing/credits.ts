@@ -30,6 +30,13 @@ export function calculateChatCreditCost(input: {
   );
 }
 
+export function calculateCreditBalance(input: {
+  legacyCredits: number;
+  ledgerAmount: number;
+}): number {
+  return input.legacyCredits + input.ledgerAmount;
+}
+
 export function createMemoryCreditLedger(initialBalances: Record<string, number>) {
   const balances = new Map(Object.entries(initialBalances));
   const entries = new Map<string, CreditLedgerDebitResult>();
@@ -65,25 +72,10 @@ export function createMemoryCreditLedger(initialBalances: Record<string, number>
 
 export async function getCreditBalance(userId: string): Promise<number> {
   const database = requireCreditDatabase();
-  const [ledgerBalance] = await database
-    .select({
-      balance: sql<number>`coalesce(sum(${schema.creditLedgerEntries.amount}), 0)::int`,
-    })
-    .from(schema.creditLedgerEntries)
-    .where(eq(schema.creditLedgerEntries.userId, userId));
+  const legacyCredits = await getLegacyCreditBalance(database, userId);
+  const ledgerAmount = await getLedgerAmount(database, userId);
 
-  const balance = ledgerBalance?.balance ?? 0;
-  if (balance !== 0) {
-    return balance;
-  }
-
-  const [user] = await database
-    .select({ metadata: schema.users.metadata })
-    .from(schema.users)
-    .where(eq(schema.users.id, userId))
-    .limit(1);
-
-  return readLegacyCreditBalance(user?.metadata);
+  return calculateCreditBalance({ legacyCredits, ledgerAmount });
 }
 
 export async function assertCanAffordMinimum(
@@ -105,59 +97,65 @@ export async function debitForAgentRun(input: {
 }): Promise<CreditLedgerDebitResult & { amount: number }> {
   const database = requireCreditDatabase();
   const idempotencyKey = `agent-run:${input.runId}:usage`;
-  const existing = await findLedgerEntryByKey(idempotencyKey);
-  if (existing) {
+
+  return database.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${schema.users} where id = ${input.userId} for update`);
+
+    const existing = await findLedgerEntryByKey(tx, idempotencyKey);
+    if (existing) {
+      return {
+        entryId: existing.id,
+        balanceAfter:
+          existing.balanceAfter ?? (await getCreditBalanceWithExecutor(tx, input.userId)),
+        amount: Math.abs(existing.amount),
+      };
+    }
+
+    const amount = calculateChatCreditCost({ usage: input.usage, pricing: input.pricing });
+    const balance = await getCreditBalanceWithExecutor(tx, input.userId);
+    if (balance < amount) {
+      throw new InsufficientCreditsError();
+    }
+
+    const balanceAfter = balance - amount;
+    const [entry] = await tx
+      .insert(schema.creditLedgerEntries)
+      .values({
+        userId: input.userId,
+        runId: input.runId,
+        entryType: 'debit',
+        amount: -amount,
+        balanceAfter,
+        idempotencyKey,
+        reason: 'chat usage',
+        metadata: {
+          usage: input.usage,
+          pricing: input.pricing,
+          model: input.modelSnapshot,
+        },
+      })
+      .onConflictDoNothing()
+      .returning({
+        id: schema.creditLedgerEntries.id,
+        amount: schema.creditLedgerEntries.amount,
+        balanceAfter: schema.creditLedgerEntries.balanceAfter,
+      });
+
+    if (entry) {
+      return { entryId: entry.id, balanceAfter, amount };
+    }
+
+    const raced = await findLedgerEntryByKey(tx, idempotencyKey);
+    if (!raced) {
+      throw new Error('Credit ledger debit could not be persisted.');
+    }
+
     return {
-      entryId: existing.id,
-      balanceAfter: existing.balanceAfter ?? (await getCreditBalance(input.userId)),
-      amount: Math.abs(existing.amount),
+      entryId: raced.id,
+      balanceAfter: raced.balanceAfter ?? (await getCreditBalanceWithExecutor(tx, input.userId)),
+      amount: Math.abs(raced.amount),
     };
-  }
-
-  const amount = calculateChatCreditCost({ usage: input.usage, pricing: input.pricing });
-  const balance = await getCreditBalance(input.userId);
-  if (balance < amount) {
-    throw new InsufficientCreditsError();
-  }
-
-  const balanceAfter = balance - amount;
-  const [entry] = await database
-    .insert(schema.creditLedgerEntries)
-    .values({
-      userId: input.userId,
-      runId: input.runId,
-      entryType: 'debit',
-      amount: -amount,
-      balanceAfter,
-      idempotencyKey,
-      reason: 'chat usage',
-      metadata: {
-        usage: input.usage,
-        pricing: input.pricing,
-        model: input.modelSnapshot,
-      },
-    })
-    .onConflictDoNothing()
-    .returning({
-      id: schema.creditLedgerEntries.id,
-      amount: schema.creditLedgerEntries.amount,
-      balanceAfter: schema.creditLedgerEntries.balanceAfter,
-    });
-
-  if (entry) {
-    return { entryId: entry.id, balanceAfter, amount };
-  }
-
-  const raced = await findLedgerEntryByKey(idempotencyKey);
-  if (!raced) {
-    throw new Error('Credit ledger debit could not be persisted.');
-  }
-
-  return {
-    entryId: raced.id,
-    balanceAfter: raced.balanceAfter ?? (await getCreditBalance(input.userId)),
-    amount: Math.abs(raced.amount),
-  };
+  });
 }
 
 function requireCreditDatabase() {
@@ -168,9 +166,45 @@ function requireCreditDatabase() {
   return db;
 }
 
-async function findLedgerEntryByKey(idempotencyKey: string) {
-  const database = requireCreditDatabase();
-  const [entry] = await database
+type CreditDatabaseExecutor = Pick<NonNullable<typeof db>, 'select'>;
+type CreditTransactionExecutor = Parameters<
+  Parameters<NonNullable<typeof db>['transaction']>[0]
+>[0];
+type CreditExecutor = CreditDatabaseExecutor | CreditTransactionExecutor;
+
+async function getCreditBalanceWithExecutor(
+  executor: CreditExecutor,
+  userId: string,
+): Promise<number> {
+  const legacyCredits = await getLegacyCreditBalance(executor, userId);
+  const ledgerAmount = await getLedgerAmount(executor, userId);
+
+  return calculateCreditBalance({ legacyCredits, ledgerAmount });
+}
+
+async function getLegacyCreditBalance(executor: CreditExecutor, userId: string) {
+  const [user] = await executor
+    .select({ metadata: schema.users.metadata })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+
+  return readLegacyCreditBalance(user?.metadata);
+}
+
+async function getLedgerAmount(executor: CreditExecutor, userId: string) {
+  const [ledgerBalance] = await executor
+    .select({
+      amount: sql<number>`coalesce(sum(${schema.creditLedgerEntries.amount}), 0)::int`,
+    })
+    .from(schema.creditLedgerEntries)
+    .where(eq(schema.creditLedgerEntries.userId, userId));
+
+  return ledgerBalance?.amount ?? 0;
+}
+
+async function findLedgerEntryByKey(executor: CreditExecutor, idempotencyKey: string) {
+  const [entry] = await executor
     .select({
       id: schema.creditLedgerEntries.id,
       amount: schema.creditLedgerEntries.amount,

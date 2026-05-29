@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   InsufficientCreditsError,
   calculateChatCreditCost,
+  calculateCreditBalance,
   createMemoryCreditLedger,
 } from './credits';
 
@@ -73,4 +74,10 @@ test('memory ledger rejects debit when balance is insufficient', async () => {
   );
 
   assert.equal(await ledger.getBalance('user-1'), 2);
+});
+
+test('calculateCreditBalance adds legacy starting credits and ledger entries', () => {
+  assert.equal(calculateCreditBalance({ legacyCredits: 100, ledgerAmount: -5 }), 95);
+  assert.equal(calculateCreditBalance({ legacyCredits: 0, ledgerAmount: -5 }), -5);
+  assert.equal(calculateCreditBalance({ legacyCredits: 25, ledgerAmount: 10 }), 35);
 });

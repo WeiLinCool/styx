@@ -60,6 +60,7 @@ ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_provider_id_ai_providers_id_fk
 ALTER TABLE "credit_ledger_entries" ADD CONSTRAINT "credit_ledger_entries_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "credit_ledger_entries" ADD CONSTRAINT "credit_ledger_entries_run_id_agent_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."agent_runs"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "ai_model_entitlement_requirements_model_id_idx" ON "ai_model_entitlement_requirements" USING btree ("model_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "ai_model_entitlement_requirements_natural_unique_idx" ON "ai_model_entitlement_requirements" USING btree ("model_id","requirement_type",coalesce("requirement_value", ''));--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_models_code_unique_idx" ON "ai_models" USING btree ("code");--> statement-breakpoint
 CREATE INDEX "ai_models_provider_id_idx" ON "ai_models" USING btree ("provider_id");--> statement-breakpoint
 CREATE INDEX "ai_models_status_idx" ON "ai_models" USING btree ("status");--> statement-breakpoint

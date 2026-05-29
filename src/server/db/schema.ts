@@ -696,6 +696,11 @@ export const aiModelEntitlementRequirements = pgTable(
   },
   (table) => [
     index('ai_model_entitlement_requirements_model_id_idx').on(table.modelId),
+    uniqueIndex('ai_model_entitlement_requirements_natural_unique_idx').on(
+      table.modelId,
+      table.requirementType,
+      sql`coalesce(${table.requirementValue}, '')`,
+    ),
     check(
       'ai_model_entitlement_requirements_value_shape',
       sql`(${table.requirementType} = 'none' and ${table.requirementValue} is null) or (${table.requirementType} <> 'none' and ${table.requirementValue} is not null)`,

@@ -51,6 +51,14 @@ export class ModelEntitlementRequiredError extends Error {
   }
 }
 
+export function buildModelRequirementSeedKey(input: {
+  modelId: string;
+  requirementType: ModelEntitlementRequirement['type'];
+  requirementValue: string | null;
+}) {
+  return `${input.modelId}:${input.requirementType}:${input.requirementValue ?? ''}`;
+}
+
 const defaultPricing: AiModelPricing = {
   unit: 'token',
   promptCreditsPer1k: 1,

@@ -1337,6 +1337,33 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "ai_model_entitlement_requirements_natural_unique_idx": {
+          "name": "ai_model_entitlement_requirements_natural_unique_idx",
+          "columns": [
+            {
+              "expression": "model_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "requirement_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(requirement_value, '')",
+              "isExpression": true,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {

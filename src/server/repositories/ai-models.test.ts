@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { ActiveUserEntitlement } from '@/server/ai/model-entitlements';
 import {
+  buildModelRequirementSeedKey,
   getSeedChatModelsForUser,
   resolveSeedChatModelForUser,
 } from './ai-models';
@@ -35,4 +36,23 @@ test('resolveSeedChatModelForUser allows premium model with active pro entitleme
   assert.equal(model.code, 'dev-pro-chat');
   assert.equal(model.entitlement.basis, 'membership_plan');
   assert.equal(model.entitlement.value, 'pro-monthly');
+});
+
+test('buildModelRequirementSeedKey normalizes free requirement null value', () => {
+  assert.equal(
+    buildModelRequirementSeedKey({
+      modelId: 'model-1',
+      requirementType: 'none',
+      requirementValue: null,
+    }),
+    'model-1:none:',
+  );
+  assert.equal(
+    buildModelRequirementSeedKey({
+      modelId: 'model-1',
+      requirementType: 'membership_plan',
+      requirementValue: 'pro-monthly',
+    }),
+    'model-1:membership_plan:pro-monthly',
+  );
 });
