@@ -137,6 +137,34 @@ export const agentRunStatus = pgEnum('agent_run_status', [
   'cancelled',
 ]);
 
+export const aiProviderStatus = pgEnum('ai_provider_status', [
+  'enabled',
+  'disabled',
+  'archived',
+]);
+
+export const aiProviderType = pgEnum('ai_provider_type', [
+  'openai_compatible',
+  'development',
+]);
+
+export const aiModelStatus = pgEnum('ai_model_status', [
+  'enabled',
+  'disabled',
+  'archived',
+]);
+
+export const aiModelEntitlementRequirementType = pgEnum(
+  'ai_model_entitlement_requirement_type',
+  ['none', 'membership_plan', 'benefit_code', 'user_grant'],
+);
+
+export const creditLedgerEntryType = pgEnum('credit_ledger_entry_type', [
+  'grant',
+  'debit',
+  'adjustment',
+]);
+
 export const agentArtifactKind = pgEnum('agent_artifact_kind', [
   'text',
   'image',
@@ -607,6 +635,68 @@ export const agentCapabilityBundleItems = pgTable(
   ],
 );
 
+export const aiProviders = pgTable(
+  'ai_providers',
+  {
+    id,
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    providerType: aiProviderType('provider_type').notNull(),
+    status: aiProviderStatus('status').notNull().default('enabled'),
+    baseUrl: text('base_url'),
+    credentialEnvKey: text('credential_env_key'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('ai_providers_code_unique_idx').on(table.code),
+    index('ai_providers_status_idx').on(table.status),
+  ],
+);
+
+export const aiModels = pgTable(
+  'ai_models',
+  {
+    id,
+    providerId: uuid('provider_id')
+      .notNull()
+      .references(() => aiProviders.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    model: text('model').notNull(),
+    status: aiModelStatus('status').notNull().default('enabled'),
+    supportsChat: boolean('supports_chat').notNull().default(false),
+    isDefaultChat: boolean('is_default_chat').notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
+    pricing: jsonb('pricing').$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('ai_models_code_unique_idx').on(table.code),
+    index('ai_models_provider_id_idx').on(table.providerId),
+    index('ai_models_status_idx').on(table.status),
+    index('ai_models_chat_idx').on(table.supportsChat),
+  ],
+);
+
+export const aiModelEntitlementRequirements = pgTable(
+  'ai_model_entitlement_requirements',
+  {
+    id,
+    modelId: uuid('model_id')
+      .notNull()
+      .references(() => aiModels.id, { onDelete: 'cascade' }),
+    requirementType: aiModelEntitlementRequirementType('requirement_type').notNull(),
+    requirementValue: text('requirement_value'),
+    label: text('label').notNull(),
+    createdAt: now,
+  },
+  (table) => [index('ai_model_entitlement_requirements_model_id_idx').on(table.modelId)],
+);
+
 export const agentRuns = pgTable(
   'agent_runs',
   {
@@ -635,6 +725,28 @@ export const agentRuns = pgTable(
     index('agent_runs_user_id_idx').on(table.userId),
     index('agent_runs_status_idx').on(table.status),
     index('agent_runs_task_type_idx').on(table.taskType),
+  ],
+);
+
+export const creditLedgerEntries = pgTable(
+  'credit_ledger_entries',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    runId: uuid('run_id').references(() => agentRuns.id, { onDelete: 'set null' }),
+    entryType: creditLedgerEntryType('entry_type').notNull(),
+    amount: integer('amount').notNull(),
+    balanceAfter: integer('balance_after'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    reason: text('reason').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+  },
+  (table) => [
+    index('credit_ledger_entries_user_id_idx').on(table.userId),
+    uniqueIndex('credit_ledger_entries_idempotency_key_unique_idx').on(table.idempotencyKey),
   ],
 );
 
