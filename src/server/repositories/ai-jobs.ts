@@ -247,16 +247,18 @@ function readAgentRunBillingSummary(snapshot: AgentCapabilitySnapshot | null) {
   const billing = snapshot ? readSnapshotRecord(snapshot, 'billing') : null;
   const status = readString(billing?.status);
   const creditCost = readNumber(billing?.creditCost);
+  const ledgerEntryId = readString(billing?.ledgerEntryId);
+  const ledgerSummary = ledgerEntryId ? `ledger ${ledgerEntryId}` : null;
 
   if (status && creditCost !== null) {
-    return `${creditCost} credits · ${status}`;
+    return combineSummaryParts([`${creditCost} credits`, status, ledgerSummary]);
   }
 
   if (creditCost !== null) {
-    return `${creditCost} credits`;
+    return combineSummaryParts([`${creditCost} credits`, ledgerSummary]);
   }
 
-  return status;
+  return combineSummaryParts([status, ledgerSummary]) || null;
 }
 
 function combineSummaryParts(parts: Array<string | null>) {

@@ -322,9 +322,9 @@ export default function ChatPage() {
               <button onClick={() => setMobileMenuOpen(false)} className="cursor-pointer text-[#444444]"><X size={18} /></button>
             </div>
             {conversations.map((c) => (
-              <div key={c.id} className="mb-1 rounded-xl px-3 py-2 text-[13px] text-[#d1d1d6]">
+              <div key={c.id} className="mb-1 rounded-xl px-3 py-2 text-[13px] text-[#1d1d1f]">
                 <div className="truncate">{c.title}</div>
-                <div className="text-[11px] text-[#444444]">{c.time}</div>
+                <div className="text-[11px] text-[#6e6e73]">{c.time}</div>
               </div>
             ))}
           </div>
