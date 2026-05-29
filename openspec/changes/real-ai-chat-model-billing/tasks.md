@@ -33,4 +33,4 @@
 
 - [x] 6.1 Add unit tests for model resolution, entitlement filtering, disabled model rejection, unauthorized model rejection, provider adapter normalization, pricing calculation, and idempotent ledger debits.
 - [x] 6.2 Add API tests for model listing by entitlement, chat run creation with `modelId`, insufficient credits, model-entitlement errors, and provider configuration errors.
-- [ ] 6.3 Run typecheck, lint, tests, and browser verification for admin model management and public chat model selection.
+- [x] 6.3 Run typecheck, lint, tests, and browser verification for admin model management and public chat model selection.
