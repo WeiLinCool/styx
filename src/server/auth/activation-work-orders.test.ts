@@ -58,27 +58,37 @@ test('getActivationWorkOrderTransition approves only pending unexpired work orde
     getActivationWorkOrderTransition({
       currentStatus: 'pending',
       expiresAt: new Date('2026-05-29T09:00:00.000Z'),
-      action: 'approve',
+      action: 'start_processing',
       now,
     }),
-    { ok: true, nextStatus: 'approved' },
+    { ok: true, nextStatus: 'processing' },
   );
 
   assert.deepEqual(
     getActivationWorkOrderTransition({
-      currentStatus: 'approved',
+      currentStatus: 'processing',
       expiresAt: new Date('2026-05-29T09:00:00.000Z'),
-      action: 'reject',
+      action: 'approve',
       now,
     }),
-    { ok: false, code: 'work_order_not_pending' },
+    { ok: true, nextStatus: 'closed' },
+  );
+
+  assert.deepEqual(
+    getActivationWorkOrderTransition({
+      currentStatus: 'closed',
+      expiresAt: new Date('2026-05-29T09:00:00.000Z'),
+      action: 'archive',
+      now,
+    }),
+    { ok: true, nextStatus: 'archived' },
   );
 
   assert.deepEqual(
     getActivationWorkOrderTransition({
       currentStatus: 'pending',
       expiresAt: new Date('2026-05-29T07:00:00.000Z'),
-      action: 'approve',
+      action: 'start_processing',
       now,
     }),
     { ok: false, code: 'work_order_expired' },

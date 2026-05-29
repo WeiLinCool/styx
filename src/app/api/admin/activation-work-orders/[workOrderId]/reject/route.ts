@@ -32,7 +32,7 @@ export async function POST(
       workOrder: {
         id: workOrder.id,
         status: workOrder.status,
-        rejectedAt: workOrder.rejectedAt,
+        closedAt: workOrder.rejectedAt,
       },
     });
   } catch (error) {

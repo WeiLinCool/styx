@@ -1,58 +1,44 @@
 import { AdminUsersModule } from '@/features/admin/admin-users-module';
+import { AdminWorkOrderQueue } from '@/features/admin/admin-work-order-queue';
 import {
-  AdminActivationWorkOrderActions,
-} from '@/features/admin/admin-action-controls';
-import { StatusBadge } from '@/features/admin/status-badge';
-import { getAdminActivationWorkOrders } from '@/server/repositories/admin-activation-work-orders';
+  getAdminActivationWorkOrders,
+  type AdminWorkOrderQueueStatus,
+} from '@/server/repositories/admin-activation-work-orders';
 import { getAdminUsers } from '@/server/repositories/users';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminUsersPage() {
+function resolveQueueStatus(value: string | undefined): AdminWorkOrderQueueStatus {
+  return value === 'processing' || value === 'closed' || value === 'archived'
+    ? value
+    : 'pending';
+}
+
+function resolvePage(value: string | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+}
+
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const data = await getAdminUsers();
-  const workOrders = await getAdminActivationWorkOrders();
+  const params = searchParams ? await searchParams : {};
+  const status = resolveQueueStatus(
+    typeof params.status === 'string' ? params.status : undefined,
+  );
+  const page = resolvePage(typeof params.page === 'string' ? params.page : undefined);
+  const workOrders = await getAdminActivationWorkOrders({
+    status,
+    page,
+    pageSize: 10,
+  });
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-neutral-950">激活绑定工单</h2>
-            <p className="mt-1 text-sm text-neutral-600">
-              用户从浏览器生成工单码后，客服在这里审核并完成账号激活绑定。
-            </p>
-          </div>
-          <StatusBadge value={`${workOrders.length} 个工单`} tone={workOrders.length > 0 ? 'warning' : 'success'} />
-        </div>
-        <div className="grid gap-3">
-          {workOrders.length === 0 ? (
-            <div className="rounded-md border border-dashed border-neutral-200 px-3 py-6 text-center text-sm text-neutral-500">
-              暂无待处理激活绑定工单
-            </div>
-          ) : (
-            workOrders.map((workOrder) => (
-              <div
-                key={workOrder.id}
-                className="grid gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 lg:grid-cols-[1fr_auto]"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-neutral-950">{workOrder.code}</span>
-                    <StatusBadge value={workOrder.status} />
-                  </div>
-                  <p className="mt-1 text-sm text-neutral-700">{workOrder.userLabel}</p>
-                  <p className="mt-1 text-xs text-neutral-500">
-                    设备摘要：{workOrder.deviceSummary} · 过期：{workOrder.expiresAt}
-                  </p>
-                </div>
-                {workOrder.status === 'pending' ? (
-                  <AdminActivationWorkOrderActions workOrderId={workOrder.id} />
-                ) : null}
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+      <AdminWorkOrderQueue queue={workOrders} />
 
       <AdminUsersModule
         source={data.source}

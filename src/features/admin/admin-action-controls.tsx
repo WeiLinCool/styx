@@ -6,6 +6,7 @@ import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import type { AdminWorkOrderQueueStatus } from '@/server/repositories/admin-activation-work-orders';
 
 type ActionState = {
   tone: 'success' | 'error';
@@ -134,24 +135,57 @@ export function AdminUserActions({ userId }: { userId: string }) {
   );
 }
 
-export function AdminActivationWorkOrderActions({ workOrderId }: { workOrderId: string }) {
+export function AdminActivationWorkOrderActions({
+  workOrderId,
+  queueStatus,
+}: {
+  workOrderId: string;
+  queueStatus: AdminWorkOrderQueueStatus;
+}) {
+  const actions =
+    queueStatus === 'pending'
+      ? [
+          {
+            label: '开始处理',
+            url: `/api/admin/activation-work-orders/${workOrderId}/processing`,
+            body: {},
+            successMessage: '激活工单已进入处理中。',
+          },
+        ]
+      : queueStatus === 'processing'
+        ? [
+            {
+              label: '通过并办结',
+              url: `/api/admin/activation-work-orders/${workOrderId}/approve`,
+              body: { reason: '客服审核通过' },
+              successMessage: '激活工单已办结，账号已激活。',
+            },
+            {
+              label: '拒绝并办结',
+              url: `/api/admin/activation-work-orders/${workOrderId}/reject`,
+              body: { reason: '客服审核拒绝' },
+              successMessage: '激活工单已拒绝并办结。',
+              variant: 'destructive' as const,
+            },
+          ]
+        : queueStatus === 'closed'
+          ? [
+              {
+                label: '归档',
+                url: `/api/admin/activation-work-orders/${workOrderId}/archive`,
+                body: {},
+                successMessage: '激活工单已归档。',
+              },
+            ]
+          : [];
+
+  if (actions.length === 0) {
+    return null;
+  }
+
   return (
     <ActionButtons
-      actions={[
-        {
-          label: '通过',
-          url: `/api/admin/activation-work-orders/${workOrderId}/approve`,
-          body: { reason: '客服审核通过' },
-          successMessage: '激活工单已通过，账号已激活。',
-        },
-        {
-          label: '拒绝',
-          url: `/api/admin/activation-work-orders/${workOrderId}/reject`,
-          body: { reason: '客服审核拒绝' },
-          successMessage: '激活工单已拒绝。',
-          variant: 'destructive',
-        },
-      ]}
+      actions={actions}
     />
   );
 }

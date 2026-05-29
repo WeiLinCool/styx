@@ -17,7 +17,6 @@ The system SHALL provide persistent navigation for all management modules and re
 #### Scenario: Admin browses modules
 - **WHEN** an admin uses the management console
 - **THEN** dashboard, users, memberships, benefits, shop/orders, AI jobs, partners, content/assets, and settings are reachable from navigation
-
 #### Scenario: Admin opens a non-dashboard module
 - **WHEN** an admin opens `/admin/users`, `/admin/orders`, or another nested admin route
 - **THEN** the matching left navigation item is visually active and unrelated items are inactive

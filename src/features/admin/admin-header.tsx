@@ -1,5 +1,6 @@
 import { Database, LockKeyhole, UserRoundCheck } from 'lucide-react';
 
+import { AdminAuthActions } from './admin-auth-actions';
 import { StatusBadge } from './status-badge';
 import type { SessionContext } from '@/server/auth/account-types';
 
@@ -32,6 +33,7 @@ export function AdminHeader({ session, dataSource = 'database' }: AdminHeaderPro
           <span>数据源</span>
           <StatusBadge value={dataSource === 'database' ? '数据库' : '种子数据'} tone={dataSource === 'database' ? 'success' : 'warning'} />
         </div>
+        <AdminAuthActions authenticated={session.authenticated} />
       </div>
     </header>
   );

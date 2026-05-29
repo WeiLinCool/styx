@@ -558,3 +558,5 @@ Repeat for all completed items.
 git add openspec/changes/admin-auth-nav-workorders/tasks.md docs/superpowers/verification/2026-05-29-admin-auth-nav-workorders-verification.md
 git commit -m "test: verify admin auth nav workorder change"
 ```
+=======
+>>>>>>> admin-auth-nav-workorders
