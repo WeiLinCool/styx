@@ -81,3 +81,21 @@ test('calculateCreditBalance adds legacy starting credits and ledger entries', (
   assert.equal(calculateCreditBalance({ legacyCredits: 0, ledgerAmount: -5 }), -5);
   assert.equal(calculateCreditBalance({ legacyCredits: 25, ledgerAmount: 10 }), 35);
 });
+
+test('calculateCreditBalance includes positive grant amounts', () => {
+  assert.equal(calculateCreditBalance({ legacyCredits: 0, ledgerAmount: 200 }), 200);
+});
+
+test('memory ledger can apply signed adjustments idempotently', async () => {
+  const ledger = createMemoryCreditLedger({ 'user-1': 10 });
+  const result = await ledger.adjust({
+    userId: 'user-1',
+    amount: 5,
+    idempotencyKey: 'adjust:user-1:1',
+    reason: 'manual add',
+    metadata: {},
+  });
+
+  assert.equal(result.balanceAfter, 15);
+  assert.equal(await ledger.getBalance('user-1'), 15);
+});

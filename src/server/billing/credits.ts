@@ -17,6 +17,20 @@ export type CreditLedgerDebitResult = {
   balanceAfter: number;
 };
 
+type CreditLedgerWriteResult = CreditLedgerDebitResult;
+type CreditLedgerEntryType = 'grant' | 'debit' | 'adjustment';
+type CreditLedgerMutationInput = {
+  userId: string;
+  amount: number;
+  idempotencyKey: string;
+  reason: string;
+  metadata: Record<string, unknown>;
+};
+type CreditLedgerInsertInput = CreditLedgerMutationInput & {
+  runId?: string;
+  entryType: CreditLedgerEntryType;
+};
+
 export function calculateChatCreditCost(input: {
   usage: AiUsage;
   pricing: AiModelPricing;
@@ -39,7 +53,25 @@ export function calculateCreditBalance(input: {
 
 export function createMemoryCreditLedger(initialBalances: Record<string, number>) {
   const balances = new Map(Object.entries(initialBalances));
-  const entries = new Map<string, CreditLedgerDebitResult>();
+  const entries = new Map<string, CreditLedgerWriteResult>();
+
+  const apply = async (input: CreditLedgerMutationInput) => {
+    const existing = entries.get(input.idempotencyKey);
+    if (existing) {
+      return existing;
+    }
+
+    const balance = balances.get(input.userId) ?? 0;
+    const balanceAfter = balance + input.amount;
+    if (balanceAfter < 0) {
+      throw new InsufficientCreditsError();
+    }
+
+    const result = { entryId: randomUUID(), balanceAfter };
+    balances.set(input.userId, balanceAfter);
+    entries.set(input.idempotencyKey, result);
+    return result;
+  };
 
   return {
     async getBalance(userId: string) {
@@ -52,20 +84,10 @@ export function createMemoryCreditLedger(initialBalances: Record<string, number>
       reason: string;
       metadata: Record<string, unknown>;
     }) {
-      const existing = entries.get(input.idempotencyKey);
-      if (existing) {
-        return existing;
-      }
-
-      const balance = balances.get(input.userId) ?? 0;
-      if (balance < input.amount) {
-        throw new InsufficientCreditsError();
-      }
-
-      const result = { entryId: randomUUID(), balanceAfter: balance - input.amount };
-      balances.set(input.userId, result.balanceAfter);
-      entries.set(input.idempotencyKey, result);
-      return result;
+      return apply({ ...input, amount: -input.amount });
+    },
+    async adjust(input: CreditLedgerMutationInput) {
+      return apply(input);
     },
   };
 }
@@ -112,49 +134,45 @@ export async function debitForAgentRun(input: {
     }
 
     const amount = calculateChatCreditCost({ usage: input.usage, pricing: input.pricing });
-    const balance = await getCreditBalanceWithExecutor(tx, input.userId);
-    if (balance < amount) {
-      throw new InsufficientCreditsError();
-    }
+    const result = await insertCreditLedgerEntry(tx, {
+      userId: input.userId,
+      runId: input.runId,
+      entryType: 'debit',
+      amount: -amount,
+      idempotencyKey,
+      reason: 'chat usage',
+      metadata: {
+        usage: input.usage,
+        pricing: input.pricing,
+        model: input.modelSnapshot,
+      },
+    });
 
-    const balanceAfter = balance - amount;
-    const [entry] = await tx
-      .insert(schema.creditLedgerEntries)
-      .values({
-        userId: input.userId,
-        runId: input.runId,
-        entryType: 'debit',
-        amount: -amount,
-        balanceAfter,
-        idempotencyKey,
-        reason: 'chat usage',
-        metadata: {
-          usage: input.usage,
-          pricing: input.pricing,
-          model: input.modelSnapshot,
-        },
-      })
-      .onConflictDoNothing()
-      .returning({
-        id: schema.creditLedgerEntries.id,
-        amount: schema.creditLedgerEntries.amount,
-        balanceAfter: schema.creditLedgerEntries.balanceAfter,
-      });
+    return { ...result, amount: Math.abs(amount) };
+  });
+}
 
-    if (entry) {
-      return { entryId: entry.id, balanceAfter, amount };
-    }
+export async function grantCredits(input: CreditLedgerMutationInput): Promise<CreditLedgerWriteResult> {
+  if (input.amount <= 0) {
+    throw new Error('Grant amount must be positive.');
+  }
 
-    const raced = await findLedgerEntryByKey(tx, idempotencyKey);
-    if (!raced) {
-      throw new Error('Credit ledger debit could not be persisted.');
-    }
+  const database = requireCreditDatabase();
 
-    return {
-      entryId: raced.id,
-      balanceAfter: raced.balanceAfter ?? (await getCreditBalanceWithExecutor(tx, input.userId)),
-      amount: Math.abs(raced.amount),
-    };
+  return database.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${schema.users} where id = ${input.userId} for update`);
+    return insertCreditLedgerEntry(tx, { ...input, entryType: 'grant' });
+  });
+}
+
+export async function adjustCredits(
+  input: CreditLedgerMutationInput,
+): Promise<CreditLedgerWriteResult> {
+  const database = requireCreditDatabase();
+
+  return database.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${schema.users} where id = ${input.userId} for update`);
+    return insertCreditLedgerEntry(tx, { ...input, entryType: 'adjustment' });
   });
 }
 
@@ -215,6 +233,57 @@ async function findLedgerEntryByKey(executor: CreditExecutor, idempotencyKey: st
     .limit(1);
 
   return entry ?? null;
+}
+
+async function insertCreditLedgerEntry(
+  executor: CreditTransactionExecutor,
+  input: CreditLedgerInsertInput,
+): Promise<CreditLedgerWriteResult> {
+  const existing = await findLedgerEntryByKey(executor, input.idempotencyKey);
+  if (existing) {
+    return {
+      entryId: existing.id,
+      balanceAfter: existing.balanceAfter ?? (await getCreditBalanceWithExecutor(executor, input.userId)),
+    };
+  }
+
+  const balance = await getCreditBalanceWithExecutor(executor, input.userId);
+  const balanceAfter = balance + input.amount;
+  if (balanceAfter < 0) {
+    throw new InsufficientCreditsError();
+  }
+
+  const [entry] = await executor
+    .insert(schema.creditLedgerEntries)
+    .values({
+      userId: input.userId,
+      runId: input.runId ?? null,
+      entryType: input.entryType,
+      amount: input.amount,
+      balanceAfter,
+      idempotencyKey: input.idempotencyKey,
+      reason: input.reason,
+      metadata: input.metadata,
+    })
+    .onConflictDoNothing()
+    .returning({
+      id: schema.creditLedgerEntries.id,
+      balanceAfter: schema.creditLedgerEntries.balanceAfter,
+    });
+
+  if (entry) {
+    return { entryId: entry.id, balanceAfter };
+  }
+
+  const raced = await findLedgerEntryByKey(executor, input.idempotencyKey);
+  if (!raced) {
+    throw new Error('Credit ledger entry could not be persisted.');
+  }
+
+  return {
+    entryId: raced.id,
+    balanceAfter: raced.balanceAfter ?? (await getCreditBalanceWithExecutor(executor, input.userId)),
+  };
 }
 
 function readLegacyCreditBalance(metadata: Record<string, unknown> | undefined) {
