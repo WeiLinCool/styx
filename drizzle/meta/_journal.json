@@ -43,6 +43,13 @@
       "when": 1780068339103,
       "tag": "0005_blue_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780107101049,
+      "tag": "0006_sleepy_tyger_tiger",
+      "breakpoints": true
     }
   ]
 }

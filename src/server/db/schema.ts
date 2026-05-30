@@ -761,6 +761,90 @@ export const creditLedgerEntries = pgTable(
   ],
 );
 
+export const userInviteCodes = pgTable(
+  'user_invite_codes',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    status: text('status').notNull().default('active'),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('user_invite_codes_code_unique_idx').on(table.code),
+    uniqueIndex('user_invite_codes_active_user_unique_idx')
+      .on(table.userId)
+      .where(sql`${table.status} = 'active'`),
+  ],
+);
+
+export const userReferrals = pgTable(
+  'user_referrals',
+  {
+    id,
+    referrerUserId: uuid('referrer_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    referredUserId: uuid('referred_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    inviteCodeId: uuid('invite_code_id').references(() => userInviteCodes.id, {
+      onDelete: 'set null',
+    }),
+    qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
+    qualifiedBy: text('qualified_by'),
+    ledgerEntryId: uuid('ledger_entry_id').references(() => creditLedgerEntries.id, {
+      onDelete: 'set null',
+    }),
+    rewardLedgerEntryId: uuid('reward_ledger_entry_id').references(
+      () => creditLedgerEntries.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('user_referrals_referrer_user_id_idx').on(table.referrerUserId),
+    index('user_referrals_invite_code_id_idx').on(table.inviteCodeId),
+    uniqueIndex('user_referrals_referred_user_id_unique_idx').on(table.referredUserId),
+  ],
+);
+
+export const userDailyCheckins = pgTable(
+  'user_daily_checkins',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    checkinDate: timestamp('checkin_date', { withTimezone: true }).notNull(),
+    streakCount: integer('streak_count').notNull().default(1),
+    ledgerEntryId: uuid('ledger_entry_id').references(() => creditLedgerEntries.id, {
+      onDelete: 'set null',
+    }),
+    rewardLedgerEntryId: uuid('reward_ledger_entry_id').references(
+      () => creditLedgerEntries.id,
+      { onDelete: 'set null' },
+    ),
+    qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
+    qualifiedBy: text('qualified_by'),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('user_daily_checkins_user_id_idx').on(table.userId),
+    uniqueIndex('user_daily_checkins_user_date_unique_idx').on(
+      table.userId,
+      table.checkinDate,
+    ),
+    check('user_daily_checkins_streak_count_positive', sql`${table.streakCount} > 0`),
+  ],
+);
+
 export const agentRunEvents = pgTable(
   'agent_run_events',
   {
