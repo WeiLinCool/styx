@@ -7,6 +7,7 @@ import {
 import { createOpaqueToken, hashSecret } from './account-crypto';
 import { hashUserPassword, verifyStoredUserPassword } from './public-auth';
 import { recordAuditEvent } from '@/server/audit/audit-service';
+import { bindReferralForUser, getActiveInviteCodeByCode } from '@/server/repositories/points';
 import {
   bindVerifiedIdentity,
   createSession,
@@ -236,22 +237,8 @@ export async function registerOrLoginUser(input: {
       metadata: { phone: normalizedPhone, email: normalizedEmail },
     });
 
-    if (normalizedInviteCode && db) {
-      const [inviteCode] = await db
-        .select({
-          id: schema.userInviteCodes.id,
-          code: schema.userInviteCodes.code,
-          userId: schema.userInviteCodes.userId,
-        })
-        .from(schema.userInviteCodes)
-        .where(
-          and(
-            eq(schema.userInviteCodes.code, normalizedInviteCode),
-            eq(schema.userInviteCodes.status, 'active'),
-          ),
-        )
-        .limit(1);
-
+    if (normalizedInviteCode) {
+      const inviteCode = await getActiveInviteCodeByCode(normalizedInviteCode);
       if (inviteCode && inviteCode.userId !== user.id) {
         await bindReferralForUser({
           referrerUserId: inviteCode.userId,

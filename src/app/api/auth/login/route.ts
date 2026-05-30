@@ -16,73 +16,70 @@ const bodySchema = z.object({
   inviteCode: z.string().trim().min(1).max(64).optional(),
 });
 
-let registerOrLoginUserImpl: (input: RegisterOrLoginUserInput) => Promise<RegisterOrLoginUserResult> =
-  registerOrLoginUser;
-
 export function parseLoginBody(input: unknown) {
   return bodySchema.parse(input);
 }
 
-export function setRegisterOrLoginUserForTest(
-  implementation: ((input: RegisterOrLoginUserInput) => Promise<RegisterOrLoginUserResult>) | null,
+export function createLoginHandler(
+  implementation: (input: RegisterOrLoginUserInput) => Promise<RegisterOrLoginUserResult>,
 ) {
-  registerOrLoginUserImpl = implementation ?? registerOrLoginUser;
-}
+  return async function POST(request: Request) {
+    try {
+      const body = parseLoginBody(await request.json());
+      const result = await implementation({
+        phone: body.phone,
+        password: body.password,
+        displayName: body.nickname,
+        email: body.email,
+        inviteCode: body.inviteCode,
+        userAgent: request.headers.get('user-agent'),
+        ipAddress: request.headers.get('x-forwarded-for'),
+      });
 
-export async function POST(request: Request) {
-  try {
-    const body = parseLoginBody(await request.json());
-    const result = await registerOrLoginUserImpl({
-      phone: body.phone,
-      password: body.password,
-      displayName: body.nickname,
-      email: body.email,
-      inviteCode: body.inviteCode,
-      userAgent: request.headers.get('user-agent'),
-      ipAddress: request.headers.get('x-forwarded-for'),
-    });
-
-    const response = NextResponse.json({
-      ok: true,
-      user: {
-        id: result.user.id,
-        displayName: result.user.displayName,
-        phone: result.user.phone,
-        email: result.user.email,
-        accountState: result.user.accountState,
-        mustResetPassword: result.user.metadata?.mustResetPassword === true,
-      },
-    });
-
-    response.cookies.set('nfai_auth_token', result.token, {
-      expires: result.expiresAt,
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-    });
-    response.cookies.set(DEV_AUTH_BYPASS_COOKIE, '', {
-      expires: new Date(0),
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-    });
-
-    return response;
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'validation_error',
-            message: '登录请求无效。',
-            issues: error.issues,
-          },
+      const response = NextResponse.json({
+        ok: true,
+        user: {
+          id: result.user.id,
+          displayName: result.user.displayName,
+          phone: result.user.phone,
+          email: result.user.email,
+          accountState: result.user.accountState,
+          mustResetPassword: result.user.metadata?.mustResetPassword === true,
         },
-        { status: 400 },
-      );
-    }
+      });
 
-    const response = accountErrorToResponse(error);
-    return NextResponse.json(response.body, { status: response.status });
-  }
+      response.cookies.set('nfai_auth_token', result.token, {
+        expires: result.expiresAt,
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+      });
+      response.cookies.set(DEV_AUTH_BYPASS_COOKIE, '', {
+        expires: new Date(0),
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+      });
+
+      return response;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'validation_error',
+              message: '登录请求无效。',
+              issues: error.issues,
+            },
+          },
+          { status: 400 },
+        );
+      }
+
+      const response = accountErrorToResponse(error);
+      return NextResponse.json(response.body, { status: response.status });
+    }
+  };
 }
+
+export const POST = createLoginHandler(registerOrLoginUser);

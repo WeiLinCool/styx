@@ -138,6 +138,26 @@ export async function getOrCreateUserInviteCode(userId: string) {
   });
 }
 
+export async function getActiveInviteCodeByCode(code: string) {
+  const database = requireDb();
+  const [inviteCode] = await database
+    .select({
+      id: schema.userInviteCodes.id,
+      code: schema.userInviteCodes.code,
+      userId: schema.userInviteCodes.userId,
+    })
+    .from(schema.userInviteCodes)
+    .where(
+      and(
+        eq(schema.userInviteCodes.code, code),
+        eq(schema.userInviteCodes.status, 'active'),
+      ),
+    )
+    .limit(1);
+
+  return inviteCode ?? null;
+}
+
 export async function bindReferralForUser(input: {
   referrerUserId: string;
   referredUserId: string;
