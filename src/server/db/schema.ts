@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -699,7 +700,7 @@ export const aiModelEntitlementRequirements = pgTable(
     uniqueIndex('ai_model_entitlement_requirements_natural_unique_idx').on(
       table.modelId,
       table.requirementType,
-      sql`coalesce(${table.requirementValue}, '')`,
+      sql`coalesce("requirement_value", '')`,
     ),
     check(
       'ai_model_entitlement_requirements_value_shape',
@@ -797,9 +798,6 @@ export const userReferrals = pgTable(
     }),
     qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
     qualifiedBy: text('qualified_by'),
-    ledgerEntryId: uuid('ledger_entry_id').references(() => creditLedgerEntries.id, {
-      onDelete: 'set null',
-    }),
     rewardLedgerEntryId: uuid('reward_ledger_entry_id').references(
       () => creditLedgerEntries.id,
       { onDelete: 'set null' },
@@ -821,11 +819,8 @@ export const userDailyCheckins = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    checkinDate: timestamp('checkin_date', { withTimezone: true }).notNull(),
+    checkinDate: date('checkin_date').notNull(),
     streakCount: integer('streak_count').notNull().default(1),
-    ledgerEntryId: uuid('ledger_entry_id').references(() => creditLedgerEntries.id, {
-      onDelete: 'set null',
-    }),
     rewardLedgerEntryId: uuid('reward_ledger_entry_id').references(
       () => creditLedgerEntries.id,
       { onDelete: 'set null' },

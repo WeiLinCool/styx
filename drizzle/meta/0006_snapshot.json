@@ -1,6 +1,6 @@
 {
-  "id": "3a22c4ab-a63c-4861-bce6-2bc054b720b9",
-  "prevId": "3b6eee5c-ebad-4a09-87da-38fdd97dfa9a",
+  "id": "3f3b94a0-3d31-4f4f-82f6-e506cf71b515",
+  "prevId": "9d9d3ba3-64c8-4c4b-897f-7ea7ca846520",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3348,7 +3348,7 @@
         },
         "checkin_date": {
           "name": "checkin_date",
-          "type": "timestamp with time zone",
+          "type": "date",
           "primaryKey": false,
           "notNull": true
         },
@@ -3358,12 +3358,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "ledger_entry_id": {
-          "name": "ledger_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "reward_ledger_entry_id": {
           "name": "reward_ledger_entry_id",
@@ -3448,19 +3442,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "user_daily_checkins_ledger_entry_id_credit_ledger_entries_id_fk": {
-          "name": "user_daily_checkins_ledger_entry_id_credit_ledger_entries_id_fk",
-          "tableFrom": "user_daily_checkins",
-          "tableTo": "credit_ledger_entries",
-          "columnsFrom": [
-            "ledger_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "user_daily_checkins_reward_ledger_entry_id_credit_ledger_entries_id_fk": {
@@ -3948,12 +3929,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "ledger_entry_id": {
-          "name": "ledger_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "reward_ledger_entry_id": {
           "name": "reward_ledger_entry_id",
           "type": "uuid",
@@ -4055,19 +4030,6 @@
           "tableTo": "user_invite_codes",
           "columnsFrom": [
             "invite_code_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "user_referrals_ledger_entry_id_credit_ledger_entries_id_fk": {
-          "name": "user_referrals_ledger_entry_id_credit_ledger_entries_id_fk",
-          "tableFrom": "user_referrals",
-          "tableTo": "credit_ledger_entries",
-          "columnsFrom": [
-            "ledger_entry_id"
           ],
           "columnsTo": [
             "id"
