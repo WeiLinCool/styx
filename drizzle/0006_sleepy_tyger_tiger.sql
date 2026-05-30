@@ -1,11 +1,11 @@
+CREATE TYPE "public"."referral_qualification_source" AS ENUM('invite_code', 'admin_review', 'system');--> statement-breakpoint
+CREATE TYPE "public"."user_invite_code_status" AS ENUM('active', 'disabled');--> statement-breakpoint
 CREATE TABLE "user_daily_checkins" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
 	"checkin_date" date NOT NULL,
 	"streak_count" integer DEFAULT 1 NOT NULL,
 	"reward_ledger_entry_id" uuid,
-	"qualified_at" timestamp with time zone,
-	"qualified_by" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "user_daily_checkins_streak_count_positive" CHECK ("user_daily_checkins"."streak_count" > 0)
@@ -15,10 +15,11 @@ CREATE TABLE "user_invite_codes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
 	"code" text NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
+	"status" "user_invite_code_status" DEFAULT 'active' NOT NULL,
 	"disabled_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "user_invite_codes_status_disabled_at_consistent" CHECK (("user_invite_codes"."status" = 'active' and "user_invite_codes"."disabled_at" is null) or ("user_invite_codes"."status" = 'disabled' and "user_invite_codes"."disabled_at" is not null))
 );
 --> statement-breakpoint
 CREATE TABLE "user_referrals" (
@@ -26,12 +27,14 @@ CREATE TABLE "user_referrals" (
 	"referrer_user_id" uuid NOT NULL,
 	"referred_user_id" uuid NOT NULL,
 	"invite_code_id" uuid,
+	"invite_code_snapshot" text,
 	"qualified_at" timestamp with time zone,
-	"qualified_by" text,
+	"qualified_by" "referral_qualification_source",
 	"reward_ledger_entry_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
+--> statement-breakpoint
 ALTER TABLE "user_daily_checkins" ADD CONSTRAINT "user_daily_checkins_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_daily_checkins" ADD CONSTRAINT "user_daily_checkins_reward_ledger_entry_id_credit_ledger_entries_id_fk" FOREIGN KEY ("reward_ledger_entry_id") REFERENCES "public"."credit_ledger_entries"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_invite_codes" ADD CONSTRAINT "user_invite_codes_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

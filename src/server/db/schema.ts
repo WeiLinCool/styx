@@ -166,6 +166,17 @@ export const creditLedgerEntryType = pgEnum('credit_ledger_entry_type', [
   'adjustment',
 ]);
 
+export const userInviteCodeStatus = pgEnum('user_invite_code_status', [
+  'active',
+  'disabled',
+]);
+
+export const referralQualificationSource = pgEnum('referral_qualification_source', [
+  'invite_code',
+  'admin_review',
+  'system',
+]);
+
 export const agentArtifactKind = pgEnum('agent_artifact_kind', [
   'text',
   'image',
@@ -770,7 +781,7 @@ export const userInviteCodes = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     code: text('code').notNull(),
-    status: text('status').notNull().default('active'),
+    status: userInviteCodeStatus('status').notNull().default('active'),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
     createdAt: now,
     updatedAt: updated,
@@ -780,6 +791,10 @@ export const userInviteCodes = pgTable(
     uniqueIndex('user_invite_codes_active_user_unique_idx')
       .on(table.userId)
       .where(sql`${table.status} = 'active'`),
+    check(
+      'user_invite_codes_status_disabled_at_consistent',
+      sql`(${table.status} = 'active' and ${table.disabledAt} is null) or (${table.status} = 'disabled' and ${table.disabledAt} is not null)`,
+    ),
   ],
 );
 
@@ -796,8 +811,9 @@ export const userReferrals = pgTable(
     inviteCodeId: uuid('invite_code_id').references(() => userInviteCodes.id, {
       onDelete: 'set null',
     }),
+    inviteCodeSnapshot: text('invite_code_snapshot'),
     qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
-    qualifiedBy: text('qualified_by'),
+    qualifiedBy: referralQualificationSource('qualified_by'),
     rewardLedgerEntryId: uuid('reward_ledger_entry_id').references(
       () => creditLedgerEntries.id,
       { onDelete: 'set null' },
@@ -825,8 +841,6 @@ export const userDailyCheckins = pgTable(
       () => creditLedgerEntries.id,
       { onDelete: 'set null' },
     ),
-    qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
-    qualifiedBy: text('qualified_by'),
     createdAt: now,
     updatedAt: updated,
   },

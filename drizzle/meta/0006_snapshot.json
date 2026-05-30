@@ -1,6 +1,6 @@
 {
-  "id": "3f3b94a0-3d31-4f4f-82f6-e506cf71b515",
-  "prevId": "9d9d3ba3-64c8-4c4b-897f-7ea7ca846520",
+  "id": "6ee6df5f-92aa-4a38-b1c6-63727c117395",
+  "prevId": "3f3b94a0-3d31-4f4f-82f6-e506cf71b515",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3365,18 +3365,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "qualified_at": {
-          "name": "qualified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "qualified_by": {
-          "name": "qualified_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3808,7 +3796,8 @@
         },
         "status": {
           "name": "status",
-          "type": "text",
+          "type": "user_invite_code_status",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
@@ -3885,7 +3874,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "user_invite_codes_status_disabled_at_consistent": {
+          "name": "user_invite_codes_status_disabled_at_consistent",
+          "value": "(\"user_invite_codes\".\"status\" = 'active' and \"user_invite_codes\".\"disabled_at\" is null) or (\"user_invite_codes\".\"status\" = 'disabled' and \"user_invite_codes\".\"disabled_at\" is not null)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.user_referrals": {
@@ -3917,6 +3911,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "invite_code_snapshot": {
+          "name": "invite_code_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "qualified_at": {
           "name": "qualified_at",
           "type": "timestamp with time zone",
@@ -3925,7 +3925,8 @@
         },
         "qualified_by": {
           "name": "qualified_by",
-          "type": "text",
+          "type": "referral_qualification_source",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": false
         },
@@ -4450,6 +4451,15 @@
         "archived"
       ]
     },
+    "public.referral_qualification_source": {
+      "name": "referral_qualification_source",
+      "schema": "public",
+      "values": [
+        "invite_code",
+        "admin_review",
+        "system"
+      ]
+    },
     "public.user_account_state": {
       "name": "user_account_state",
       "schema": "public",
@@ -4458,6 +4468,14 @@
         "active",
         "suspended",
         "archived"
+      ]
+    },
+    "public.user_invite_code_status": {
+      "name": "user_invite_code_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "disabled"
       ]
     }
   },
