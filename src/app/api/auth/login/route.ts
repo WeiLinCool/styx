@@ -10,16 +10,22 @@ const bodySchema = z.object({
   password: z.string().min(6).max(128),
   nickname: z.string().min(2).max(120).optional(),
   email: z.string().email().optional(),
+  inviteCode: z.string().trim().min(1).max(64).optional(),
 });
+
+export function parseLoginBody(input: unknown) {
+  return bodySchema.parse(input);
+}
 
 export async function POST(request: Request) {
   try {
-    const body = bodySchema.parse(await request.json());
+    const body = parseLoginBody(await request.json());
     const result = await registerOrLoginUser({
       phone: body.phone,
       password: body.password,
       displayName: body.nickname,
       email: body.email,
+      inviteCode: body.inviteCode,
       userAgent: request.headers.get('user-agent'),
       ipAddress: request.headers.get('x-forwarded-for'),
     });

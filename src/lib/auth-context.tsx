@@ -79,7 +79,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone, nickname, password }),
+        body: JSON.stringify({ phone, nickname, password, inviteCode: inviteCode || undefined }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.user) {

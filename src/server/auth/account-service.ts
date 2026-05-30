@@ -20,6 +20,9 @@ import {
   revokeSessionsForUser,
   setUserAccountState,
 } from '@/server/repositories/users';
+import { bindReferralForUser } from '@/server/repositories/points';
+import { db, schema } from '@/server/db';
+import { and, eq } from 'drizzle-orm';
 
 const DEFAULT_ACTIVATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -201,6 +204,7 @@ export async function registerOrLoginUser(input: {
   password: string;
   displayName?: string | null;
   email?: string | null;
+  inviteCode?: string | null;
   userAgent?: string | null;
   ipAddress?: string | null;
 }) {
@@ -208,6 +212,7 @@ export async function registerOrLoginUser(input: {
   const normalizedEmail = input.email?.trim().toLowerCase() ?? null;
   const displayName = input.displayName?.trim() || `用户${normalizedPhone.slice(-4)}`;
   const password = input.password;
+  const normalizedInviteCode = input.inviteCode?.trim() || null;
 
   let user =
     (normalizedPhone ? await getUserByPhone(normalizedPhone) : null) ??
@@ -230,6 +235,32 @@ export async function registerOrLoginUser(input: {
       type: 'account.registered',
       metadata: { phone: normalizedPhone, email: normalizedEmail },
     });
+
+    if (normalizedInviteCode && db) {
+      const [inviteCode] = await db
+        .select({
+          id: schema.userInviteCodes.id,
+          code: schema.userInviteCodes.code,
+          userId: schema.userInviteCodes.userId,
+        })
+        .from(schema.userInviteCodes)
+        .where(
+          and(
+            eq(schema.userInviteCodes.code, normalizedInviteCode),
+            eq(schema.userInviteCodes.status, 'active'),
+          ),
+        )
+        .limit(1);
+
+      if (inviteCode && inviteCode.userId !== user.id) {
+        await bindReferralForUser({
+          referrerUserId: inviteCode.userId,
+          referredUserId: user.id,
+          inviteCodeId: inviteCode.id,
+          inviteCodeSnapshot: inviteCode.code,
+        });
+      }
+    }
   } else if (!('passwordHash' in (user.metadata ?? {}))) {
     throw new AccountDomainError(
       'password_setup_required',
