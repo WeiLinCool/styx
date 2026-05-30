@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  assertNotSelfReferral,
   formatRecentPointActivity,
   shouldSkipReferralQualification,
   summarizeReferralStats,
@@ -21,7 +22,7 @@ test('shouldSkipReferralQualification returns true when referral is already qual
   assert.equal(
     shouldSkipReferralQualification({
       qualifiedAt: '2026-05-30T00:00:00.000Z',
-      rewardLedgerEntryId: 'ledger-1',
+      qualifiedBy: 'order_paid',
     }),
     true,
   );
@@ -29,9 +30,43 @@ test('shouldSkipReferralQualification returns true when referral is already qual
   assert.equal(
     shouldSkipReferralQualification({
       qualifiedAt: null,
-      rewardLedgerEntryId: null,
+      qualifiedBy: 'membership_activated',
     }),
     false,
+  );
+
+  assert.equal(
+    shouldSkipReferralQualification({
+      qualifiedAt: '2026-05-30T00:00:00.000Z',
+      qualifiedBy: null,
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldSkipReferralQualification({
+      qualifiedAt: null,
+      qualifiedBy: null,
+    }),
+    false,
+  );
+});
+
+test('assertNotSelfReferral rejects matching referrer and referred users', () => {
+  assert.throws(
+    () =>
+      assertNotSelfReferral({
+        referrerUserId: 'user-1',
+        referredUserId: 'user-1',
+      }),
+    /cannot refer themselves/i,
+  );
+
+  assert.doesNotThrow(() =>
+    assertNotSelfReferral({
+      referrerUserId: 'user-1',
+      referredUserId: 'user-2',
+    }),
   );
 });
 

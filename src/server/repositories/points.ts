@@ -24,7 +24,7 @@ type ReferralStatsRow = {
 
 type ReferralQualificationRow = {
   qualifiedAt: string | Date | null;
-  rewardLedgerEntryId: string | null;
+  qualifiedBy?: 'order_paid' | 'membership_activated' | null;
 } | null;
 
 type RecentPointActivityRow = {
@@ -37,11 +37,7 @@ type RecentPointActivityRow = {
 
 type InviteSummaryRow = ReferralStatsRow;
 
-function toIsoString(value: string | Date | null) {
-  if (!value) {
-    return null;
-  }
-
+function toIsoString(value: string | Date) {
   return value instanceof Date ? value.toISOString() : value;
 }
 
@@ -49,23 +45,13 @@ function buildInviteCode() {
   return randomBytes(4).toString('hex').toUpperCase();
 }
 
-async function generateUniqueInviteCode() {
-  const database = requireDb();
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const code = buildInviteCode();
-    const [existing] = await database
-      .select({ id: schema.userInviteCodes.id })
-      .from(schema.userInviteCodes)
-      .where(eq(schema.userInviteCodes.code, code))
-      .limit(1);
-
-    if (!existing) {
-      return code;
-    }
+export function assertNotSelfReferral(input: {
+  referrerUserId: string;
+  referredUserId: string;
+}) {
+  if (input.referrerUserId === input.referredUserId) {
+    throw new Error('Users cannot refer themselves.');
   }
-
-  throw new Error('Failed to generate a unique invite code.');
 }
 
 export function summarizeReferralStats(rows: ReferralStatsRow[]) {
@@ -84,7 +70,7 @@ export function summarizeReferralStats(rows: ReferralStatsRow[]) {
 }
 
 export function shouldSkipReferralQualification(row: ReferralQualificationRow) {
-  return Boolean(row?.qualifiedAt || row?.rewardLedgerEntryId);
+  return Boolean(row?.qualifiedAt && row?.qualifiedBy);
 }
 
 export function formatRecentPointActivity(rows: RecentPointActivityRow[]) {
@@ -93,7 +79,7 @@ export function formatRecentPointActivity(rows: RecentPointActivityRow[]) {
     entryType: row.entryType,
     amount: row.amount,
     reason: row.reason,
-    createdAt: toIsoString(row.createdAt)!,
+    createdAt: toIsoString(row.createdAt),
   }));
 }
 
@@ -132,7 +118,7 @@ export async function getOrCreateUserInviteCode(userId: string) {
     }
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const code = await generateUniqueInviteCode();
+      const code = buildInviteCode();
       const [created] = await tx
         .insert(schema.userInviteCodes)
         .values({
@@ -158,6 +144,8 @@ export async function bindReferralForUser(input: {
   inviteCodeId?: string | null;
   inviteCodeSnapshot?: string | null;
 }) {
+  assertNotSelfReferral(input);
+
   const database = requireDb();
   const now = new Date();
 
@@ -220,6 +208,7 @@ export async function markReferralQualified(input: {
       and(
         eq(schema.userReferrals.id, existing.id),
         isNull(schema.userReferrals.qualifiedAt),
+        isNull(schema.userReferrals.qualifiedBy),
       ),
     )
     .returning();
