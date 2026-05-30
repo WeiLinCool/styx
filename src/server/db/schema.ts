@@ -171,10 +171,9 @@ export const userInviteCodeStatus = pgEnum('user_invite_code_status', [
   'disabled',
 ]);
 
-export const referralQualificationSource = pgEnum('referral_qualification_source', [
-  'invite_code',
-  'admin_review',
-  'system',
+export const referralConversionTrigger = pgEnum('referral_conversion_trigger', [
+  'order_paid',
+  'membership_activated',
 ]);
 
 export const agentArtifactKind = pgEnum('agent_artifact_kind', [
@@ -813,7 +812,7 @@ export const userReferrals = pgTable(
     }),
     inviteCodeSnapshot: text('invite_code_snapshot'),
     qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
-    qualifiedBy: referralQualificationSource('qualified_by'),
+    qualifiedBy: referralConversionTrigger('qualified_by'),
     rewardLedgerEntryId: uuid('reward_ledger_entry_id').references(
       () => creditLedgerEntries.id,
       { onDelete: 'set null' },

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { Table } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
@@ -77,9 +78,18 @@ test('points-growth tables expose the expected schema shape', () => {
   );
   assert.equal(
     referralColumns.get('qualified_by')?.getSQLType(),
-    'referral_qualification_source',
+    'referral_conversion_trigger',
   );
   assert.equal(referralColumns.has('invite_code_snapshot'), true);
+  const migrationSnapshot = JSON.parse(
+    fs.readFileSync(new URL('../../../drizzle/meta/0006_snapshot.json', import.meta.url), 'utf8'),
+  ) as {
+    enums: Record<string, { values: string[] }>;
+  };
+  assert.deepEqual(
+    migrationSnapshot.enums['public.referral_conversion_trigger']?.values,
+    ['order_paid', 'membership_activated'],
+  );
   assert.ok(
     referralsConfig.foreignKeys.some(
       (foreignKey) =>

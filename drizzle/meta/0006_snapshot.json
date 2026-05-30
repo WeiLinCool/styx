@@ -3925,7 +3925,7 @@
         },
         "qualified_by": {
           "name": "qualified_by",
-          "type": "referral_qualification_source",
+          "type": "referral_conversion_trigger",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": false
@@ -4451,15 +4451,6 @@
         "archived"
       ]
     },
-    "public.referral_qualification_source": {
-      "name": "referral_qualification_source",
-      "schema": "public",
-      "values": [
-        "invite_code",
-        "admin_review",
-        "system"
-      ]
-    },
     "public.user_account_state": {
       "name": "user_account_state",
       "schema": "public",
@@ -4476,6 +4467,14 @@
       "values": [
         "active",
         "disabled"
+      ]
+    },
+    "public.referral_conversion_trigger": {
+      "name": "referral_conversion_trigger",
+      "schema": "public",
+      "values": [
+        "order_paid",
+        "membership_activated"
       ]
     }
   },

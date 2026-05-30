@@ -1,4 +1,4 @@
-CREATE TYPE "public"."referral_qualification_source" AS ENUM('invite_code', 'admin_review', 'system');--> statement-breakpoint
+CREATE TYPE "public"."referral_conversion_trigger" AS ENUM('order_paid', 'membership_activated');--> statement-breakpoint
 CREATE TYPE "public"."user_invite_code_status" AS ENUM('active', 'disabled');--> statement-breakpoint
 CREATE TABLE "user_daily_checkins" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE "user_referrals" (
 	"invite_code_id" uuid,
 	"invite_code_snapshot" text,
 	"qualified_at" timestamp with time zone,
-	"qualified_by" "referral_qualification_source",
+	"qualified_by" "referral_conversion_trigger",
 	"reward_ledger_entry_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
