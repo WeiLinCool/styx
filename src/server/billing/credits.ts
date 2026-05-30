@@ -51,7 +51,15 @@ export function calculateCreditBalance(input: {
   return input.legacyCredits + input.ledgerAmount;
 }
 
+function isValidCreditAmount(amount: number): boolean {
+  return Number.isFinite(amount) && Number.isInteger(amount);
+}
+
 export function validateGrantCreditsInput(input: Pick<CreditLedgerMutationInput, 'amount'>): void {
+  if (!isValidCreditAmount(input.amount)) {
+    throw new Error('Grant amount must be a finite integer.');
+  }
+
   if (input.amount <= 0) {
     throw new Error('Grant amount must be positive.');
   }
@@ -60,6 +68,10 @@ export function validateGrantCreditsInput(input: Pick<CreditLedgerMutationInput,
 export function validateAdjustCreditsInput(
   input: Pick<CreditLedgerMutationInput, 'amount'>,
 ): void {
+  if (!isValidCreditAmount(input.amount)) {
+    throw new Error('Adjustment amount must be a finite integer.');
+  }
+
   if (input.amount === 0) {
     throw new Error('Adjustment amount must be non-zero.');
   }

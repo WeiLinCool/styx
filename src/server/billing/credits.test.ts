@@ -114,11 +114,35 @@ test('memory ledger can apply signed adjustments idempotently', async () => {
 test('validateGrantCreditsInput rejects non-positive grant amounts', async () => {
   assert.throws(() => validateGrantCreditsInput({ amount: 0 }), /Grant amount must be positive\./);
   assert.throws(() => validateGrantCreditsInput({ amount: -1 }), /Grant amount must be positive\./);
+  assert.throws(
+    () => validateGrantCreditsInput({ amount: 1.5 }),
+    /Grant amount must be a finite integer\./,
+  );
+  assert.throws(
+    () => validateGrantCreditsInput({ amount: Number.NaN }),
+    /Grant amount must be a finite integer\./,
+  );
+  assert.throws(
+    () => validateGrantCreditsInput({ amount: Number.POSITIVE_INFINITY }),
+    /Grant amount must be a finite integer\./,
+  );
 });
 
 test('validateAdjustCreditsInput rejects zero-value adjustments', async () => {
   assert.throws(
     () => validateAdjustCreditsInput({ amount: 0 }),
     /Adjustment amount must be non-zero\./,
+  );
+  assert.throws(
+    () => validateAdjustCreditsInput({ amount: 1.5 }),
+    /Adjustment amount must be a finite integer\./,
+  );
+  assert.throws(
+    () => validateAdjustCreditsInput({ amount: Number.NaN }),
+    /Adjustment amount must be a finite integer\./,
+  );
+  assert.throws(
+    () => validateAdjustCreditsInput({ amount: Number.POSITIVE_INFINITY }),
+    /Adjustment amount must be a finite integer\./,
   );
 });
