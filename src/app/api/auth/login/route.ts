@@ -5,6 +5,9 @@ import { registerOrLoginUser } from '@/server/auth/account-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { DEV_AUTH_BYPASS_COOKIE } from '@/server/auth/session';
 
+type RegisterOrLoginUserInput = Parameters<typeof registerOrLoginUser>[0];
+type RegisterOrLoginUserResult = Awaited<ReturnType<typeof registerOrLoginUser>>;
+
 const bodySchema = z.object({
   phone: z.string().min(6).max(32),
   password: z.string().min(6).max(128),
@@ -13,14 +16,23 @@ const bodySchema = z.object({
   inviteCode: z.string().trim().min(1).max(64).optional(),
 });
 
+let registerOrLoginUserImpl: (input: RegisterOrLoginUserInput) => Promise<RegisterOrLoginUserResult> =
+  registerOrLoginUser;
+
 export function parseLoginBody(input: unknown) {
   return bodySchema.parse(input);
+}
+
+export function setRegisterOrLoginUserForTest(
+  implementation: ((input: RegisterOrLoginUserInput) => Promise<RegisterOrLoginUserResult>) | null,
+) {
+  registerOrLoginUserImpl = implementation ?? registerOrLoginUser;
 }
 
 export async function POST(request: Request) {
   try {
     const body = parseLoginBody(await request.json());
-    const result = await registerOrLoginUser({
+    const result = await registerOrLoginUserImpl({
       phone: body.phone,
       password: body.password,
       displayName: body.nickname,
