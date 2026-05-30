@@ -88,7 +88,14 @@ test('calculateCreditBalance includes positive grant amounts', () => {
 
 test('memory ledger can apply signed adjustments idempotently', async () => {
   const ledger = createMemoryCreditLedger({ 'user-1': 10 });
-  const result = await ledger.adjust({
+  const first = await ledger.adjust({
+    userId: 'user-1',
+    amount: 5,
+    idempotencyKey: 'adjust:user-1:1',
+    reason: 'manual add',
+    metadata: {},
+  });
+  const second = await ledger.adjust({
     userId: 'user-1',
     amount: 5,
     idempotencyKey: 'adjust:user-1:1',
@@ -96,6 +103,8 @@ test('memory ledger can apply signed adjustments idempotently', async () => {
     metadata: {},
   });
 
-  assert.equal(result.balanceAfter, 15);
+  assert.equal(first.entryId, second.entryId);
+  assert.equal(first.balanceAfter, second.balanceAfter);
+  assert.equal(second.balanceAfter, 15);
   assert.equal(await ledger.getBalance('user-1'), 15);
 });
