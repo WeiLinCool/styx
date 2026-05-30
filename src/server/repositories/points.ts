@@ -193,7 +193,7 @@ export async function getReferralByReferredUserId(userId: string) {
 
 export async function markReferralQualified(input: {
   referredUserId: string;
-  qualifiedBy: 'profile_completed' | 'first_paid_order' | 'manual_review';
+  qualifiedBy: 'order_paid' | 'membership_activated';
   rewardLedgerEntryId?: string | null;
   qualifiedAt?: Date;
 }) {
