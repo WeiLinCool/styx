@@ -7,6 +7,7 @@ import {
 import { createOpaqueToken, hashSecret } from './account-crypto';
 import { hashUserPassword, verifyStoredUserPassword } from './public-auth';
 import { recordAuditEvent } from '@/server/audit/audit-service';
+import { qualifyReferralReward } from '@/server/repositories/admin-mutations';
 import { bindReferralForUser, getActiveInviteCodeByCode } from '@/server/repositories/points';
 import {
   bindVerifiedIdentity,
@@ -21,7 +22,6 @@ import {
   revokeSessionsForUser,
   setUserAccountState,
 } from '@/server/repositories/users';
-import { bindReferralForUser } from '@/server/repositories/points';
 import { db, schema } from '@/server/db';
 import { and, eq } from 'drizzle-orm';
 
@@ -68,6 +68,12 @@ export async function activateAccountByAdmin(input: {
     input.actorId,
     input.reason ?? 'admin_activation',
   );
+
+  // This is the current operator-side entry point that activates a user into an active membership state.
+  await qualifyReferralReward({
+    referredUserId: input.userId,
+    qualifiedBy: 'membership_activated',
+  });
 
   await recordAuditEvent({
     actorId: input.actorId,

@@ -2,11 +2,21 @@ import { eq } from 'drizzle-orm';
 
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import { AccountDomainError } from '@/server/auth/account-types';
+import { grantCredits } from '@/server/billing/credits';
 import { db, schema } from '@/server/db';
+import { buildReferralRewardKey } from '@/server/points/service';
+import {
+  getReferralByReferredUserId,
+  markReferralQualified,
+  shouldSkipReferralQualification,
+} from '@/server/repositories/points';
 
 export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled' | 'refunded';
 export type OrderEventType = 'created' | 'paid' | 'fulfilled' | 'cancelled' | 'refunded' | 'note';
 export type AiJobReviewAction = 'review' | 'rerun' | 'cancel' | 'mark_resolved';
+export type ReferralQualificationSource = 'order_paid' | 'membership_activated';
+
+const REFERRAL_REWARD_POINTS = 200;
 
 function requireDb() {
   if (!db) {
@@ -45,6 +55,69 @@ export function normalizeAiJobReviewAction(action: string): AiJobReviewAction {
   throw new Error(`Unsupported AI job review action: ${action}`);
 }
 
+type ReferralRecord = Awaited<ReturnType<typeof getReferralByReferredUserId>>;
+type QualificationDeps = {
+  getReferralByReferredUserId: typeof getReferralByReferredUserId;
+  grantCredits: typeof grantCredits;
+  markReferralQualified: typeof markReferralQualified;
+  buildReferralRewardKey: typeof buildReferralRewardKey;
+};
+
+const defaultQualificationDeps: QualificationDeps = {
+  getReferralByReferredUserId,
+  grantCredits,
+  markReferralQualified,
+  buildReferralRewardKey,
+};
+
+export function shouldQualifyReferralFromOrderStatusChange(
+  previousStatus: OrderStatus,
+  nextStatus: OrderStatus,
+) {
+  return previousStatus !== 'paid' && nextStatus === 'paid';
+}
+
+export async function qualifyReferralReward(
+  input: {
+    referredUserId: string;
+    qualifiedBy: ReferralQualificationSource;
+  },
+  deps: QualificationDeps = defaultQualificationDeps,
+) {
+  const referral = await deps.getReferralByReferredUserId(input.referredUserId);
+  if (!referral || shouldSkipReferralQualification(referral)) {
+    return {
+      qualified: false,
+      ledgerEntryId: null,
+      referral,
+    };
+  }
+
+  const reward = await deps.grantCredits({
+    userId: referral.referrerUserId,
+    amount: REFERRAL_REWARD_POINTS,
+    idempotencyKey: deps.buildReferralRewardKey(input.referredUserId),
+    reason: 'referral reward',
+    metadata: {
+      referredUserId: input.referredUserId,
+      referralId: referral.id,
+      qualifiedBy: input.qualifiedBy,
+    },
+  });
+
+  const qualifiedReferral = await deps.markReferralQualified({
+    referredUserId: input.referredUserId,
+    qualifiedBy: input.qualifiedBy,
+    rewardLedgerEntryId: reward.entryId,
+  });
+
+  return {
+    qualified: true,
+    ledgerEntryId: reward.entryId,
+    referral: qualifiedReferral satisfies ReferralRecord,
+  };
+}
+
 export async function updateOrderStatus(input: {
   orderId: string;
   status: OrderStatus;
@@ -52,6 +125,16 @@ export async function updateOrderStatus(input: {
   note?: string | null;
 }) {
   const database = requireDb();
+  const [existingOrder] = await database
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, input.orderId))
+    .limit(1);
+
+  if (!existingOrder) {
+    throw new AccountDomainError('account_not_found', 'Order not found.', 404);
+  }
+
   const now = new Date();
   const metadata = input.note ? { note: input.note } : {};
   const [order] = await database
@@ -67,6 +150,13 @@ export async function updateOrderStatus(input: {
 
   if (!order) {
     throw new AccountDomainError('account_not_found', 'Order not found.', 404);
+  }
+
+  if (shouldQualifyReferralFromOrderStatusChange(existingOrder.status, input.status)) {
+    await qualifyReferralReward({
+      referredUserId: order.userId,
+      qualifiedBy: 'order_paid',
+    });
   }
 
   await database.insert(schema.orderEvents).values({
