@@ -6,6 +6,8 @@ import {
   calculateChatCreditCost,
   calculateCreditBalance,
   createMemoryCreditLedger,
+  validateAdjustCreditsInput,
+  validateGrantCreditsInput,
 } from './credits';
 
 test('calculateChatCreditCost rounds up and respects minimum', () => {
@@ -107,4 +109,16 @@ test('memory ledger can apply signed adjustments idempotently', async () => {
   assert.equal(first.balanceAfter, second.balanceAfter);
   assert.equal(second.balanceAfter, 15);
   assert.equal(await ledger.getBalance('user-1'), 15);
+});
+
+test('validateGrantCreditsInput rejects non-positive grant amounts', async () => {
+  assert.throws(() => validateGrantCreditsInput({ amount: 0 }), /Grant amount must be positive\./);
+  assert.throws(() => validateGrantCreditsInput({ amount: -1 }), /Grant amount must be positive\./);
+});
+
+test('validateAdjustCreditsInput rejects zero-value adjustments', async () => {
+  assert.throws(
+    () => validateAdjustCreditsInput({ amount: 0 }),
+    /Adjustment amount must be non-zero\./,
+  );
 });

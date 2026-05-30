@@ -51,6 +51,20 @@ export function calculateCreditBalance(input: {
   return input.legacyCredits + input.ledgerAmount;
 }
 
+export function validateGrantCreditsInput(input: Pick<CreditLedgerMutationInput, 'amount'>): void {
+  if (input.amount <= 0) {
+    throw new Error('Grant amount must be positive.');
+  }
+}
+
+export function validateAdjustCreditsInput(
+  input: Pick<CreditLedgerMutationInput, 'amount'>,
+): void {
+  if (input.amount === 0) {
+    throw new Error('Adjustment amount must be non-zero.');
+  }
+}
+
 export function createMemoryCreditLedger(initialBalances: Record<string, number>) {
   const balances = new Map(Object.entries(initialBalances));
   const entries = new Map<string, CreditLedgerWriteResult>();
@@ -153,9 +167,7 @@ export async function debitForAgentRun(input: {
 }
 
 export async function grantCredits(input: CreditLedgerMutationInput): Promise<CreditLedgerWriteResult> {
-  if (input.amount <= 0) {
-    throw new Error('Grant amount must be positive.');
-  }
+  validateGrantCreditsInput(input);
 
   const database = requireCreditDatabase();
 
@@ -168,6 +180,8 @@ export async function grantCredits(input: CreditLedgerMutationInput): Promise<Cr
 export async function adjustCredits(
   input: CreditLedgerMutationInput,
 ): Promise<CreditLedgerWriteResult> {
+  validateAdjustCreditsInput(input);
+
   const database = requireCreditDatabase();
 
   return database.transaction(async (tx) => {
