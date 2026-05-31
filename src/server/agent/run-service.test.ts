@@ -45,17 +45,73 @@ test('createAndRunAgentRun completes run with deterministic Pi adapter output', 
   const repository = createMemoryAgentRunRepository();
   const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'image',
     prompt: '帮我设计一个石头印画作品',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'succeeded');
-  assert.match(run.finalMessage ?? '', /石头印画作品/);
+  assert.match(run.finalMessage ?? '', /及时下载保存/);
   assert.equal(run.capabilitySummary.provider, 'pi');
   assert.equal(run.artifacts.length, 1);
+  assert.equal(run.artifacts[0]?.kind, 'image');
+  assert.equal(run.artifacts[0]?.body, null);
+  assert.equal(run.artifacts[0]?.url, null);
+  assert.equal(result.transientArtifacts.length, 1);
+  assert.match(result.transientArtifacts[0]?.dataUrl ?? '', /^data:image\/svg\+xml;base64,/);
+});
+
+test('createAndRunAgentRun returns transient image artifact while persisting only summary data', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        return {
+          finalMessage: '图片已生成，请及时下载保存。',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图片',
+              body: 'data:image/png;base64,SHOULD_NOT_PERSIST',
+              url: 'https://provider.example/generated.png',
+              metadata: {
+                mimeType: 'image/png',
+                width: 1024,
+                height: 1024,
+              },
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '一只戴红围巾的小猫石头印画',
+    input: { mode: 'generate', size: '1:1' },
+  });
+
+  assert.equal(result.run.status, 'succeeded');
+  assert.equal(result.run.artifacts.length, 1);
+  assert.equal(result.run.artifacts[0]?.kind, 'image');
+  assert.equal(result.run.artifacts[0]?.body, null);
+  assert.equal(result.run.artifacts[0]?.url, null);
+  assert.equal(result.run.artifacts[0]?.metadata.transient, true);
+  assert.equal(result.run.artifacts[0]?.metadata.mimeType, 'image/png');
+  assert.equal(result.transientArtifacts.length, 1);
+  assert.equal(result.transientArtifacts[0]?.kind, 'image');
+  assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,SHOULD_NOT_PERSIST');
+  assert.equal(result.transientArtifacts[0]?.metadata.transient, true);
+
+  const stored = await repository.getRunForUser(result.run.id, 'user-1');
+  assert.equal(stored?.artifacts[0]?.body, null);
+  assert.equal(stored?.artifacts[0]?.url, null);
 });
 
 test('createAndRunAgentRun records failure when runtime throws', async () => {
@@ -69,12 +125,13 @@ test('createAndRunAgentRun records failure when runtime throws', async () => {
     },
   });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'image',
     prompt: 'hello',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'failed');
   assert.equal(run.errorMessage, 'pi unavailable');
@@ -91,12 +148,13 @@ test('createAndRunAgentRun keeps completed run succeeded when succeeded event re
   };
   const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'image',
     prompt: 'hello',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'succeeded');
   assert.equal(run.errorMessage, null);
@@ -121,7 +179,7 @@ test('createAndRunAgentRun clones runtime request input and capabilities', async
     },
   });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'image',
     prompt: 'hello',
@@ -129,6 +187,7 @@ test('createAndRunAgentRun clones runtime request input and capabilities', async
   });
 
   assert.deepEqual(callerInput, { nested: { value: 'original' } });
+  const run = result.run;
   assert.equal(run.capabilitySummary.model, 'pi-default');
   assert.equal(run.capabilitySummary.capabilities[0].name, 'Pi 默认模型');
 });
@@ -137,12 +196,13 @@ test('createAndRunAgentRun returns failed unconfigured run when no default bundl
   const repository = createMemoryAgentRunRepository();
   const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'unsupported' as AgentTaskType,
     prompt: 'hello',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'failed');
   assert.equal(run.capabilitySummary.provider, 'unconfigured');
@@ -206,13 +266,14 @@ test('createAndRunAgentRun routes chat through selected model adapter and bills 
     },
   });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'chat',
     prompt: 'hello',
     modelId: 'seed-model-free',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'running');
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -259,13 +320,14 @@ test('createAndRunAgentRun returns running chat run immediately and persists str
     debitForAgentRun: async () => ({ entryId: 'ledger-1', balanceAfter: 88 }),
   });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'chat',
     prompt: 'hello',
     modelId: 'seed-model-free',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'running');
   await finalReached;
@@ -318,6 +380,7 @@ test('createAndRunAgentRun sends prior conversation messages to chat provider', 
     modelId: 'seed-model-free',
     input: {},
   });
+  const firstRun = first.run;
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   await service.createAndRunAgentRun({
@@ -325,7 +388,7 @@ test('createAndRunAgentRun sends prior conversation messages to chat provider', 
     taskType: 'chat',
     prompt: 'second prompt',
     modelId: 'seed-model-free',
-    conversationId: first.conversationId ?? undefined,
+    conversationId: firstRun.conversationId ?? undefined,
     input: {},
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -359,13 +422,14 @@ test('createAndRunAgentRun persists failed billing metadata when debit fails aft
     },
   });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'chat',
     prompt: 'hello',
     modelId: 'seed-model-free',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'running');
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -398,13 +462,14 @@ test('createAndRunAgentRun marks billing failed when provider fails after run cr
     }),
   });
 
-  const run = await service.createAndRunAgentRun({
+  const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'chat',
     prompt: 'hello',
     modelId: 'seed-model-free',
     input: {},
   });
+  const run = result.run;
 
   assert.equal(run.status, 'running');
   await new Promise((resolve) => setTimeout(resolve, 0));
