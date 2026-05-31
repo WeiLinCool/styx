@@ -58,7 +58,7 @@ export default function ImageGenPage() {
     setGenerationMessage(null);
 
     try {
-      const run = await createAgentRun({
+      const { run } = await createAgentRun({
         taskType: 'image',
         prompt: runPrompt,
         input: {

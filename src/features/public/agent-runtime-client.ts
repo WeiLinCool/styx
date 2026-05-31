@@ -1,4 +1,9 @@
-import type { AgentRunDetailDto, AgentRunDto, AgentTaskType } from '@/server/agent/types';
+import type {
+  AgentRunDetailDto,
+  AgentRunDto,
+  AgentTaskType,
+  CreateAgentRunResult,
+} from '@/server/agent/types';
 
 export type ChatModelOption = {
   id: string;
@@ -112,7 +117,7 @@ export async function listChatModels(): Promise<ChatModelOption[]> {
   return rawModels.map(parseChatModel).filter((model): model is ChatModelOption => model !== null);
 }
 
-export async function createAgentRun(input: CreateAgentRunRequest): Promise<AgentRunDto> {
+export async function createAgentRun(input: CreateAgentRunRequest): Promise<CreateAgentRunResult> {
   const response = await fetch('/api/agent/runs', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -124,7 +129,10 @@ export async function createAgentRun(input: CreateAgentRunRequest): Promise<Agen
     throw apiErrorFromPayload(payload, response.status, 'AI 请求失败');
   }
 
-  return payload.run;
+  return {
+    run: payload.run,
+    transientArtifacts: Array.isArray(payload.transientArtifacts) ? payload.transientArtifacts : [],
+  };
 }
 
 export async function listAgentRuns(): Promise<AgentRunDto[]> {

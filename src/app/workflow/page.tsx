@@ -582,7 +582,7 @@ export default function WorkflowPage() {
     input: Record<string, unknown>,
     fallbackMessage: string,
   ) => {
-    const run = await createAgentRun({
+    const { run } = await createAgentRun({
       taskType: 'workflow',
       prompt: runPrompt,
       input,

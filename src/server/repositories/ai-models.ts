@@ -959,7 +959,7 @@ async function runAdminAiChatLoopTest(input: {
     assertCanAffordMinimum: async () => {},
   });
   const startedAt = Date.now();
-  const run = await service.createAndRunAgentRun({
+  const { run } = await service.createAndRunAgentRun({
     userId: adminAiLoopTestUserId,
     taskType: 'chat',
     prompt: input.prompt.trim(),

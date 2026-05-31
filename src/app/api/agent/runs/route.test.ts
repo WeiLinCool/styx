@@ -12,6 +12,7 @@ import {
   ModelNotAvailableError,
 } from '@/server/repositories/ai-models';
 import {
+  createAgentRunResponse,
   createDeleteAgentRunResponse,
   parseCreateAgentRunBody,
   parseCreateAgentRunRequestBody,
@@ -96,6 +97,53 @@ test('parseCreateAgentRunRequestBody rejects malformed JSON as invalid request',
       ),
     /Invalid JSON request body/,
   );
+});
+
+test('createAgentRunResponse returns run with transient artifacts', async () => {
+  const response = createAgentRunResponse({
+    run: {
+      id: 'run-1',
+      conversationId: 'run-1',
+      taskType: 'image',
+      status: 'succeeded',
+      prompt: 'stone cat',
+      finalMessage: '图片已生成，请及时下载保存。',
+      errorMessage: null,
+      capabilitySummary: { provider: 'pi', model: 'pi-default', capabilities: [] },
+      selectedModel: null,
+      usage: null,
+      billing: null,
+      artifacts: [
+        {
+          id: 'artifact-1',
+          kind: 'image',
+          title: '生成图片',
+          status: 'ready',
+          body: null,
+          url: null,
+          metadata: { transient: true, mimeType: 'image/png' },
+          createdAt: '2026-05-31T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-05-31T00:00:00.000Z',
+      updatedAt: '2026-05-31T00:00:00.000Z',
+    },
+    transientArtifacts: [
+      {
+        kind: 'image',
+        title: '生成图片',
+        mimeType: 'image/png',
+        dataUrl: 'data:image/png;base64,abc',
+        metadata: { transient: true, width: 1024, height: 1024 },
+      },
+    ],
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.run.artifacts[0].body, null);
+  assert.equal(body.run.artifacts[0].url, null);
+  assert.equal(body.transientArtifacts[0].dataUrl, 'data:image/png;base64,abc');
 });
 
 test('serviceErrorToResponse maps model required errors to stable API code', async () => {

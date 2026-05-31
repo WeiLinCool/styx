@@ -18,7 +18,7 @@ import {
   ModelEntitlementRequiredError,
   ModelNotAvailableError,
 } from '@/server/repositories/ai-models';
-import type { AgentRunDto } from '@/server/agent/types';
+import type { AgentRunDto, CreateAgentRunResult } from '@/server/agent/types';
 
 const createAgentRunBodySchema = z
   .object({
@@ -78,6 +78,13 @@ export function createDeleteAgentRunResponse(run: AgentRunDto | null) {
   return NextResponse.json({ run });
 }
 
+export function createAgentRunResponse(result: CreateAgentRunResult) {
+  return NextResponse.json({
+    run: result.run,
+    transientArtifacts: result.transientArtifacts,
+  });
+}
+
 function validationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? 'Invalid agent run request.';
 }
@@ -134,7 +141,7 @@ export async function POST(request: Request) {
   try {
     const session = await requireActiveAccount();
     const body = await parseCreateAgentRunRequestBody(request);
-    const run = await createService().createAndRunAgentRun({
+    const result = await createService().createAndRunAgentRun({
       userId: session.user.id,
       taskType: body.taskType,
       prompt: body.prompt,
@@ -143,7 +150,7 @@ export async function POST(request: Request) {
       input: body.input,
     });
 
-    return NextResponse.json({ run });
+    return createAgentRunResponse(result);
   } catch (error) {
     return serviceErrorToResponse(error);
   }

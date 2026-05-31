@@ -90,6 +90,45 @@ test('createAgentRun throws typed API error codes from JSON responses', async ()
   }
 });
 
+test('createAgentRun returns run and transient artifacts from API payload', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      run: {
+        id: 'run-1',
+        conversationId: 'run-1',
+        taskType: 'image',
+        status: 'succeeded',
+        prompt: 'stone cat',
+        finalMessage: '图片已生成，请及时下载保存。',
+        errorMessage: null,
+        capabilitySummary: { provider: 'pi', model: 'pi-default', capabilities: [] },
+        artifacts: [],
+        createdAt: '2026-05-31T00:00:00.000Z',
+        updatedAt: '2026-05-31T00:00:00.000Z',
+      },
+      transientArtifacts: [
+        {
+          kind: 'image',
+          title: '生成图片',
+          mimeType: 'image/png',
+          dataUrl: 'data:image/png;base64,abc',
+          metadata: { transient: true },
+        },
+      ],
+    });
+
+  try {
+    const result = await createAgentRun({ taskType: 'image', prompt: 'stone cat' });
+
+    assert.equal(result.run.id, 'run-1');
+    assert.equal(result.transientArtifacts.length, 1);
+    assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,abc');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('getAgentRunDetail returns typed run detail payload from API', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
