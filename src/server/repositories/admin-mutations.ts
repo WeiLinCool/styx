@@ -111,6 +111,10 @@ export async function qualifyReferralReward(
     rewardLedgerEntryId: reward.entryId,
   });
 
+  if (!qualifiedReferral) {
+    throw new Error('Referral qualification could not be persisted.');
+  }
+
   return {
     qualified: true,
     ledgerEntryId: reward.entryId,

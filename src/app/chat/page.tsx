@@ -13,12 +13,15 @@ import { ProtectedAccountPanel } from '@/features/account/protected-account-pane
 import {
   AgentRuntimeApiError,
   createAgentRun,
+  createAgentRunEventsUrl,
+  getAgentRunDetail,
   listAgentRuns,
   listChatModels,
   selectChatModelId,
   type ChatModelOption,
 } from '@/features/public/agent-runtime-client';
-import type { AgentRunDto } from '@/server/agent/types';
+import { formatChatModelLabel } from '@/features/public/chat-message-format';
+import type { AgentRunDetailDto, AgentRunDto } from '@/server/agent/types';
 
 interface Message {
   id: string;
@@ -58,6 +61,8 @@ export default function ChatPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgCounter = useRef(0);
 
@@ -70,6 +75,7 @@ export default function ChatPage() {
       setRecentRuns([]);
       setChatModels([]);
       setSelectedModelId(null);
+      setMessages([]);
       return;
     }
 
@@ -85,7 +91,15 @@ export default function ChatPage() {
         setChatModels(models);
         setSelectedModelId(nextModelId);
         setRecentRuns(chatRuns);
-        setMessages(mapRunsToMessages(chatRuns));
+        const latestRunId = chatRuns[0]?.id ?? null;
+        setSelectedRunId(latestRunId);
+        if (!latestRunId) {
+          setMessages([]);
+          return;
+        }
+
+        const detail = await getAgentRunDetail(latestRunId);
+        setMessages(mapDetailToMessages(detail));
       } catch (error) {
         setErrorMessage(readRuntimeErrorMessage(error, '对话数据加载失败'));
       } finally {
@@ -95,6 +109,87 @@ export default function ChatPage() {
 
     void loadChatState();
   }, [isLoggedIn, user]);
+
+  useEffect(() => {
+    if (isLoggedIn || !user) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => router.push('/home'), 0);
+    return () => window.clearTimeout(timer);
+  }, [isLoggedIn, router, user]);
+
+  useEffect(() => {
+    if (!streamRunId) {
+      return;
+    }
+
+    const eventSource = new EventSource(createAgentRunEventsUrl(streamRunId));
+    eventSource.addEventListener('assistant_delta', (event) => {
+      const payload = parseStreamEventPayload(event);
+      const delta = typeof payload?.payload?.delta === 'string' ? payload.payload.delta : '';
+      if (!delta) {
+        return;
+      }
+
+      setMessages((prev) => appendAssistantDelta(prev, streamRunId, delta));
+    });
+    eventSource.addEventListener('run_completed', async (event) => {
+      const payload = parseStreamEventPayload(event);
+      const finalMessage =
+        typeof payload?.payload?.finalMessage === 'string' ? payload.payload.finalMessage : null;
+      if (finalMessage) {
+        setMessages((prev) => replaceAssistantMessage(prev, streamRunId, finalMessage));
+      }
+      const runs = await listAgentRuns();
+      setRecentRuns(runs.filter((run) => run.taskType === 'chat'));
+      eventSource.close();
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+    });
+    eventSource.addEventListener('run_failed', async (event) => {
+      const payload = parseStreamEventPayload(event);
+      const failureMessage =
+        typeof payload?.payload?.message === 'string' ? payload.payload.message : 'AI 请求失败';
+      setErrorMessage(failureMessage);
+      const runs = await listAgentRuns();
+      setRecentRuns(runs.filter((run) => run.taskType === 'chat'));
+      eventSource.close();
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+    });
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [streamRunId]);
+
+  useEffect(() => {
+    if (!selectedRunId || streamRunId === selectedRunId) {
+      return;
+    }
+
+    const runId = selectedRunId;
+    let cancelled = false;
+    async function loadConversation() {
+      try {
+        const detail = await getAgentRunDetail(runId);
+        if (!cancelled) {
+          setMessages(mapDetailToMessages(detail));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(readRuntimeErrorMessage(error, '对话加载失败'));
+        }
+      }
+    }
+
+    void loadConversation();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRunId, streamRunId]);
 
   const selectedModel = chatModels.find((model) => model.id === selectedModelId) ?? null;
 
@@ -139,10 +234,11 @@ export default function ChatPage() {
         setErrorMessage(run.errorMessage ?? 'AI 请求失败');
         return;
       }
-      const runs = await listAgentRuns();
-      const chatRuns = runs.filter((item) => item.taskType === 'chat');
-      setRecentRuns(chatRuns);
-      setMessages(mapRunsToMessages(chatRuns));
+      setSelectedRunId(run.id);
+      setStreamRunId(run.id);
+      const detail = await getAgentRunDetail(run.id);
+      setRecentRuns((prev) => [detail.run, ...prev.filter((item) => item.id !== detail.run.id)]);
+      setMessages(mapDetailToMessages(detail));
     } catch (error) {
       setErrorMessage(readRuntimeErrorMessage(error, 'AI 请求失败'));
     } finally {
@@ -168,16 +264,27 @@ export default function ChatPage() {
           </div>
           <div className="flex-1 overflow-y-auto p-3">
             <button
-              onClick={() => setMessages([])}
+              onClick={() => {
+                setSelectedRunId(null);
+                setStreamRunId(null);
+                setMessages([]);
+              }}
               className="mb-3 flex w-full items-center gap-2 rounded-xl border border-dashed border-black/8 px-3 py-2.5 text-sm text-[#555555] transition-colors hover:border-black/10 hover:text-[#1d1d1f]"
             >
               + 新对话
             </button>
             {conversations.map((c) => (
-              <div key={c.id} className="mb-1 rounded-xl px-3 py-2 text-[13px] text-[#1d1d1f]">
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setSelectedRunId(c.id)}
+                className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-[13px] ${
+                  selectedRunId === c.id ? 'bg-white text-[#1d1d1f]' : 'text-[#1d1d1f]'
+                }`}
+              >
                 <div className="truncate font-medium">{c.title}</div>
                 <div className="text-[11px] text-[#999]">{c.time}</div>
-              </div>
+              </button>
             ))}
           </div>
         </aside>
@@ -291,12 +398,6 @@ export default function ChatPage() {
                 ))
               )}
             </select>
-            {selectedModel && (
-              <div className="min-w-0 text-xs text-[#6e6e73] sm:text-right">
-                <span className="block truncate">{selectedModel.providerName}</span>
-                <span className="block truncate">{selectedModel.entitlementLabel} · {selectedModel.pricingSummary}</span>
-              </div>
-            )}
           </div>
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
@@ -322,10 +423,18 @@ export default function ChatPage() {
               <button onClick={() => setMobileMenuOpen(false)} className="cursor-pointer text-[#444444]"><X size={18} /></button>
             </div>
             {conversations.map((c) => (
-              <div key={c.id} className="mb-1 rounded-xl px-3 py-2 text-[13px] text-[#1d1d1f]">
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  setSelectedRunId(c.id);
+                  setMobileMenuOpen(false);
+                }}
+                className="mb-1 w-full rounded-xl px-3 py-2 text-left text-[13px] text-[#1d1d1f]"
+              >
                 <div className="truncate">{c.title}</div>
                 <div className="text-[11px] text-[#6e6e73]">{c.time}</div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -365,9 +474,85 @@ function mapRunsToMessages(runs: AgentRunDto[]): Message[] {
     });
 }
 
+function mapDetailToMessages(detail: AgentRunDetailDto): Message[] {
+  const created = new Date(detail.run.createdAt).getTime();
+  const messages: Message[] = [
+    {
+      id: `${detail.run.id}-user`,
+      role: 'user',
+      content: detail.run.prompt,
+      timestamp: created,
+    },
+  ];
+
+  const assistantText = detail.events.reduce((text, event) => {
+    if (event.eventType === 'assistant_delta' && typeof event.payload.delta === 'string') {
+      return text + event.payload.delta;
+    }
+    if (event.eventType === 'run_completed' && typeof event.payload.finalMessage === 'string') {
+      return event.payload.finalMessage;
+    }
+    return text;
+  }, '');
+
+  if (assistantText) {
+    messages.push({
+      id: `${detail.run.id}-assistant`,
+      role: 'assistant',
+      content: assistantText,
+      modelLabel: formatModelLabel(detail.run),
+      billingLabel: formatBillingLabel(detail.run),
+      usageLabel: formatUsageLabel(detail.run),
+      timestamp: new Date(detail.run.updatedAt).getTime(),
+    });
+  }
+
+  return messages;
+}
+
+function appendAssistantDelta(messages: Message[], runId: string, delta: string): Message[] {
+  const next = [...messages];
+  const assistantId = `${runId}-assistant`;
+  const existingIndex = next.findIndex((message) => message.id === assistantId);
+  if (existingIndex >= 0) {
+    const existing = next[existingIndex];
+    next[existingIndex] = { ...existing, content: `${existing.content}${delta}` };
+    return next;
+  }
+
+  next.push({
+    id: assistantId,
+    role: 'assistant',
+    content: delta,
+    timestamp: Date.now(),
+  });
+  return next;
+}
+
+function replaceAssistantMessage(messages: Message[], runId: string, content: string): Message[] {
+  const assistantId = `${runId}-assistant`;
+  return messages.map((message) =>
+    message.id === assistantId ? { ...message, content } : message,
+  );
+}
+
+function parseStreamEventPayload(event: Event) {
+  if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
+    return null;
+  }
+
+  try {
+    return JSON.parse(event.data) as {
+      payload?: Record<string, unknown>;
+    };
+  } catch {
+    return null;
+  }
+}
+
 function formatModelLabel(run: AgentRunDto) {
   const modelName = run.selectedModel?.name ?? run.capabilitySummary.model;
-  return modelName ? `模型：${modelName}` : undefined;
+  return formatChatModelLabel(modelName);
 }
 
 function formatBillingLabel(run: AgentRunDto) {

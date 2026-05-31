@@ -146,6 +146,35 @@ test('memory agent run repository lifecycle methods fail runs', async () => {
   assert.equal(failed?.errorMessage, 'runtime failed');
 });
 
+test('memory agent run repository lists stream events in sequence and exposes run detail', async () => {
+  const repo = createMemoryAgentRunRepository();
+  const run = await createChatRun(repo);
+
+  await repo.appendRunEvent(run.id, {
+    eventType: 'assistant_message_started',
+    payload: { messageId: `${run.id}-assistant`, role: 'assistant' },
+  });
+  await repo.appendRunEvent(run.id, {
+    eventType: 'assistant_delta',
+    payload: { messageId: `${run.id}-assistant`, delta: 'hello' },
+  });
+
+  const events = await repo.listRunEvents(run.id);
+  const detail = await repo.getRunDetailForUser(run.id, 'user-alice');
+
+  assert.equal(events.length, 2);
+  assert.deepEqual(
+    events.map((event) => [event.sequence, event.eventType]),
+    [
+      [1, 'assistant_message_started'],
+      [2, 'assistant_delta'],
+    ],
+  );
+  assert.ok(detail);
+  assert.equal(detail?.events.length, 2);
+  assert.equal(detail?.events[1]?.payload.delta, 'hello');
+});
+
 test('agent run repository fails closed in production without database config', () => {
   const writableEnv = process.env as Record<string, string | undefined>;
   const originalNodeEnv = writableEnv.NODE_ENV;

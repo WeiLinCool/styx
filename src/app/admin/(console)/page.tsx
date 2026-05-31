@@ -101,7 +101,7 @@ export default async function AdminDashboardPage() {
           <p className="mt-1 text-sm text-neutral-600">账号、订单、AI 任务与合作线索的运营概览。</p>
         </div>
         <StatusBadge
-          value={dashboard.source === 'database' ? 'PostgreSQL' : '种子数据'}
+          value={dashboard.source === 'database' ? '数据库' : '种子数据'}
           tone={dashboard.source === 'database' ? 'success' : 'warning'}
         />
       </div>

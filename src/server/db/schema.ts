@@ -853,7 +853,7 @@ export const userDailyCheckins = pgTable(
   ],
 );
 
-export const agentRunEvents = pgTable(
+export const agentRunLogEvents = pgTable(
   'agent_run_events',
   {
     id,
@@ -868,6 +868,28 @@ export const agentRunEvents = pgTable(
   (table) => [
     index('agent_run_events_run_id_idx').on(table.runId),
     index('agent_run_events_type_idx').on(table.type),
+  ],
+);
+
+export const agentRunStreamEvents = pgTable(
+  'agent_run_stream_events',
+  {
+    id,
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    sequence: integer('sequence').notNull(),
+    eventType: text('event_type').notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+  },
+  (table) => [
+    index('agent_run_stream_events_run_id_idx').on(table.runId),
+    index('agent_run_stream_events_event_type_idx').on(table.eventType),
+    uniqueIndex('agent_run_stream_events_run_id_sequence_unique_idx').on(
+      table.runId,
+      table.sequence,
+    ),
   ],
 );
 

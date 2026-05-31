@@ -316,112 +316,227 @@ async function createAndRunChatAgentRun(input: {
     modelId: model.id,
   });
 
-  try {
-    const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
-    await recordEventIfSupported(repository, running.id, 'running', 'Chat provider started', {
-      provider: model.providerCode,
-      model: model.model,
-    });
-
-    const providerResult = await input.createChatProviderAdapter(model).runChat({
-      runId: running.id,
-      userId: request.userId,
-      model,
-      messages: [{ role: 'user', content: request.prompt }],
-    });
-    const creditCost = calculateChatCreditCost({
-      usage: providerResult.usage,
-      pricing: model.pricing,
-    });
-    let debit: { entryId: string; balanceAfter: number };
-    try {
-      debit = await input.debitForAgentRun({
-        userId: request.userId,
-        runId: running.id,
-        usage: providerResult.usage,
-        pricing: model.pricing,
-        modelSnapshot: model,
-        amount: creditCost,
-      });
-    } catch (error) {
-      const errorMessage = toErrorMessage(error);
-      const failedSnapshot = toFailedChatSnapshot({
-        capabilitySnapshot,
-        providerResult,
-        creditCost,
-        errorMessage,
-      });
-      await recordEventIfSupported(repository, running.id, 'failed', errorMessage, {
-        reason: 'billing_failed',
-        creditCost,
-      });
-      return requireUpdatedRun(
-        await repository.failRun(running.id, {
-          errorMessage,
-          finalMessage: providerResult.finalMessage,
-          artifacts: [
-            providerArtifact({
-              model,
-              providerResult,
-              billing: failedSnapshot.billing as Record<string, unknown>,
-            }),
-          ],
-          capabilitySnapshot: failedSnapshot,
-          input: {
-            ...runInput,
-            usage: providerResult.usage,
-            billing: failedSnapshot.billing as Record<string, unknown>,
-          },
-        }),
-        'fail run',
-      );
-    }
-    const completedSnapshot = {
-      ...capabilitySnapshot,
-      usage: providerResult.usage,
-      billing: {
-        status: 'billed',
-        creditCost,
-        ledgerEntryId: debit.entryId,
-      },
-      rawMetadata: providerResult.rawMetadata,
-    } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
-
-    const completed = requireUpdatedRun(
-      await repository.completeRun(running.id, {
-        finalMessage: providerResult.finalMessage,
-        artifacts: [providerArtifact({ model, providerResult, billing: completedSnapshot.billing })],
-        capabilitySnapshot: completedSnapshot,
-        input: {
-          ...runInput,
-          usage: providerResult.usage,
-          billing: completedSnapshot.billing,
-        },
-      }),
-      'complete run',
-    );
-
-    await recordEventIfSupported(repository, completed.id, 'succeeded', 'Agent run succeeded', {
-      artifactCount: 1,
-      creditCost,
-      ledgerEntryId: debit.entryId,
-    });
-
-    return completed;
-  } catch (error) {
+  const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+  await recordEventIfSupported(repository, running.id, 'running', 'Chat provider started', {
+    provider: model.providerCode,
+    model: model.model,
+  });
+  void runChatOrchestration({
+    repository,
+    model,
+    request,
+    runInput,
+    capabilitySnapshot,
+    running,
+    createChatProviderAdapter: input.createChatProviderAdapter,
+    debitForAgentRun: input.debitForAgentRun,
+  }).catch(async (error) => {
     const errorMessage = toErrorMessage(error);
     const failedSnapshot = toFailedChatSnapshot({ capabilitySnapshot, errorMessage });
-    await recordEventIfSupported(repository, created.id, 'failed', errorMessage);
-    return requireUpdatedRun(
-      await repository.failRun(created.id, {
-        errorMessage,
-        capabilitySnapshot: failedSnapshot,
-        input: {
-          ...runInput,
+    await recordEventIfSupported(repository, running.id, 'failed', errorMessage);
+    await repository.appendRunEvent(running.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: errorMessage,
+        failedAt: new Date().toISOString(),
+      },
+    });
+    await repository.failRun(running.id, {
+      errorMessage,
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...runInput,
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+  });
+
+  return running;
+}
+
+async function runChatOrchestration(input: {
+  repository: AgentRunRepository;
+  model: ResolvedChatModel;
+  request: CreateAndRunAgentRunInput;
+  runInput: Record<string, unknown>;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  running: AgentRunDto;
+  createChatProviderAdapter: (model: ResolvedChatModel) => ChatProviderAdapter;
+  debitForAgentRun: DebitForAgentRun;
+}) {
+  const adapter = input.createChatProviderAdapter(input.model);
+  await input.repository.appendRunEvent(input.running.id, {
+    eventType: 'assistant_message_started',
+    payload: {
+      messageId: `${input.running.id}-assistant`,
+      role: 'assistant',
+    },
+  });
+  const providerResult = adapter.streamChat
+    ? await collectStreamedChatResult({
+        repository: input.repository,
+        runId: input.running.id,
+        adapter,
+        model: input.model,
+        request: input.request,
+      })
+    : await adapter.runChat({
+        runId: input.running.id,
+        userId: input.request.userId,
+        model: input.model,
+        messages: [{ role: 'user', content: input.request.prompt }],
+      });
+
+  await input.repository.appendRunEvents(input.running.id, [
+    {
+      eventType: 'assistant_message_completed',
+      payload: {
+        messageId: `${input.running.id}-assistant`,
+        finalLength: providerResult.finalMessage.length,
+      },
+    },
+  ]);
+
+  const creditCost = calculateChatCreditCost({
+    usage: providerResult.usage,
+    pricing: input.model.pricing,
+  });
+  let debit: { entryId: string; balanceAfter: number };
+  try {
+    debit = await input.debitForAgentRun({
+      userId: input.request.userId,
+      runId: input.running.id,
+      usage: providerResult.usage,
+      pricing: input.model.pricing,
+      modelSnapshot: input.model,
+      amount: creditCost,
+    });
+  } catch (error) {
+    const errorMessage = toErrorMessage(error);
+    const failedSnapshot = toFailedChatSnapshot({
+      capabilitySnapshot: input.capabilitySnapshot,
+      providerResult,
+      creditCost,
+      errorMessage,
+    });
+    await input.repository.appendRunEvent(input.running.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: errorMessage,
+        failedAt: new Date().toISOString(),
+      },
+    });
+    await input.repository.failRun(input.running.id, {
+      errorMessage,
+      finalMessage: providerResult.finalMessage,
+      artifacts: [
+        providerArtifact({
+          model: input.model,
+          providerResult,
           billing: failedSnapshot.billing as Record<string, unknown>,
-        },
-      }),
-      'fail run',
-    );
+        }),
+      ],
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...input.runInput,
+        usage: providerResult.usage,
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+    return;
   }
+  await input.repository.appendRunEvent(input.running.id, {
+    eventType: 'billing_recorded',
+    payload: {
+      creditCost,
+      ledgerEntryId: debit.entryId,
+      balanceAfter: debit.balanceAfter,
+    },
+  });
+
+  const completedSnapshot = {
+    ...input.capabilitySnapshot,
+    usage: providerResult.usage,
+    billing: {
+      status: 'billed',
+      creditCost,
+      ledgerEntryId: debit.entryId,
+    },
+    rawMetadata: providerResult.rawMetadata,
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+
+  const completed = requireUpdatedRun(
+    await input.repository.completeRun(input.running.id, {
+      finalMessage: providerResult.finalMessage,
+      artifacts: [providerArtifact({ model: input.model, providerResult, billing: completedSnapshot.billing })],
+      capabilitySnapshot: completedSnapshot,
+      input: {
+        ...input.runInput,
+        usage: providerResult.usage,
+        billing: completedSnapshot.billing,
+      },
+    }),
+    'complete run',
+  );
+
+  await input.repository.appendRunEvent(completed.id, {
+    eventType: 'run_completed',
+    payload: {
+      finalMessage: providerResult.finalMessage,
+      usage: providerResult.usage,
+      completedAt: new Date().toISOString(),
+    },
+  });
+
+  await recordEventIfSupported(input.repository, completed.id, 'succeeded', 'Agent run succeeded', {
+    artifactCount: 1,
+    creditCost,
+    ledgerEntryId: debit.entryId,
+  });
+}
+
+async function collectStreamedChatResult(input: {
+  repository: AgentRunRepository;
+  runId: string;
+  adapter: ChatProviderAdapter;
+  model: ResolvedChatModel;
+  request: CreateAndRunAgentRunInput;
+}) {
+  const stream = input.adapter.streamChat?.({
+    runId: input.runId,
+    userId: input.request.userId,
+    model: input.model,
+    messages: [{ role: 'user', content: input.request.prompt }],
+  });
+  if (!stream) {
+    return input.adapter.runChat({
+      runId: input.runId,
+      userId: input.request.userId,
+      model: input.model,
+      messages: [{ role: 'user', content: input.request.prompt }],
+    });
+  }
+
+  let finalMessage = '';
+  let usage: AiUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let rawMetadata: Record<string, unknown> = {};
+  for await (const event of stream) {
+    if (event.type === 'delta') {
+      finalMessage += event.delta;
+      await input.repository.appendRunEvent(input.runId, {
+        eventType: 'assistant_delta',
+        payload: {
+          messageId: `${input.runId}-assistant`,
+          delta: event.delta,
+        },
+      });
+      continue;
+    }
+
+    finalMessage = event.finalMessage;
+    usage = event.usage;
+    rawMetadata = event.rawMetadata;
+  }
+
+  return { finalMessage, usage, rawMetadata };
 }

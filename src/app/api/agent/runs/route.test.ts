@@ -148,3 +148,12 @@ test('serviceErrorToResponse maps billing and provider errors to stable API code
     assert.equal(body.error.code, item.code);
   }
 });
+
+test('serviceErrorToResponse returns localized fallback message for unexpected internal errors', async () => {
+  const response = serviceErrorToResponse(new Error('unexpected failure'));
+  const body = await response.json();
+
+  assert.equal(response.status, 500);
+  assert.equal(body.error.code, 'internal_error');
+  assert.equal(body.error.message, 'AI 请求失败，请稍后再试');
+});

@@ -156,7 +156,7 @@ function getSeedDashboard(): AdminDashboardData {
       {
         id: 'seed-notice-db',
         title: '开发数据源',
-        description: '当前未连接 PostgreSQL，后台仪表盘使用安全种子数据。',
+        description: '当前未连接数据库，后台仪表盘使用安全种子数据。',
         tone: 'warning',
       },
       {
@@ -237,7 +237,7 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
     return {
       source: 'database',
       kpis: [
-        { label: '总账号', value: String(userCount), change: 'PostgreSQL', tone: 'info' },
+        { label: '总账号', value: String(userCount), change: '数据库', tone: 'info' },
         { label: '订单数', value: String(orderCount), change: '累计', tone: 'success' },
         { label: 'AI 任务', value: String(aiJobCount), change: '累计', tone: 'default' },
         { label: '合作线索', value: String(partnerLeadCount), change: '累计', tone: 'warning' },
@@ -276,8 +276,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       notices: [
         {
           id: 'database-online',
-          title: 'PostgreSQL 已连接',
-          description: '仪表盘正在读取数据库，后续管理模块可复用该 repository shape。',
+          title: '数据库已连接',
+          description: '仪表盘正在读取实时数据，后续管理模块可复用当前数据结构。',
           tone: 'success',
         },
       ],

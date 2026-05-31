@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import {
@@ -8,6 +10,8 @@ import {
   type IdentityProvider,
   type UserIdentityRecord,
 } from '@/server/auth/account-types';
+import { recordAuditEvent } from '@/server/audit/audit-service';
+import { adjustCredits } from '@/server/billing/credits';
 import { db, schema } from '@/server/db';
 import {
   type AdminFilter,
@@ -339,12 +343,82 @@ export type AdminUserRow = {
   identities: string[];
   bindingState: string;
   membership: string;
-  credits: number;
+  points: number;
   activity: string;
   auditSummary: string;
   createdAt: string;
   actions: string[];
 };
+
+type AdminAdjustUserPointsInput = {
+  userId: string;
+  actorId: string;
+  amount: number;
+  reason: string;
+};
+
+type AdminAdjustUserPointsDeps = {
+  getUserById: (userId: string) => Promise<Awaited<ReturnType<typeof getUserById>> | null>;
+  adjustCredits: typeof adjustCredits;
+  recordAuditEvent: (input: Parameters<typeof recordAuditEvent>[0]) => ReturnType<typeof recordAuditEvent>;
+  createIdempotencyKey: () => string;
+};
+
+const defaultAdminAdjustUserPointsDeps: AdminAdjustUserPointsDeps = {
+  getUserById,
+  adjustCredits,
+  recordAuditEvent,
+  createIdempotencyKey: () => `admin-points-adjustment:${randomUUID()}`,
+};
+
+export async function adjustUserPointsByAdmin(
+  input: AdminAdjustUserPointsInput,
+  deps: AdminAdjustUserPointsDeps = defaultAdminAdjustUserPointsDeps,
+) {
+  const user = await deps.getUserById(input.userId);
+  if (!user) {
+    throw new AccountDomainError('account_not_found', 'Account not found.', 404);
+  }
+
+  const reason = input.reason.trim();
+  if (reason.length === 0) {
+    throw new Error('Adjustment reason is required.');
+  }
+
+  const adjustment = await deps.adjustCredits({
+    userId: input.userId,
+    amount: input.amount,
+    idempotencyKey: deps.createIdempotencyKey(),
+    reason,
+    metadata: {
+      source: 'admin_manual_adjustment',
+      actorId: input.actorId,
+      targetUserId: input.userId,
+      reason,
+    },
+  });
+
+  await deps.recordAuditEvent({
+    actorId: input.actorId,
+    targetId: input.userId,
+    type: 'user.points_adjusted',
+    entityType: 'credit_ledger_entry',
+    entityId: adjustment.entryId,
+    metadata: {
+      amount: input.amount,
+      balanceAfter: adjustment.balanceAfter,
+      reason,
+    },
+  });
+
+  return {
+    userId: input.userId,
+    entryId: adjustment.entryId,
+    amount: input.amount,
+    balanceAfter: adjustment.balanceAfter,
+    reason,
+  };
+}
 
 function getSeedUsers(): AdminModuleData<AdminUserRow> {
   const records: AdminUserRow[] = [
@@ -356,7 +430,7 @@ function getSeedUsers(): AdminModuleData<AdminUserRow> {
       identities: ['邮箱：已验证', 'GitHub：已验证'],
       bindingState: '2 个已验证身份',
       membership: '所有者 / 团队年付',
-      credits: 980,
+      points: 980,
       activity: '登录 12 次 / 近 7 天',
       auditSummary: '最近操作: seed.database',
       createdAt: '2026-05-29T08:00:00.000Z',
@@ -370,7 +444,7 @@ function getSeedUsers(): AdminModuleData<AdminUserRow> {
       identities: ['邮箱：未验证'],
       bindingState: '需要激活',
       membership: '免费 / 无有效方案',
-      credits: 20,
+      points: 20,
       activity: '注册后未激活',
       auditSummary: '最近操作: activation.reissued',
       createdAt: '2026-05-29T07:20:00.000Z',
@@ -384,7 +458,7 @@ function getSeedUsers(): AdminModuleData<AdminUserRow> {
       identities: ['手机：已验证', '微信：已验证'],
       bindingState: '恢复前需复核',
       membership: '专业版月付',
-      credits: 0,
+      points: 0,
       activity: 'AI 任务失败率过高',
       auditSummary: '最近操作: account.suspended',
       createdAt: '2026-05-28T11:10:00.000Z',
@@ -425,8 +499,24 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
         sql<number>`count(distinct ${schema.userIdentities.id}) filter (where ${schema.userIdentities.isVerified} = true)::int`,
       membership:
         sql<string>`coalesce(max(${schema.membershipPlans.name}), '免费 / 无有效方案')`,
-      credits:
-        sql<number>`coalesce(sum(${schema.userEntitlements.remainingQuantity}), 0)::int`,
+      points: sql<number>`(
+        coalesce((
+          select sum(
+            case
+              when jsonb_typeof(u.metadata -> 'credits') = 'number'
+                then (u.metadata ->> 'credits')::int
+              else 0
+            end
+          )
+          from ${schema.users} as u
+          where u.id = ${schema.users.id}
+        ), 0) +
+        coalesce((
+          select sum(${schema.creditLedgerEntries.amount})
+          from ${schema.creditLedgerEntries}
+          where ${schema.creditLedgerEntries.userId} = ${schema.users.id}
+        ), 0)
+      )::int`,
       lastAuditAction: sql<string>`coalesce(max(${schema.auditEvents.action}), 'none')`,
     })
     .from(schema.users)
@@ -455,11 +545,11 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
         ? `${row.verifiedIdentityCount} 个已验证身份`
         : '需要激活',
     membership: row.membership,
-    credits: row.credits,
-      activity:
-        row.user.accountState === 'active'
-          ? '账号已激活'
-          : metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
+    points: row.points,
+    activity:
+      row.user.accountState === 'active'
+        ? '账号已激活'
+        : metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
     auditSummary: `最近操作: ${row.lastAuditAction}`,
     createdAt: formatIso(row.user.createdAt),
     actions: ['重发激活', '直接激活', '停用', '归档'],
@@ -468,13 +558,16 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
   const pendingCount = records.filter((record) => record.accountState === 'pending_activation').length;
   const activeCount = records.filter((record) => record.accountState === 'active').length;
   const suspendedCount = records.filter((record) => record.accountState === 'suspended').length;
-  const totalCredits = records.reduce((sum, record) => sum + metadataNumber({ credits: record.credits }, 'credits'), 0);
+  const totalPoints = records.reduce(
+    (sum, record) => sum + metadataNumber({ points: record.points }, 'points'),
+    0,
+  );
 
   const metrics: AdminMetric[] = [
-    { label: '总账号', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+    { label: '总账号', value: String(records.length), hint: '数据库', tone: 'info' },
     { label: '待激活', value: String(pendingCount), hint: '激活队列', tone: 'warning' },
     { label: '活跃账号', value: String(activeCount), hint: '已激活生命周期', tone: 'success' },
-    { label: '剩余额度', value: String(totalCredits), hint: '权益授权', tone: 'default' },
+    { label: '可用积分', value: String(totalPoints), hint: '真实 ledger 余额', tone: 'default' },
   ];
 
   const filters: AdminFilter[] = [

@@ -353,7 +353,7 @@ export async function getAdminAiJobs(): Promise<AdminModuleData<AdminAiJobRow>> 
   return {
     source: 'database',
     metrics: [
-      { label: '任务数', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+      { label: '任务数', value: String(records.length), hint: '数据库', tone: 'info' },
       {
         label: '成功',
         value: String(records.filter((record) => record.status === 'succeeded').length),

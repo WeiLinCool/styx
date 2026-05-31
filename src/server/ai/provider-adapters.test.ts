@@ -115,6 +115,59 @@ test('OpenAI-compatible adapter posts chat completions request and normalizes re
   }
 });
 
+test('OpenAI-compatible adapter forwards configured proxy dispatcher to fetch', async () => {
+  const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
+  const originalProxy = process.env.STYX_OPENAI_COMPAT_PROXY_URL;
+  process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';
+  process.env.STYX_OPENAI_COMPAT_PROXY_URL = 'http://127.0.0.1:10808';
+  let seenInit: RequestInit | undefined;
+
+  try {
+    const adapter = createOpenAiCompatibleChatProviderAdapter({
+      fetch: async (_url, init) => {
+        seenInit = init;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { role: 'assistant', content: 'proxied response' } }],
+            usage: {
+              prompt_tokens: 1,
+              completion_tokens: 1,
+              total_tokens: 2,
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      },
+    });
+
+    const result = await adapter.runChat({
+      runId: 'run-1',
+      userId: 'user-1',
+      model: resolvedModel({
+        providerType: 'openai_compatible',
+        baseUrl: 'https://provider.example/v1/',
+        credentialEnvKey: 'TEST_OPENAI_COMPATIBLE_KEY',
+        model: 'provider-model',
+      }),
+      messages: [{ role: 'user', content: 'Hello' }],
+    });
+
+    assert.equal(result.finalMessage, 'proxied response');
+    assert.equal(Boolean((seenInit as RequestInit & { dispatcher?: unknown })?.dispatcher), true);
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TEST_OPENAI_COMPATIBLE_KEY;
+    } else {
+      process.env.TEST_OPENAI_COMPATIBLE_KEY = originalKey;
+    }
+    if (originalProxy === undefined) {
+      delete process.env.STYX_OPENAI_COMPAT_PROXY_URL;
+    } else {
+      process.env.STYX_OPENAI_COMPAT_PROXY_URL = originalProxy;
+    }
+  }
+});
+
 test('OpenAI-compatible adapter rejects missing configuration before fetch', async () => {
   let called = false;
   const adapter = createOpenAiCompatibleChatProviderAdapter({
@@ -196,6 +249,96 @@ test('OpenAI-compatible adapter normalizes invalid JSON success responses', asyn
         }),
       ProviderRequestError,
     );
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TEST_OPENAI_COMPATIBLE_KEY;
+    } else {
+      process.env.TEST_OPENAI_COMPATIBLE_KEY = originalKey;
+    }
+  }
+});
+
+test('OpenAI-compatible adapter parses SSE-style data payload responses', async () => {
+  const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
+  process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';
+
+  try {
+    const adapter = createOpenAiCompatibleChatProviderAdapter({
+      fetch: async () =>
+        new Response(
+          [
+            'data: {"id":"completion-1","choices":[{"message":{"role":"assistant","content":"Hello from sse."}}],"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}',
+            '',
+          ].join('\n'),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        ),
+    });
+
+    const result = await adapter.runChat({
+      runId: 'run-1',
+      userId: 'user-1',
+      model: resolvedModel({
+        providerType: 'openai_compatible',
+        baseUrl: 'https://provider.example/v1',
+        credentialEnvKey: 'TEST_OPENAI_COMPATIBLE_KEY',
+      }),
+      messages: [{ role: 'user', content: 'Hello' }],
+    });
+
+    assert.equal(result.finalMessage, 'Hello from sse.');
+    assert.deepEqual(result.usage, {
+      promptTokens: 4,
+      completionTokens: 5,
+      totalTokens: 9,
+    });
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TEST_OPENAI_COMPATIBLE_KEY;
+    } else {
+      process.env.TEST_OPENAI_COMPATIBLE_KEY = originalKey;
+    }
+  }
+});
+
+test('OpenAI-compatible adapter accumulates streaming SSE delta content responses', async () => {
+  const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
+  process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';
+
+  try {
+    const adapter = createOpenAiCompatibleChatProviderAdapter({
+      fetch: async () =>
+        new Response(
+          [
+            'data: {"choices":[{"delta":{"content":"石头"}}]}',
+            '',
+            'data: {"choices":[{"delta":{"content":"开花"}}]}',
+            '',
+            'data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9},"choices":[{"finish_reason":"stop"}]}',
+            '',
+            'data: [DONE]',
+            '',
+          ].join('\n'),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        ),
+    });
+
+    const result = await adapter.runChat({
+      runId: 'run-1',
+      userId: 'user-1',
+      model: resolvedModel({
+        providerType: 'openai_compatible',
+        baseUrl: 'https://provider.example/v1',
+        credentialEnvKey: 'TEST_OPENAI_COMPATIBLE_KEY',
+      }),
+      messages: [{ role: 'user', content: 'Hello' }],
+    });
+
+    assert.equal(result.finalMessage, '石头开花');
+    assert.deepEqual(result.usage, {
+      promptTokens: 4,
+      completionTokens: 5,
+      totalTokens: 9,
+    });
   } finally {
     if (originalKey === undefined) {
       delete process.env.TEST_OPENAI_COMPATIBLE_KEY;

@@ -104,7 +104,7 @@ export async function getAdminPartners(): Promise<AdminModuleData<AdminPartnerRo
   return {
     source: 'database',
     metrics: [
-      { label: '线索数', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+      { label: '线索数', value: String(records.length), hint: '数据库', tone: 'info' },
       {
         label: '新线索',
         value: String(records.filter((record) => record.status === 'new').length),

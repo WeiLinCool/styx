@@ -118,7 +118,7 @@ export async function getAdminSettings(): Promise<AdminModuleData<AdminSettingRo
   return {
     source: 'database',
     metrics: [
-      { label: '配置项', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+      { label: '配置项', value: String(records.length), hint: '数据库', tone: 'info' },
       {
         label: '敏感项',
         value: String(records.filter((record) => record.isSecret).length),

@@ -109,7 +109,7 @@ export async function getAdminMemberships(): Promise<AdminModuleData<AdminMember
   return {
     source: 'database',
     metrics: [
-      { label: '方案数', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+      { label: '方案数', value: String(records.length), hint: '数据库', tone: 'info' },
       {
         label: '启用方案',
         value: String(records.filter((record) => record.status === 'active').length),

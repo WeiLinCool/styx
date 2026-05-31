@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { desc, eq } from 'drizzle-orm';
+import { asc, desc, eq } from 'drizzle-orm';
 
 import type {
   AgentArtifactDto,
   AgentArtifactKind,
   AgentCapabilitySnapshot,
+  AgentRunDetailDto,
   AgentRunBillingDto,
   AgentRunDto,
   AgentRunSelectedModelDto,
+  AgentRunStreamEventDto,
+  AgentRunStreamEventType,
   AgentTaskType,
   AiUsage,
 } from '@/server/agent/types';
@@ -37,6 +40,11 @@ export type AgentRunEventInput = {
   metadata?: Record<string, unknown>;
 };
 
+export type AgentRunStreamEventInput = {
+  eventType: AgentRunStreamEventType;
+  payload?: Record<string, unknown>;
+};
+
 type StoredAgentRun = AgentRunDto & {
   userId: string;
   provider: string;
@@ -56,6 +64,7 @@ export type AgentRunFailureInput = {
 export type AgentRunRepository = {
   createRun(input: CreateAgentRunInput): Promise<AgentRunDto>;
   getRunForUser(id: string, userId: string): Promise<AgentRunDto | null>;
+  getRunDetailForUser(id: string, userId: string): Promise<AgentRunDetailDto | null>;
   listRunsForUser(userId: string): Promise<AgentRunDto[]>;
   markRunRunning(runId: string): Promise<AgentRunDto | null>;
   completeRun(
@@ -69,6 +78,9 @@ export type AgentRunRepository = {
   ): Promise<AgentRunDto | null>;
   failRun(runId: string, input: string | AgentRunFailureInput): Promise<AgentRunDto | null>;
   recordEvent(runId: string, input: AgentRunEventInput): Promise<void>;
+  appendRunEvent(runId: string, input: AgentRunStreamEventInput): Promise<AgentRunStreamEventDto | null>;
+  appendRunEvents(runId: string, input: AgentRunStreamEventInput[]): Promise<AgentRunStreamEventDto[]>;
+  listRunEvents(runId: string): Promise<AgentRunStreamEventDto[]>;
   addArtifact(runId: string, input: AgentArtifactInput): Promise<AgentRunDto | null>;
 };
 
@@ -242,6 +254,24 @@ function toIso(value: Date | string) {
   return value instanceof Date ? value.toISOString() : value;
 }
 
+function toStreamEventDto(event: {
+  id: string;
+  runId: string;
+  sequence: number;
+  eventType: string;
+  payload: Record<string, unknown>;
+  createdAt: Date | string;
+}): AgentRunStreamEventDto {
+  return {
+    id: event.id,
+    runId: event.runId,
+    sequence: event.sequence,
+    eventType: event.eventType as AgentRunStreamEventType,
+    payload: cloneRecord(event.payload),
+    createdAt: toIso(event.createdAt),
+  };
+}
+
 function toAgentRunDtoFromDatabase(input: {
   run: typeof schema.agentRuns.$inferSelect;
   artifacts: Array<typeof schema.agentArtifacts.$inferSelect>;
@@ -342,6 +372,34 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
 
       return getDatabaseRunDto(database, id);
     },
+    async getRunDetailForUser(id, userId) {
+      const [run] = await database
+        .select()
+        .from(schema.agentRuns)
+        .where(eq(schema.agentRuns.id, id))
+        .limit(1);
+
+      if (!run || run.userId !== userId) {
+        return null;
+      }
+
+      const artifacts = await database
+        .select()
+        .from(schema.agentArtifacts)
+        .where(eq(schema.agentArtifacts.runId, id))
+        .orderBy(desc(schema.agentArtifacts.createdAt));
+
+      const streamEvents = await database
+        .select()
+        .from(schema.agentRunStreamEvents)
+        .where(eq(schema.agentRunStreamEvents.runId, id))
+        .orderBy(asc(schema.agentRunStreamEvents.sequence), asc(schema.agentRunStreamEvents.createdAt));
+
+      return {
+        run: toAgentRunDtoFromDatabase({ run, artifacts }),
+        events: streamEvents.map((event) => toStreamEventDto(event)),
+      };
+    },
     async listRunsForUser(userId) {
       const runs = await database
         .select()
@@ -424,12 +482,52 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       return getDatabaseRunDto(database, runId);
     },
     async recordEvent(runId, input) {
-      await database.insert(schema.agentRunEvents).values({
+      await database.insert(schema.agentRunLogEvents).values({
         runId,
         type: input.type,
         message: input.message ?? null,
         metadata: input.metadata ?? {},
       });
+    },
+    async appendRunEvent(runId, input) {
+      const [lastEvent] = await database
+        .select({ sequence: schema.agentRunStreamEvents.sequence })
+        .from(schema.agentRunStreamEvents)
+        .where(eq(schema.agentRunStreamEvents.runId, runId))
+        .orderBy(desc(schema.agentRunStreamEvents.sequence))
+        .limit(1);
+
+      const sequence = (lastEvent?.sequence ?? 0) + 1;
+      const [event] = await database
+        .insert(schema.agentRunStreamEvents)
+        .values({
+          runId,
+          sequence,
+          eventType: input.eventType,
+          payload: input.payload ?? {},
+        })
+        .returning();
+
+      return event ? toStreamEventDto(event) : null;
+    },
+    async appendRunEvents(runId, input) {
+      const appended: AgentRunStreamEventDto[] = [];
+      for (const event of input) {
+        const stored = await this.appendRunEvent(runId, event);
+        if (stored) {
+          appended.push(stored);
+        }
+      }
+      return appended;
+    },
+    async listRunEvents(runId) {
+      const events = await database
+        .select()
+        .from(schema.agentRunStreamEvents)
+        .where(eq(schema.agentRunStreamEvents.runId, runId))
+        .orderBy(asc(schema.agentRunStreamEvents.sequence), asc(schema.agentRunStreamEvents.createdAt));
+
+      return events.map((event) => toStreamEventDto(event));
     },
     async addArtifact(runId, input) {
       await database.insert(schema.agentArtifacts).values({
@@ -448,7 +546,8 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
 
 export function createMemoryAgentRunRepository(): AgentRunRepository {
   const runs = new Map<string, StoredAgentRun>();
-  const events: AgentRunEventInput[] = [];
+  const observationalEvents: AgentRunEventInput[] = [];
+  const streamEvents = new Map<string, AgentRunStreamEventDto[]>();
 
   return {
     async createRun(input) {
@@ -485,6 +584,17 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
     async getRunForUser(id, userId) {
       const run = runs.get(id);
       return run?.userId === userId ? toAgentRunDto(run) : null;
+    },
+    async getRunDetailForUser(id, userId) {
+      const run = runs.get(id);
+      if (!run || run.userId !== userId) {
+        return null;
+      }
+
+      return {
+        run: toAgentRunDto(run),
+        events: [...(streamEvents.get(id) ?? [])],
+      };
     },
     async listRunsForUser(userId) {
       return Array.from(runs.values())
@@ -550,11 +660,40 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
         return;
       }
 
-      events.push({
+      observationalEvents.push({
         type: input.type,
         message: input.message ?? null,
         metadata: cloneRecord(input.metadata ?? {}),
       });
+    },
+    async appendRunEvent(runId, input) {
+      if (!runs.has(runId)) {
+        return null;
+      }
+      const existing = streamEvents.get(runId) ?? [];
+      const event: AgentRunStreamEventDto = {
+        id: randomUUID(),
+        runId,
+        sequence: existing.length + 1,
+        eventType: input.eventType,
+        payload: cloneRecord(input.payload ?? {}),
+        createdAt: new Date().toISOString(),
+      };
+      streamEvents.set(runId, [...existing, event]);
+      return event;
+    },
+    async appendRunEvents(runId, input) {
+      const appended: AgentRunStreamEventDto[] = [];
+      for (const event of input) {
+        const stored = await this.appendRunEvent(runId, event);
+        if (stored) {
+          appended.push(stored);
+        }
+      }
+      return appended;
+    },
+    async listRunEvents(runId) {
+      return [...(streamEvents.get(runId) ?? [])];
     },
     async addArtifact(runId, input) {
       const run = runs.get(runId);

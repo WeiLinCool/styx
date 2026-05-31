@@ -116,7 +116,7 @@ export async function getAdminContent(): Promise<AdminModuleData<AdminContentRow
   return {
     source: 'database',
     metrics: [
-      { label: '内容项', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+      { label: '内容项', value: String(records.length), hint: '数据库', tone: 'info' },
       {
         label: '已发布',
         value: String(records.filter((record) => record.status === 'published').length),

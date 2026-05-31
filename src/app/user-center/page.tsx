@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 import { userCenterCartFixtures, userCenterPurchaseHistory } from '@/features/public/user-center-data';
-import { ArrowLeft, ShoppingBag, Clock, Star, Crown, Camera, Edit3, Check, X, ChevronRight, Trash2, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, ShoppingBag, Clock, Star, Crown, Camera, Edit3, Check, X, ChevronRight, Trash2, Minus, Plus, Gift, Copy, CalendarCheck } from 'lucide-react';
 
 interface CartItem {
   id: string;
@@ -27,7 +27,7 @@ const LEVEL_MAP: Record<string, { label: string; color: string }> = {
 };
 
 export default function UserCenterPage() {
-  const { user, isLoggedIn, updateUser, logout } = useAuth();
+  const { user, isLoggedIn, updateUser, refreshUser, logout } = useAuth();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'cart' | 'history' | 'profile'>('overview');
@@ -35,10 +35,49 @@ export default function UserCenterPage() {
   const [editValue, setEditValue] = useState('');
   const [cart, setCart] = useState<CartItem[]>(userCenterCartFixtures);
   const [purchaseHistory] = useState(userCenterPurchaseHistory);
+  const [inviteSummary, setInviteSummary] = useState(user?.inviteSummary ?? null);
+  const [recentPointActivities, setRecentPointActivities] = useState(user?.recentPointActivities ?? []);
+  const [checkinStatus, setCheckinStatus] = useState(user?.checkinStatus ?? null);
+  const [checkinPending, setCheckinPending] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setInviteSummary(user?.inviteSummary ?? null);
+    setRecentPointActivities(user?.recentPointActivities ?? []);
+    setCheckinStatus(user?.checkinStatus ?? null);
+  }, [user]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user) {
+      router.replace('/home');
+    }
+  }, [isLoggedIn, router, user]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user) {
+      return;
+    }
+
+    void refreshUser();
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshUser();
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+
+    return () => {
+      window.removeEventListener('focus', handleVisibilityRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+    };
+  }, [isLoggedIn, refreshUser, user]);
+
   if (!isLoggedIn || !user) {
-    router.push('/home');
     return null;
   }
 
@@ -60,6 +99,8 @@ export default function UserCenterPage() {
 
   const levelInfo = LEVEL_MAP[user.userLevel] || LEVEL_MAP.free;
   const totalCartPrice = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const maskedPhone = user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+  const membershipLabel = user.membershipLevel === 'free' ? '免费' : user.membershipLevel === 'monthly' ? '月度' : '年度';
 
   const handleSave = (field: string) => {
     if (!editValue.trim()) { setEditingField(null); return; }
@@ -93,6 +134,67 @@ export default function UserCenterPage() {
 
   const removeCartItem = (id: string) => {
     setCart(prev => prev.filter(item => item.id !== id));
+  };
+
+  const copyInviteValue = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // ignore clipboard failures in unsupported contexts
+    }
+  };
+
+  const handleRefreshInviteSummary = async () => {
+    setInviteBusy(true);
+    setActionMessage(null);
+    try {
+      const response = await fetch('/api/user/invite', { cache: 'no-store' });
+      const payload = await response.json();
+      if (response.ok && payload.inviteSummary) {
+        setInviteSummary(payload.inviteSummary);
+        updateUser({ inviteSummary: payload.inviteSummary });
+        return;
+      }
+
+      setActionMessage(
+        typeof payload?.error?.message === 'string' ? payload.error.message : '邀请信息刷新失败，请稍后重试。',
+      );
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const handleDailyCheckin = async () => {
+    if (checkinPending || checkinStatus?.checkedIn) {
+      return;
+    }
+
+    setCheckinPending(true);
+    setActionMessage(null);
+    try {
+      const response = await fetch('/api/user/points/checkin', { method: 'POST' });
+      const payload = await response.json();
+      if (!response.ok || !payload.checkin) {
+        setActionMessage(
+          typeof payload?.error?.message === 'string' ? payload.error.message : '签到失败，请稍后重试。',
+        );
+        return;
+      }
+
+      setCheckinStatus(payload.checkin);
+      const refreshedUser = await refreshUser();
+      if (refreshedUser) {
+        setInviteSummary(refreshedUser.inviteSummary ?? null);
+        setRecentPointActivities(refreshedUser.recentPointActivities ?? []);
+      }
+      setActionMessage(
+        payload.alreadyCheckedIn
+          ? '今天已经签到过了。'
+          : `签到成功，获得 ${payload.checkin.rewardPoints ?? 0} 积分。`,
+      );
+    } finally {
+      setCheckinPending(false);
+    }
   };
 
   return (
@@ -150,7 +252,7 @@ export default function UserCenterPage() {
             <div className="rounded-xl bg-white p-3 text-center">
               <Crown className="mx-auto h-5 w-5 text-[#b45309]" />
               <p className="mt-1 text-lg font-bold text-[#1d1d1f]">
-                {user.membershipLevel === 'free' ? '免费' : user.membershipLevel === 'monthly' ? '月度' : '年度'}
+                {membershipLabel}
               </p>
               <p className="text-[10px] text-[#86868b]">当前会员</p>
             </div>
@@ -176,6 +278,12 @@ export default function UserCenterPage() {
             </button>
           ))}
         </div>
+
+        {actionMessage ? (
+          <div className="mt-4 rounded-xl border border-black/[0.08] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f]">
+            {actionMessage}
+          </div>
+        ) : null}
 
         {/* Tab Content */}
         <div className="mt-4">
@@ -220,13 +328,102 @@ export default function UserCenterPage() {
                 </div>
               </div>
 
+              <div className="rounded-xl bg-[#f5f5f7] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <Gift className="mt-0.5 h-5 w-5 text-[#1d1d1f]" />
+                    <div>
+                      <p className="text-sm font-medium text-[#1d1d1f]">邀请有礼</p>
+                      <p className="mt-1 text-xs text-[#86868b]">
+                        邀请码 {inviteSummary?.inviteCode ?? '...'} · 已邀请 {inviteSummary?.invitedCount ?? 0} 人
+                      </p>
+                      <p className="mt-1 text-xs text-[#86868b]">
+                        已达标 {inviteSummary?.qualifiedCount ?? 0} 人 · 累计奖励 {inviteSummary?.rewardedPoints ?? 0} 积分
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (inviteSummary?.inviteLink) {
+                        void copyInviteValue(inviteSummary.inviteLink);
+                      } else {
+                        void handleRefreshInviteSummary();
+                      }
+                    }}
+                    disabled={inviteBusy}
+                    className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-white px-3 py-1 text-[10px] font-medium text-[#1d1d1f] disabled:opacity-50"
+                  >
+                    <Copy className="h-3 w-3" />
+                    {inviteSummary?.inviteLink ? '复制链接' : '刷新'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-[#f5f5f7] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <CalendarCheck className="mt-0.5 h-5 w-5 text-[#22c55e]" />
+                    <div>
+                      <p className="text-sm font-medium text-[#1d1d1f]">每日签到</p>
+                      <p className="mt-1 text-xs text-[#86868b]">
+                        {checkinStatus?.checkedIn
+                          ? `今日已签到${checkinStatus.rewardPoints ? `，获得 ${checkinStatus.rewardPoints} 积分` : ''}`
+                          : '每天可随机获得 1-3 积分'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#86868b]">
+                        {checkinStatus?.businessDate ?? '--'} · 连续签到 {checkinStatus?.streakCount ?? 0} 天
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => void handleDailyCheckin()}
+                    disabled={checkinPending || checkinStatus?.checkedIn}
+                    className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-medium text-white ${
+                      checkinPending || checkinStatus?.checkedIn ? 'bg-[#c7c7cc]' : 'bg-[#1d1d1f]'
+                    }`}
+                  >
+                    {checkinPending ? '签到中' : checkinStatus?.checkedIn ? '今日已签' : '立即签到'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-[#f5f5f7] p-4">
+                <div className="mb-3 flex items-center gap-3">
+                  <Clock className="h-5 w-5 text-[#1d1d1f]" />
+                  <div>
+                    <p className="text-sm font-medium text-[#1d1d1f]">最近积分活动</p>
+                    <p className="text-xs text-[#86868b]">最近 5 条积分变动记录</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {recentPointActivities.length === 0 ? (
+                    <p className="text-xs text-[#86868b]">暂无积分记录</p>
+                  ) : (
+                    recentPointActivities.map(activity => (
+                      <div key={activity.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm text-[#1d1d1f]">{activity.reason}</p>
+                          <p className="mt-0.5 text-[10px] text-[#86868b]">
+                            {new Date(activity.createdAt).toLocaleString('zh-CN', { hour12: false })}
+                          </p>
+                        </div>
+                        <p className={`shrink-0 text-sm font-semibold ${activity.amount >= 0 ? 'text-[#16a34a]' : 'text-[#b91c1c]'}`}>
+                          {activity.amount >= 0 ? '+' : ''}
+                          {activity.amount}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between rounded-xl bg-[#f5f5f7] p-4">
                 <div className="flex items-center gap-3">
                   <Crown className="h-5 w-5 text-[#b45309]" />
                   <div>
                     <p className="text-sm font-medium text-[#1d1d1f]">当前会员</p>
                     <p className="text-xs text-[#86868b]">
-                      {user.membershipLevel === 'free' ? '免费用户' : `${user.membershipLevel === 'monthly' ? '月度' : '年度'}会员`}
+                      {user.membershipLevel === 'free' ? '免费用户' : `${membershipLabel}会员`}
                       {user.membershipExpiry && ` · 到期 ${user.membershipExpiry}`}
                     </p>
                   </div>
@@ -392,7 +589,7 @@ export default function UserCenterPage() {
               <div className="rounded-xl bg-[#f5f5f7] p-4">
                 <p className="text-xs font-medium text-[#86868b]">手机号</p>
                 <div className="mt-1 flex items-center gap-2">
-                  <p className="text-sm text-[#1d1d1f]">{user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}</p>
+                  <p className="text-sm text-[#1d1d1f]">{maskedPhone}</p>
                 </div>
               </div>
 

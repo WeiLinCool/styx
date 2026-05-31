@@ -1,16 +1,48 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getUserFromCookie, saveUserToCookie, removeUserFromCookie, type UserInfo } from '@/lib/cookie';
 import { X, Phone, Lock, User, Camera, Upload, Check, Ticket } from 'lucide-react';
 
+export type UserPointActivity = {
+  id: string;
+  entryType: 'grant' | 'debit' | 'adjustment';
+  amount: number;
+  reason: string;
+  createdAt: string;
+};
+
+export type UserInviteSummary = {
+  inviteCode: string;
+  inviteLink: string;
+  invitedCount: number;
+  qualifiedCount: number;
+  rewardedPoints: number;
+};
+
+export type UserCheckinStatus = {
+  businessDate: string;
+  checkedIn: boolean;
+  rewardPoints: number | null;
+  streakCount: number | null;
+  checkedInAt: string | null;
+};
+
+export type AuthUserInfo = UserInfo & {
+  displayName?: string;
+  inviteSummary?: UserInviteSummary;
+  checkinStatus?: UserCheckinStatus;
+  recentPointActivities?: UserPointActivity[];
+};
+
 interface AuthContextType {
-  user: UserInfo | null;
+  user: AuthUserInfo | null;
   isLoggedIn: boolean;
-  login: (user: UserInfo) => void;
+  login: (user: AuthUserInfo) => void;
   logout: () => void;
-  updateUser: (updates: Partial<UserInfo>) => void;
+  updateUser: (updates: Partial<AuthUserInfo>) => void;
+  refreshUser: () => Promise<AuthUserInfo | null>;
   showLoginModal: boolean;
   openLoginModal: () => void;
   closeLoginModal: () => void;
@@ -18,8 +50,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user: UserInfo) => void }) {
+function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user: AuthUserInfo) => void }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -39,6 +72,16 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
     const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
     return () => clearTimeout(timer);
   }, [countdown]);
+
+  useEffect(() => {
+    const invite = searchParams.get('invite');
+    if (!invite) {
+      return;
+    }
+
+    setMode('register');
+    setInviteCode((current) => current || invite.slice(0, 20));
+  }, [searchParams]);
 
   const sendCode = () => {
     if (!phone || phone.length < 11) return;
@@ -377,9 +420,40 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<AuthUserInfo | null>(null);
   const [mounted, setMounted] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const userRef = useRef<AuthUserInfo | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/me', { cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
+
+      if (response.ok && payload?.authenticated && payload.user) {
+        saveUserToCookie(payload.user);
+        setUser(payload.user);
+        if (payload.user.mustResetPassword && payload.user.phone) {
+          router.push(`/auth/reset-password?phone=${encodeURIComponent(payload.user.phone)}`);
+        }
+        return payload.user as AuthUserInfo;
+      }
+
+      if (response.ok && payload?.authenticated === false) {
+        removeUserFromCookie();
+        setUser(null);
+        return null;
+      }
+
+      return userRef.current;
+    } catch {
+      return userRef.current;
+    }
+  }, [router]);
 
   useEffect(() => {
     async function hydrate() {
@@ -389,27 +463,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const response = await fetch('/api/auth/me', { cache: 'no-store' });
-        const payload = await response.json();
-        if (response.ok && payload.authenticated && payload.user) {
-          saveUserToCookie(payload.user);
-          setUser(payload.user);
-          if (payload.user.mustResetPassword && payload.user.phone) {
-            router.push(`/auth/reset-password?phone=${encodeURIComponent(payload.user.phone)}`);
-          }
-        } else {
-          removeUserFromCookie();
-          setUser(null);
-        }
+        await refreshUser();
       } finally {
         setMounted(true);
       }
     }
 
     void hydrate();
-  }, [router]);
+  }, [refreshUser]);
 
-  const login = useCallback((userData: UserInfo) => {
+  const login = useCallback((userData: AuthUserInfo) => {
     saveUserToCookie(userData);
     setUser(userData);
     setShowLoginModal(false);
@@ -426,7 +489,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  const updateUser = useCallback((updates: Partial<UserInfo>) => {
+  const updateUser = useCallback((updates: Partial<AuthUserInfo>) => {
     setUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
@@ -443,7 +506,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoggedIn: !!user, login, logout, updateUser, showLoginModal, openLoginModal, closeLoginModal }}>
+    <AuthContext.Provider value={{ user, isLoggedIn: !!user, login, logout, updateUser, refreshUser, showLoginModal, openLoginModal, closeLoginModal }}>
       {children}
       {showLoginModal && (
         <LoginModal

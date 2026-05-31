@@ -69,6 +69,33 @@ export type AgentRunBillingDto = {
   ledgerEntryId: string | null;
 };
 
+export type AgentRunStreamEventType =
+  | 'run_started'
+  | 'assistant_message_started'
+  | 'assistant_delta'
+  | 'assistant_message_completed'
+  | 'billing_recorded'
+  | 'run_completed'
+  | 'run_failed'
+  | 'artifact_started'
+  | 'artifact_progress'
+  | 'artifact_completed'
+  | 'artifact_failed';
+
+export type AgentRunStreamEventDto = {
+  id: string;
+  runId: string;
+  sequence: number;
+  eventType: AgentRunStreamEventType;
+  payload: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type AgentRunDetailDto = {
+  run: AgentRunDto;
+  events: AgentRunStreamEventDto[];
+};
+
 export type AgentRunDto = {
   id: string;
   taskType: AgentTaskType;

@@ -3,9 +3,11 @@ import test from 'node:test';
 
 import {
   InsufficientCreditsError,
+  assertCanAffordMinimum,
   calculateChatCreditCost,
   calculateCreditBalance,
   createMemoryCreditLedger,
+  debitForAgentRun,
   validateAdjustCreditsInput,
   validateGrantCreditsInput,
 } from './credits';
@@ -145,4 +147,78 @@ test('validateAdjustCreditsInput rejects zero-value adjustments', async () => {
     () => validateAdjustCreditsInput({ amount: Number.POSITIVE_INFINITY }),
     /Adjustment amount must be a finite integer\./,
   );
+});
+
+test('assertCanAffordMinimum skips database-backed billing preflight without DATABASE_URL outside production', async () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const env = process.env as Record<string, string | undefined>;
+
+  delete env.DATABASE_URL;
+  env.NODE_ENV = 'development';
+
+  try {
+    await assert.doesNotReject(() =>
+      assertCanAffordMinimum('user-1', {
+        unit: 'token',
+        promptCreditsPer1k: 1,
+        completionCreditsPer1k: 2,
+        minimumCredits: 999,
+      }),
+    );
+  } finally {
+    if (originalDatabaseUrl === undefined) {
+      delete env.DATABASE_URL;
+    } else {
+      env.DATABASE_URL = originalDatabaseUrl;
+    }
+    if (originalNodeEnv === undefined) {
+      delete env.NODE_ENV;
+    } else {
+      env.NODE_ENV = originalNodeEnv;
+    }
+  }
+});
+
+test('debitForAgentRun returns development fallback debit result without DATABASE_URL outside production', async () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const env = process.env as Record<string, string | undefined>;
+
+  delete env.DATABASE_URL;
+  env.NODE_ENV = 'development';
+
+  try {
+    const result = await debitForAgentRun({
+      userId: 'user-1',
+      runId: 'run-1',
+      usage: { promptTokens: 100, completionTokens: 100, totalTokens: 200 },
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 1,
+        completionCreditsPer1k: 2,
+        minimumCredits: 3,
+      },
+      modelSnapshot: {
+        id: 'model-1',
+        code: 'free',
+        name: 'Free',
+      },
+    });
+
+    assert.equal(result.amount, 3);
+    assert.match(result.entryId, /dev-ledger:run-1/);
+    assert.equal(result.balanceAfter, 0);
+  } finally {
+    if (originalDatabaseUrl === undefined) {
+      delete env.DATABASE_URL;
+    } else {
+      env.DATABASE_URL = originalDatabaseUrl;
+    }
+    if (originalNodeEnv === undefined) {
+      delete env.NODE_ENV;
+    } else {
+      env.NODE_ENV = originalNodeEnv;
+    }
+  }
 });

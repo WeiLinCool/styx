@@ -1,0 +1,57 @@
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+
+import { accountErrorToResponse } from '@/server/auth/account-types';
+import { requireAdmin } from '@/server/auth/guards';
+import { updateAiModel } from '@/server/repositories/ai-models';
+
+const paramsSchema = z.object({
+  modelId: z.uuid(),
+});
+
+const bodySchema = z.object({
+  providerId: z.uuid(),
+  code: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  model: z.string().trim().min(1),
+  status: z.enum(['enabled', 'disabled']),
+  supportsChat: z.boolean(),
+});
+
+export async function parseAiModelUpdateBody(request: Pick<Request, 'json'>) {
+  const body = await request.json().catch(() => null);
+  return bodySchema.parse(body);
+}
+
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ modelId: string }> },
+) {
+  try {
+    await requireAdmin();
+    const params = paramsSchema.parse(await context.params);
+    const body = await parseAiModelUpdateBody(request);
+    const model = await updateAiModel({
+      modelId: params.modelId,
+      ...body,
+    });
+
+    return NextResponse.json({ ok: true, model }, { status: 200 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'validation_error',
+            message: 'AI model update request is invalid.',
+            issues: error.issues,
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    const response = accountErrorToResponse(error);
+    return NextResponse.json(response.body, { status: response.status });
+  }
+}

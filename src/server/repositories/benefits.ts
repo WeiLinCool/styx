@@ -115,7 +115,7 @@ export async function getAdminBenefits(): Promise<AdminModuleData<AdminBenefitRo
   return {
     source: 'database',
     metrics: [
-      { label: '权益数', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+      { label: '权益数', value: String(records.length), hint: '数据库', tone: 'info' },
       {
         label: '额度类',
         value: String(records.filter((record) => record.kind === 'quota').length),

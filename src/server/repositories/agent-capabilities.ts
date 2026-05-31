@@ -297,7 +297,7 @@ function buildAgentCapabilityAdminData(
   return {
     source,
     metrics: [
-      { label: '能力数', value: String(records.length), hint: source === 'database' ? 'PostgreSQL' : 'seed', tone: 'info' },
+      { label: '能力数', value: String(records.length), hint: source === 'database' ? '数据库' : 'seed', tone: 'info' },
       {
         label: '启用',
         value: String(records.filter((record) => record.status === 'enabled').length),

@@ -22,8 +22,6 @@ import {
   revokeSessionsForUser,
   setUserAccountState,
 } from '@/server/repositories/users';
-import { db, schema } from '@/server/db';
-import { and, eq } from 'drizzle-orm';
 
 const DEFAULT_ACTIVATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;

@@ -1,17 +1,42 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { FormEvent, useState, useTransition } from 'react';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { AdminWorkOrderQueueStatus } from '@/server/repositories/admin-activation-work-orders';
-import type { AiModelStatus } from '@/server/repositories/ai-models';
+import type {
+  AdminAiModelRow,
+  AdminAiProviderRow,
+} from '@/server/repositories/ai-models';
+import { AdminAiConfigTestDialog } from './admin-ai-config-test-dialog';
+import {
+  EditAiModelDialog,
+  EditAiProviderDialog,
+} from './admin-ai-config-forms';
 
 type ActionState = {
   tone: 'success' | 'error';
   message: string;
+};
+
+type AdminPointAdjustmentState = {
+  amount: string;
+  reason: string;
 };
 
 async function postAdminAction(url: string, body: Record<string, unknown>) {
@@ -108,31 +133,148 @@ function ActionButtons({
   );
 }
 
-export function AdminUserActions({ userId }: { userId: string }) {
+export function AdminUserActions({
+  userId,
+  currentPoints,
+}: {
+  userId: string;
+  currentPoints: number;
+}) {
+  const router = useRouter();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [state, setState] = useState<ActionState | null>(null);
+  const [formState, setFormState] = useState<AdminPointAdjustmentState>({
+    amount: '',
+    reason: '',
+  });
+  const [, startTransition] = useTransition();
+
+  async function handlePointAdjustmentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setState(null);
+
+    const amount = Number(formState.amount);
+
+    try {
+      await postAdminAction(`/api/admin/users/${userId}/points`, {
+        amount,
+        reason: formState.reason,
+      });
+      setState({ tone: 'success', message: '积分调整已写入。' });
+      setDialogOpen(false);
+      setFormState({ amount: '', reason: '' });
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setState({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '后台操作失败。',
+      });
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
-    <ActionButtons
-      actions={[
-        {
-          label: '重发激活',
-          url: `/api/admin/users/${userId}/activation`,
-          body: { purpose: 'account_activation' },
-          successMessage: '激活 token 已重发。',
-        },
-        {
-          label: '直接激活',
-          url: `/api/admin/users/${userId}/activate`,
-          body: { reason: '客服后台操作' },
-          successMessage: '账号已激活。',
-        },
-        {
-          label: '停用',
-          url: `/api/admin/users/${userId}/suspend`,
-          body: { reason: '客服后台操作' },
-          successMessage: '账号已停用。',
-          variant: 'destructive',
-        },
-      ]}
-    />
+    <div className="flex flex-col items-end gap-1.5">
+      <ActionButtons
+        actions={[
+          {
+            label: '重发激活',
+            url: `/api/admin/users/${userId}/activation`,
+            body: { purpose: 'account_activation' },
+            successMessage: '激活 token 已重发。',
+          },
+          {
+            label: '直接激活',
+            url: `/api/admin/users/${userId}/activate`,
+            body: { reason: '客服后台操作' },
+            successMessage: '账号已激活。',
+          },
+          {
+            label: '停用',
+            url: `/api/admin/users/${userId}/suspend`,
+            body: { reason: '客服后台操作' },
+            successMessage: '账号已停用。',
+            variant: 'destructive',
+          },
+        ]}
+      />
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogTrigger asChild>
+          <Button type="button" size="sm" variant="outline" className="h-7 rounded-md px-2 text-xs">
+            调整积分
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>手动调整积分</DialogTitle>
+            <DialogDescription>支持正负调整，变更原因必填，写入真实积分账本与审计日志。</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            当前积分：{currentPoints}
+          </div>
+          <form className="space-y-4" onSubmit={(event) => void handlePointAdjustmentSubmit(event)}>
+            <div className="space-y-2">
+              <Label htmlFor={`admin-points-amount-${userId}`}>调整值</Label>
+              <Input
+                id={`admin-points-amount-${userId}`}
+                type="number"
+                step="1"
+                placeholder="例如 100 或 -50"
+                value={formState.amount}
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, amount: event.target.value }))
+                }
+                disabled={pending}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`admin-points-reason-${userId}`}>原因</Label>
+              <Textarea
+                id={`admin-points-reason-${userId}`}
+                placeholder="请填写审计原因，例如：客服补偿、误扣修正。"
+                value={formState.reason}
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, reason: event.target.value }))
+                }
+                disabled={pending}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+                disabled={pending}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                提交调整
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {state ? (
+        <div
+          className={cn(
+            'flex max-w-64 items-center gap-1 text-right text-[11px]',
+            state.tone === 'success' ? 'text-emerald-700' : 'text-red-700',
+          )}
+        >
+          {state.tone === 'success' ? (
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <XCircle className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <span>{state.message}</span>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -347,31 +489,97 @@ export function AdminAgentCapabilityActions({
 }
 
 export function AdminAiModelActions({
-  modelId,
-  status,
+  model,
+  providers,
 }: {
-  modelId: string;
-  status: AiModelStatus;
+  model: AdminAiModelRow;
+  providers: AdminAiProviderRow[];
 }) {
   const actions =
-    status === 'enabled'
+    model.status === 'enabled'
       ? [
           {
             label: '停用',
-            url: `/api/admin/ai-models/${modelId}/status`,
+            url: `/api/admin/ai-models/${model.id}/status`,
             body: { status: 'disabled' },
             successMessage: 'AI 模型已停用。',
+            variant: 'destructive' as const,
+          },
+          ...(!model.isDefaultChat
+            ? [
+                {
+                  label: '设为默认',
+                  url: `/api/admin/ai-models/${model.id}/default`,
+                  body: {},
+                  successMessage: '默认 Chat 模型已更新。',
+                },
+              ]
+            : []),
+        ]
+      : [
+          {
+            label: '启用',
+            url: `/api/admin/ai-models/${model.id}/status`,
+            body: { status: 'enabled' },
+            successMessage: 'AI 模型已启用。',
+          },
+        ];
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <EditAiModelDialog model={model} providers={providers} />
+      <ActionButtons actions={actions} />
+      <AdminAiConfigTestDialog
+        title="测试模型"
+        description="对当前模型发起最小测试请求，确认 provider 与 model 可用。"
+        triggerLabel="测试模型"
+        url={`/api/admin/ai-models/${model.id}/test`}
+        body={{}}
+      />
+    </div>
+  );
+}
+
+export function AdminAiProviderActions({
+  provider,
+  fallbackModelId,
+}: {
+  provider: AdminAiProviderRow;
+  fallbackModelId: string | null;
+}) {
+  const actions =
+    provider.status === 'enabled'
+      ? [
+          {
+            label: '停用',
+            url: `/api/admin/ai-providers/${provider.id}/status`,
+            body: { status: 'disabled' },
+            successMessage: 'AI 供应商已停用。',
             variant: 'destructive' as const,
           },
         ]
       : [
           {
             label: '启用',
-            url: `/api/admin/ai-models/${modelId}/status`,
+            url: `/api/admin/ai-providers/${provider.id}/status`,
             body: { status: 'enabled' },
-            successMessage: 'AI 模型已启用。',
+            successMessage: 'AI 供应商已启用。',
           },
         ];
 
-  return <ActionButtons actions={actions} />;
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <EditAiProviderDialog provider={provider} />
+      <ActionButtons actions={actions} />
+      {fallbackModelId ? (
+        <AdminAiConfigTestDialog
+          title="测试供应商"
+          description="使用一个关联模型发送最小请求，验证 endpoint 与凭据引用。"
+          triggerLabel="测试供应商"
+          url={`/api/admin/ai-providers/${provider.id}/test`}
+          body={{ modelId: fallbackModelId }}
+        />
+      ) : null}
+    </div>
+  );
 }

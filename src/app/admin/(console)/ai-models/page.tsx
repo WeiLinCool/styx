@@ -1,9 +1,11 @@
 import {
-  AdminModulePage,
-  DetailList,
-  type AdminColumn,
-} from '@/features/admin/module-page';
-import { AdminAiModelActions } from '@/features/admin/admin-action-controls';
+  AdminAiProviderActions,
+} from '@/features/admin/admin-action-controls';
+import { AdminAiModelsModule } from '@/features/admin/admin-ai-models-module';
+import {
+  CreateAiModelDialog,
+  CreateAiProviderDialog,
+} from '@/features/admin/admin-ai-config-forms';
 import { StatusBadge } from '@/features/admin/status-badge';
 import {
   Card,
@@ -21,7 +23,6 @@ import {
 } from '@/components/ui/table';
 import {
   getAdminAiModels,
-  type AdminAiModelRow,
 } from '@/server/repositories/ai-models';
 
 export const dynamic = 'force-dynamic';
@@ -32,95 +33,22 @@ const credentialTone = {
   not_required: 'default',
 } as const;
 
-const columns: AdminColumn<AdminAiModelRow>[] = [
-  {
-    key: 'model',
-    label: '模型',
-    render: (model) => (
-      <div>
-        <div className="font-medium text-neutral-950">{model.name}</div>
-        <div className="text-xs text-neutral-500">{model.code}</div>
-        <div className="mt-1 text-xs text-neutral-600">{model.model}</div>
-      </div>
-    ),
-  },
-  {
-    key: 'provider',
-    label: '供应商',
-    render: (model) => (
-      <div>
-        <div className="text-sm font-medium text-neutral-900">{model.providerName}</div>
-        <div className="text-xs text-neutral-500">{model.providerCode}</div>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          <StatusBadge value={model.providerType} />
-          <StatusBadge value={model.providerStatus} />
-        </div>
-      </div>
-    ),
-  },
-  {
-    key: 'status',
-    label: '支持 / 默认',
-    render: (model) => (
-      <DetailList
-        items={[
-          model.status,
-          model.supportsChat ? 'chat' : 'no chat',
-          model.isDefaultChat ? 'default chat' : 'not default',
-        ]}
-      />
-    ),
-  },
-  {
-    key: 'entitlement',
-    label: '权益要求',
-    render: (model) => (
-      <div className="max-w-xs text-xs text-neutral-700">{model.entitlementSummary}</div>
-    ),
-  },
-  {
-    key: 'pricing',
-    label: '价格',
-    render: (model) => (
-      <div className="max-w-sm text-xs text-neutral-700">{model.pricingSummary}</div>
-    ),
-  },
-  {
-    key: 'credential',
-    label: '凭据引用',
-    render: (model) => (
-      <div>
-        <StatusBadge
-          value={model.credential.status}
-          tone={credentialTone[model.credential.status]}
-        />
-        <div className="mt-1 text-xs text-neutral-700">{model.credential.label}</div>
-        <div className="mt-0.5 text-xs text-neutral-500">{model.credential.detail}</div>
-      </div>
-    ),
-  },
-  {
-    key: 'actions',
-    label: '操作',
-    className: 'text-right',
-    render: (model) => <AdminAiModelActions modelId={model.id} status={model.status} />,
-  },
-];
-
 export default async function AdminAiModelsPage() {
   const data = await getAdminAiModels();
 
   return (
     <div className="space-y-4">
-      <AdminModulePage
-        title="AI 模型"
-        description="管理用户 Chat 使用的 AI 供应商、模型、默认状态、权益门槛、价格与凭据引用检查。"
+      <div className="flex flex-wrap justify-end gap-2">
+        <CreateAiProviderDialog />
+        <CreateAiModelDialog providers={data.providers} />
+      </div>
+
+      <AdminAiModelsModule
         source={data.source}
         metrics={data.metrics}
         filters={data.filters}
         records={data.records}
-        columns={columns}
-        searchPlaceholder="搜索模型、供应商、状态或权益..."
+        providers={data.providers}
       />
 
       <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
@@ -136,6 +64,7 @@ export default async function AdminAiModelsPage() {
                 <TableHead>Endpoint</TableHead>
                 <TableHead>凭据引用</TableHead>
                 <TableHead className="text-right">模型</TableHead>
+                <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -169,6 +98,14 @@ export default async function AdminAiModelsPage() {
                   <TableCell className="text-right text-xs text-neutral-700">
                     {provider.enabledModelCount}/{provider.modelCount} enabled ·{' '}
                     {provider.chatModelCount} chat
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <AdminAiProviderActions
+                      provider={provider}
+                      fallbackModelId={
+                        data.records.find((record) => record.providerId === provider.id)?.id ?? null
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               ))}

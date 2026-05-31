@@ -104,7 +104,7 @@ export function AdminModulePage<TRecord extends { id: string }>({
           <p className="mt-1 text-sm text-neutral-600">{description}</p>
         </div>
         <StatusBadge
-          value={source === 'database' ? 'PostgreSQL' : '种子数据'}
+          value={source === 'database' ? '数据库' : '种子数据'}
           tone={source === 'database' ? 'success' : 'warning'}
         />
       </div>

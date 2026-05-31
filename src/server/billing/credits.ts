@@ -130,6 +130,10 @@ export async function assertCanAffordMinimum(
   userId: string,
   pricing: AiModelPricing,
 ): Promise<void> {
+  if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
+    return;
+  }
+
   const balance = await getCreditBalance(userId);
   if (balance < pricing.minimumCredits) {
     throw new InsufficientCreditsError();
@@ -143,6 +147,15 @@ export async function debitForAgentRun(input: {
   pricing: AiModelPricing;
   modelSnapshot: ResolvedChatModel | Record<string, unknown>;
 }): Promise<CreditLedgerDebitResult & { amount: number }> {
+  if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
+    const amount = calculateChatCreditCost({ usage: input.usage, pricing: input.pricing });
+    return {
+      entryId: `dev-ledger:${input.runId}`,
+      balanceAfter: 0,
+      amount,
+    };
+  }
+
   const database = requireCreditDatabase();
   const idempotencyKey = `agent-run:${input.runId}:usage`;
 

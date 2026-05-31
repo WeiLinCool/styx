@@ -110,7 +110,7 @@ export function serviceErrorToResponse(error: unknown) {
     return NextResponse.json(accountResponse.body, { status: accountResponse.status });
   }
 
-  return jsonError('internal_error', 'AI request failed.', 500);
+  return jsonError('internal_error', 'AI 请求失败，请稍后再试', 500);
 }
 
 function createService() {

@@ -1,5 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
+import { createChatProviderAdapter } from '@/server/ai/provider-adapters';
+import { createAgentRunService } from '@/server/agent/run-service';
 import {
   evaluateModelEntitlement,
   listActiveUserEntitlements,
@@ -8,6 +11,7 @@ import {
   type ModelEntitlementResult,
 } from '@/server/ai/model-entitlements';
 import { db, schema } from '@/server/db';
+import { getAgentRunRepository } from './agent-runs';
 import {
   type AdminModuleData,
   ensureAdminReadSource,
@@ -86,6 +90,20 @@ export type AdminAiProviderRow = {
 
 export type AdminAiModelData = AdminModuleData<AdminAiModelRow> & {
   providers: AdminAiProviderRow[];
+};
+
+export type AdminAiConfigTestSummary = {
+  ok: boolean;
+  elapsedMs: number;
+  providerLabel: string;
+  modelLabel: string;
+  error: string | null;
+};
+
+export type AdminAiChatLoopTestResult = AdminAiConfigTestSummary & {
+  prompt: string;
+  run: import('@/server/agent/types').AgentRunDto | null;
+  events: import('@/server/agent/types').AgentRunStreamEventDto[];
 };
 
 type AdminModelStatusAction = {
@@ -191,6 +209,8 @@ const seedProviders = [
   baseUrl: string | null;
   credentialEnvKey: string | null;
 }>;
+
+const adminAiLoopTestUserId = '00000000-0000-4000-8000-000000000001';
 
 type ChatModelRow = {
   model: typeof schema.aiModels.$inferSelect;
@@ -315,6 +335,65 @@ export function summarizeProviderCredentialReference(input: {
   };
 }
 
+export function validateProviderTestConfiguration(input: {
+  providerType: AiProviderType;
+  baseUrl: string | null;
+  credentialEnvKey: string | null;
+  model: string | null;
+}) {
+  if (input.providerType === 'development') {
+    return;
+  }
+
+  const missing: string[] = [];
+  if (!input.baseUrl?.trim()) {
+    missing.push('base URL');
+  }
+  if (!input.credentialEnvKey?.trim()) {
+    missing.push('credential environment key');
+  }
+  if (!input.model?.trim()) {
+    missing.push('model');
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Provider test is missing configuration: ${joinHumanList(missing)}.`);
+  }
+}
+
+export function normalizeDefaultChatTarget(input: {
+  id: string;
+  status: AiModelStatus;
+  supportsChat: boolean;
+  providerStatus: AiProviderStatus;
+}) {
+  if (
+    input.status !== 'enabled' ||
+    !input.supportsChat ||
+    input.providerStatus !== 'enabled'
+  ) {
+    throw new Error('Selected model cannot become the default chat model.');
+  }
+
+  return input.id;
+}
+
+export function summarizeAdminAiConfigTestResult(input: {
+  ok: boolean;
+  elapsedMs: number;
+  providerLabel: string;
+  modelLabel: string;
+  error?: string | null;
+}): AdminAiConfigTestSummary {
+  return {
+    ok: input.ok,
+    elapsedMs: input.elapsedMs,
+    providerLabel: input.providerLabel,
+    modelLabel: input.modelLabel,
+    error: input.error ? input.error.trim().slice(0, 280) : null,
+  };
+}
+
 export function buildModelStatusActions(
   modelId: string,
   status: AiModelStatus,
@@ -393,6 +472,540 @@ export async function updateAiModelStatus(input: {
   return toAdminAiModelRow(model);
 }
 
+export async function setDefaultAiChatModel(input: {
+  modelId: string;
+}): Promise<AdminAiModelRow> {
+  const database = requireAiModelDatabase('AI model default mutation');
+
+  if (!database) {
+    const seed = seedModels.find((model) => model.id === input.modelId);
+    if (!seed) {
+      throw new Error('AI model was not found.');
+    }
+
+    normalizeDefaultChatTarget({
+      id: seed.id,
+      status: 'enabled',
+      supportsChat: true,
+      providerStatus: 'enabled',
+    });
+
+    return toAdminAiModelRow({
+      model: {
+        id: seed.id,
+        providerId: seed.providerId,
+        code: seed.code,
+        name: seed.name,
+        model: seed.model,
+        status: 'enabled',
+        supportsChat: true,
+        isDefaultChat: true,
+        pricing: seed.pricing,
+      },
+      provider: seedProviders[0],
+      requirements: seedRequirementForModel(seed),
+    });
+  }
+
+  const groups = groupAdminModelRows(await loadAdminAiModelRows(input.modelId));
+  const target = groups.find((group) => group.model.id === input.modelId);
+
+  if (!target) {
+    throw new Error('AI model was not found.');
+  }
+
+  normalizeDefaultChatTarget({
+    id: target.model.id,
+    status: target.model.status,
+    supportsChat: target.model.supportsChat,
+    providerStatus: target.provider.status,
+  });
+
+  await database.transaction(async (tx) => {
+    await tx
+      .update(schema.aiModels)
+      .set({
+        isDefaultChat: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.aiModels.isDefaultChat, true));
+
+    await tx
+      .update(schema.aiModels)
+      .set({
+        isDefaultChat: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.aiModels.id, input.modelId));
+  });
+
+  const updatedGroups = groupAdminModelRows(await loadAdminAiModelRows(input.modelId));
+  const updated = updatedGroups.find((group) => group.model.id === input.modelId);
+
+  if (!updated) {
+    throw new Error('AI model was not found.');
+  }
+
+  return toAdminAiModelRow(updated);
+}
+
+export async function createAiProvider(input: {
+  code: string;
+  name: string;
+  providerType: Extract<AiProviderType, 'openai_compatible' | 'development'>;
+  baseUrl: string | null;
+  credentialEnvKey: string | null;
+  status: Extract<AiProviderStatus, 'enabled' | 'disabled'>;
+}): Promise<AdminAiProviderRow> {
+  const database = requireAiModelDatabase('AI provider create');
+  const trimmedBaseUrl = input.baseUrl?.trim() ?? null;
+  const trimmedCredentialEnvKey = input.credentialEnvKey?.trim() ?? null;
+
+  if (input.status === 'enabled') {
+    validateProviderTestConfiguration({
+      providerType: input.providerType,
+      baseUrl: trimmedBaseUrl,
+      credentialEnvKey: trimmedCredentialEnvKey,
+      model: 'placeholder',
+    });
+  }
+
+  if (!database) {
+    return toAdminAiProviderRow({
+      provider: {
+        id: randomUUID(),
+        code: input.code.trim(),
+        name: input.name.trim(),
+        providerType: input.providerType,
+        status: input.status,
+        baseUrl: trimmedBaseUrl,
+        credentialEnvKey: trimmedCredentialEnvKey,
+      },
+      models: [],
+    });
+  }
+
+  const [created] = await database
+    .insert(schema.aiProviders)
+    .values({
+      id: randomUUID(),
+      code: input.code.trim(),
+      name: input.name.trim(),
+      providerType: input.providerType,
+      status: input.status,
+      baseUrl: trimmedBaseUrl,
+      credentialEnvKey: trimmedCredentialEnvKey,
+      metadata: {},
+    })
+    .returning();
+
+  return toAdminAiProviderRow({
+    provider: created,
+    models: [],
+  });
+}
+
+export async function updateAiProviderStatus(input: {
+  providerId: string;
+  status: Extract<AiProviderStatus, 'enabled' | 'disabled'>;
+}): Promise<AdminAiProviderRow> {
+  const database = requireAiModelDatabase('AI provider status mutation');
+
+  if (!database) {
+    const seed = seedProviders.find((provider) => provider.id === input.providerId);
+    if (!seed) {
+      throw new Error('AI provider was not found.');
+    }
+
+    return toAdminAiProviderRow({
+      provider: {
+        ...seed,
+        status: input.status,
+      },
+      models: getSeedAiModelAdminData().records.filter((record) => record.providerId === seed.id),
+    });
+  }
+
+  const [updated] = await database
+    .update(schema.aiProviders)
+    .set({
+      status: input.status,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.aiProviders.id, input.providerId))
+    .returning();
+
+  if (!updated) {
+    throw new Error('AI provider was not found.');
+  }
+
+  const groups = groupAdminModelRows(await loadAdminAiModelRows());
+  return toAdminAiProviderRow({
+    provider: updated,
+    models: groups
+      .filter((group) => group.provider.id === updated.id)
+      .map(toAdminAiModelRow),
+  });
+}
+
+export async function updateAiProvider(input: {
+  providerId: string;
+  code: string;
+  name: string;
+  providerType: Extract<AiProviderType, 'openai_compatible' | 'development'>;
+  baseUrl: string | null;
+  credentialEnvKey: string | null;
+  status: Extract<AiProviderStatus, 'enabled' | 'disabled'>;
+}): Promise<AdminAiProviderRow> {
+  const database = requireAiModelDatabase('AI provider update');
+  const trimmedBaseUrl = input.baseUrl?.trim() ?? null;
+  const trimmedCredentialEnvKey = input.credentialEnvKey?.trim() ?? null;
+
+  if (input.status === 'enabled') {
+    validateProviderTestConfiguration({
+      providerType: input.providerType,
+      baseUrl: trimmedBaseUrl,
+      credentialEnvKey: trimmedCredentialEnvKey,
+      model: 'placeholder',
+    });
+  }
+
+  if (!database) {
+    const seed = seedProviders.find((provider) => provider.id === input.providerId);
+    if (!seed) {
+      throw new Error('AI provider was not found.');
+    }
+
+    return toAdminAiProviderRow({
+      provider: {
+        ...seed,
+        code: input.code.trim(),
+        name: input.name.trim(),
+        providerType: input.providerType,
+        status: input.status,
+        baseUrl: trimmedBaseUrl,
+        credentialEnvKey: trimmedCredentialEnvKey,
+      },
+      models: getSeedAiModelAdminData().records.filter((record) => record.providerId === seed.id),
+    });
+  }
+
+  const [updated] = await database
+    .update(schema.aiProviders)
+    .set({
+      code: input.code.trim(),
+      name: input.name.trim(),
+      providerType: input.providerType,
+      status: input.status,
+      baseUrl: trimmedBaseUrl,
+      credentialEnvKey: trimmedCredentialEnvKey,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.aiProviders.id, input.providerId))
+    .returning();
+
+  if (!updated) {
+    throw new Error('AI provider was not found.');
+  }
+
+  const groups = groupAdminModelRows(await loadAdminAiModelRows());
+  return toAdminAiProviderRow({
+    provider: updated,
+    models: groups
+      .filter((group) => group.provider.id === updated.id)
+      .map(toAdminAiModelRow),
+  });
+}
+
+export async function createAiModel(input: {
+  providerId: string;
+  code: string;
+  name: string;
+  model: string;
+  status: Extract<AiModelStatus, 'enabled' | 'disabled'>;
+  supportsChat: boolean;
+}): Promise<AdminAiModelRow> {
+  const database = requireAiModelDatabase('AI model create');
+
+  if (!database) {
+    const provider = seedProviders.find((item) => item.id === input.providerId);
+    if (!provider) {
+      throw new Error('AI provider was not found.');
+    }
+
+    return toAdminAiModelRow({
+      model: {
+        id: randomUUID(),
+        providerId: input.providerId,
+        code: input.code.trim(),
+        name: input.name.trim(),
+        model: input.model.trim(),
+        status: input.status,
+        supportsChat: input.supportsChat,
+        isDefaultChat: false,
+        pricing: defaultPricing,
+      },
+      provider,
+      requirements: [],
+    });
+  }
+
+  const [created] = await database
+    .insert(schema.aiModels)
+    .values({
+      id: randomUUID(),
+      providerId: input.providerId,
+      code: input.code.trim(),
+      name: input.name.trim(),
+      model: input.model.trim(),
+      status: input.status,
+      supportsChat: input.supportsChat,
+      isDefaultChat: false,
+      sortOrder: 0,
+      pricing: defaultPricing,
+      metadata: {},
+    })
+    .returning();
+
+  const groups = groupAdminModelRows(await loadAdminAiModelRows(created.id));
+  const row = groups.find((group) => group.model.id === created.id);
+  if (!row) {
+    throw new Error('AI model was not found.');
+  }
+
+  return toAdminAiModelRow(row);
+}
+
+export async function updateAiModel(input: {
+  modelId: string;
+  providerId: string;
+  code: string;
+  name: string;
+  model: string;
+  status: Extract<AiModelStatus, 'enabled' | 'disabled'>;
+  supportsChat: boolean;
+}): Promise<AdminAiModelRow> {
+  const database = requireAiModelDatabase('AI model update');
+
+  if (!database) {
+    const provider = seedProviders.find((item) => item.id === input.providerId);
+    if (!provider) {
+      throw new Error('AI provider was not found.');
+    }
+
+    return toAdminAiModelRow({
+      model: {
+        id: input.modelId,
+        providerId: input.providerId,
+        code: input.code.trim(),
+        name: input.name.trim(),
+        model: input.model.trim(),
+        status: input.status,
+        supportsChat: input.supportsChat,
+        isDefaultChat: input.modelId === 'seed-model-free',
+        pricing: defaultPricing,
+      },
+      provider,
+      requirements: [],
+    });
+  }
+
+  const [updated] = await database
+    .update(schema.aiModels)
+    .set({
+      providerId: input.providerId,
+      code: input.code.trim(),
+      name: input.name.trim(),
+      model: input.model.trim(),
+      status: input.status,
+      supportsChat: input.supportsChat,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.aiModels.id, input.modelId))
+    .returning();
+
+  if (!updated) {
+    throw new Error('AI model was not found.');
+  }
+
+  const groups = groupAdminModelRows(await loadAdminAiModelRows(updated.id));
+  const row = groups.find((group) => group.model.id === updated.id);
+  if (!row) {
+    throw new Error('AI model was not found.');
+  }
+
+  return toAdminAiModelRow(row);
+}
+
+export async function testAiProviderConfiguration(input: {
+  providerId: string;
+  modelId: string;
+  prompt?: string;
+}): Promise<AdminAiConfigTestSummary> {
+  if (input.prompt?.trim()) {
+    return runAdminAiChatLoopTest({
+      modelId: input.modelId,
+      prompt: input.prompt,
+    });
+  }
+
+  const model = await resolveAdminTestModel(input.modelId, input.providerId);
+  validateProviderTestConfiguration({
+    providerType: model.providerType,
+    baseUrl: model.baseUrl,
+    credentialEnvKey: model.credentialEnvKey,
+    model: model.model,
+  });
+
+  const adapter = createChatProviderAdapter(model);
+  const startedAt = Date.now();
+
+  try {
+    await adapter.runChat({
+      runId: `admin-provider-test:${input.providerId}`,
+      userId: 'admin-config-test',
+      model,
+      messages: [{ role: 'user', content: 'ping' }],
+    });
+
+    return summarizeAdminAiConfigTestResult({
+      ok: true,
+      elapsedMs: Date.now() - startedAt,
+      providerLabel: model.providerName,
+      modelLabel: model.name,
+    });
+  } catch (error) {
+    return summarizeAdminAiConfigTestResult({
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      providerLabel: model.providerName,
+      modelLabel: model.name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function testAiModelConfiguration(input: {
+  modelId: string;
+  prompt?: string;
+}): Promise<AdminAiConfigTestSummary> {
+  const prompt = input.prompt?.trim();
+  if (prompt) {
+    return runAdminAiChatLoopTest({ modelId: input.modelId, prompt });
+  }
+
+  const model = await resolveAdminTestModel(input.modelId);
+  validateProviderTestConfiguration({
+    providerType: model.providerType,
+    baseUrl: model.baseUrl,
+    credentialEnvKey: model.credentialEnvKey,
+    model: model.model,
+  });
+
+  const adapter = createChatProviderAdapter(model);
+  const startedAt = Date.now();
+
+  try {
+    await adapter.runChat({
+      runId: `admin-model-test:${input.modelId}`,
+      userId: 'admin-config-test',
+      model,
+      messages: [{ role: 'user', content: 'ping' }],
+    });
+
+    return summarizeAdminAiConfigTestResult({
+      ok: true,
+      elapsedMs: Date.now() - startedAt,
+      providerLabel: model.providerName,
+      modelLabel: model.name,
+    });
+  } catch (error) {
+    return summarizeAdminAiConfigTestResult({
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      providerLabel: model.providerName,
+      modelLabel: model.name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function runAdminAiChatLoopTest(input: {
+  modelId: string;
+  prompt: string;
+}): Promise<AdminAiChatLoopTestResult> {
+  const model = await resolveAdminTestModel(input.modelId);
+  validateProviderTestConfiguration({
+    providerType: model.providerType,
+    baseUrl: model.baseUrl,
+    credentialEnvKey: model.credentialEnvKey,
+    model: model.model,
+  });
+
+  const repository = getAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        throw new Error('chat loop test should not use non-chat runtime');
+      },
+    },
+    resolveChatModelForUser: async (_userId, modelId) => {
+      if (modelId !== model.id) {
+        throw new Error('Requested test model does not match resolved admin model.');
+      }
+      return model;
+    },
+    assertCanAffordMinimum: async () => {},
+  });
+  const startedAt = Date.now();
+  const run = await service.createAndRunAgentRun({
+    userId: adminAiLoopTestUserId,
+    taskType: 'chat',
+    prompt: input.prompt.trim(),
+    modelId: model.id,
+    input: { source: 'admin-ai-loop-test' },
+  });
+
+  const detail = await waitForAdminTestRunCompletion(repository, run.id, adminAiLoopTestUserId);
+  const ok = detail.run.status === 'succeeded';
+
+  return {
+    ok,
+    elapsedMs: Date.now() - startedAt,
+    providerLabel: model.providerName,
+    modelLabel: model.name,
+    prompt: input.prompt.trim(),
+    run: detail.run,
+    events: detail.events,
+    error: ok ? null : detail.run.errorMessage ?? '闭环测试未成功完成。',
+  };
+}
+
+async function waitForAdminTestRunCompletion(
+  repository: ReturnType<typeof getAgentRunRepository>,
+  runId: string,
+  userId: string,
+) {
+  const deadline = Date.now() + 20_000;
+
+  while (Date.now() < deadline) {
+    const detail = await repository.getRunDetailForUser(runId, userId);
+    if (detail && detail.run.status !== 'queued' && detail.run.status !== 'running') {
+      return detail;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  const detail = await repository.getRunDetailForUser(runId, userId);
+  if (detail) {
+    return detail;
+  }
+
+  throw new Error('闭环测试超时，且未能读取测试 run 详情。');
+}
+
 export function getSeedAiModelAdminData(): AdminAiModelData {
   const records = seedModels.map((model) =>
     toAdminAiModelRow({
@@ -431,7 +1044,7 @@ export async function getAdminAiModels(): Promise<AdminAiModelData> {
 
   const groupedModels = groupAdminModelRows(await loadAdminAiModelRows());
   const records = groupedModels.map(toAdminAiModelRow);
-  const providers = buildAdminProviderRows(records, groupedModels.map((row) => row.provider));
+  const providers = buildAdminProviderRows(records, await loadAdminProviderRows());
 
   return buildAdminAiModelData('database', records, providers);
 }
@@ -728,7 +1341,7 @@ function buildAdminAiModelData(
       {
         label: '供应商',
         value: String(providers.length),
-        hint: source === 'database' ? 'PostgreSQL' : 'seed',
+        hint: source === 'database' ? '数据库' : 'seed',
         tone: 'info',
       },
       {
@@ -847,4 +1460,49 @@ async function loadAdminAiModelRows(modelId?: string): Promise<AdminAiModelRowSo
     : await baseQuery.orderBy(desc(schema.aiModels.updatedAt), asc(schema.aiModels.sortOrder));
 
   return rows;
+}
+
+async function loadAdminProviderRows(): Promise<AdminAiModelGroup['provider'][]> {
+  if (!db || !process.env.DATABASE_URL) {
+    return [];
+  }
+
+  return db
+    .select({
+      id: schema.aiProviders.id,
+      code: schema.aiProviders.code,
+      name: schema.aiProviders.name,
+      providerType: schema.aiProviders.providerType,
+      status: schema.aiProviders.status,
+      baseUrl: schema.aiProviders.baseUrl,
+      credentialEnvKey: schema.aiProviders.credentialEnvKey,
+    })
+    .from(schema.aiProviders)
+    .orderBy(desc(schema.aiProviders.updatedAt), asc(schema.aiProviders.createdAt));
+}
+
+async function resolveAdminTestModel(modelId: string, providerId?: string): Promise<ResolvedChatModel> {
+  if (!db || !process.env.DATABASE_URL) {
+    const seed = seedModels.find((item) => item.id === modelId);
+    if (!seed) {
+      throw new Error('AI model was not found.');
+    }
+    if (providerId && seed.providerId !== providerId) {
+      throw new Error('AI provider and model do not match.');
+    }
+    return structuredClone(seed);
+  }
+
+  const rows = await loadDatabaseChatModelRows(modelId);
+  const models = groupResolvedRows(rows, []);
+  const model = models.find((item) => item.id === modelId);
+
+  if (!model) {
+    throw new Error('AI model was not found.');
+  }
+  if (providerId && model.providerId !== providerId) {
+    throw new Error('AI provider and model do not match.');
+  }
+
+  return model;
 }

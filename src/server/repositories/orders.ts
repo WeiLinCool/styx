@@ -109,7 +109,7 @@ export async function getAdminOrders(): Promise<AdminModuleData<AdminOrderRow>> 
   return {
     source: 'database',
     metrics: [
-      { label: '订单数', value: String(records.length), hint: 'PostgreSQL', tone: 'info' },
+      { label: '订单数', value: String(records.length), hint: '数据库', tone: 'info' },
       {
         label: '已支付',
         value: String(records.filter((record) => record.status === 'paid').length),

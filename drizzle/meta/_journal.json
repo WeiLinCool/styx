@@ -50,6 +50,13 @@
       "when": 1780107101049,
       "tag": "0006_sleepy_tyger_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780129610211,
+      "tag": "0007_colossal_hobgoblin",
+      "breakpoints": true
     }
   ]
 }

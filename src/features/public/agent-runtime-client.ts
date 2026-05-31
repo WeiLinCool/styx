@@ -1,4 +1,4 @@
-import type { AgentRunDto, AgentTaskType } from '@/server/agent/types';
+import type { AgentRunDetailDto, AgentRunDto, AgentTaskType } from '@/server/agent/types';
 
 export type ChatModelOption = {
   id: string;
@@ -138,4 +138,21 @@ export async function listAgentRuns(): Promise<AgentRunDto[]> {
   }
 
   return payload.runs ?? [];
+}
+
+export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailDto> {
+  const response = await fetch(`/api/agent/runs/${runId}`, {
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '对话加载失败');
+  }
+
+  return payload;
+}
+
+export function createAgentRunEventsUrl(runId: string) {
+  return `/api/agent/runs/${runId}/events`;
 }

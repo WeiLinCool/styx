@@ -5,10 +5,17 @@ import type { ActiveUserEntitlement } from '@/server/ai/model-entitlements';
 import {
   buildModelRequirementSeedKey,
   buildModelStatusActions,
+  createAiModel,
+  createAiProvider,
   getSeedAiModelAdminData,
   getSeedChatModelsForUser,
+  normalizeDefaultChatTarget,
   resolveSeedChatModelForUser,
+  summarizeAdminAiConfigTestResult,
   summarizeProviderCredentialReference,
+  updateAiModel,
+  updateAiProvider,
+  validateProviderTestConfiguration,
 } from './ai-models';
 
 const activeProEntitlement: ActiveUserEntitlement = {
@@ -150,4 +157,102 @@ test('buildModelStatusActions only offers meaningful enabled and disabled transi
       successMessage: 'AI 模型已启用。',
     },
   ]);
+});
+
+test('validateProviderTestConfiguration rejects missing base URL before upstream request', () => {
+  assert.throws(
+    () =>
+      validateProviderTestConfiguration({
+        providerType: 'openai_compatible',
+        baseUrl: null,
+        credentialEnvKey: 'TEST_OPENAI_KEY',
+        model: 'gpt-4o-mini',
+      }),
+    /missing configuration/i,
+  );
+});
+
+test('normalizeDefaultChatTarget rejects disabled targets', () => {
+  assert.throws(
+    () =>
+      normalizeDefaultChatTarget({
+        id: 'model-1',
+        status: 'disabled',
+        supportsChat: true,
+        providerStatus: 'enabled',
+      }),
+    /default chat model/i,
+  );
+});
+
+test('summarizeAdminAiConfigTestResult trims unsafe upstream error detail', () => {
+  const summary = summarizeAdminAiConfigTestResult({
+    ok: false,
+    elapsedMs: 123,
+    providerLabel: 'Provider 1',
+    modelLabel: 'Model 1',
+    error: 'x'.repeat(800),
+  });
+
+  assert.equal(summary.ok, false);
+  assert.equal(summary.error?.length, 280);
+});
+
+test('createAiProvider returns a configured provider summary in seed mode', async () => {
+  const provider = await createAiProvider({
+    code: 'openrouter',
+    name: 'OpenRouter',
+    providerType: 'openai_compatible',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    credentialEnvKey: 'OPENROUTER_API_KEY',
+    status: 'disabled',
+  });
+
+  assert.equal(provider.code, 'openrouter');
+  assert.equal(provider.name, 'OpenRouter');
+  assert.equal(provider.credential.label, 'OPENROUTER_API_KEY');
+});
+
+test('updateAiProvider updates provider summary in seed mode', async () => {
+  const provider = await updateAiProvider({
+    providerId: 'seed-provider-development',
+    code: 'development',
+    name: 'Development Provider Updated',
+    providerType: 'development',
+    baseUrl: null,
+    credentialEnvKey: null,
+    status: 'disabled',
+  });
+
+  assert.equal(provider.name, 'Development Provider Updated');
+  assert.equal(provider.status, 'disabled');
+});
+
+test('updateAiModel updates model summary in seed mode', async () => {
+  const model = await updateAiModel({
+    modelId: 'seed-model-free',
+    providerId: 'seed-provider-development',
+    code: 'dev-free-chat',
+    name: 'Development Free Chat Updated',
+    model: 'development-free-chat-updated',
+    status: 'enabled',
+    supportsChat: true,
+  });
+
+  assert.equal(model.name, 'Development Free Chat Updated');
+  assert.equal(model.model, 'development-free-chat-updated');
+});
+
+test('createAiModel returns a new model summary in seed mode', async () => {
+  const model = await createAiModel({
+    providerId: 'seed-provider-development',
+    code: 'dev-preview-chat',
+    name: 'Development Preview Chat',
+    model: 'development-preview-chat',
+    status: 'disabled',
+    supportsChat: true,
+  });
+
+  assert.equal(model.code, 'dev-preview-chat');
+  assert.equal(model.providerId, 'seed-provider-development');
 });

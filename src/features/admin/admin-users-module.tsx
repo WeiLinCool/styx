@@ -82,11 +82,11 @@ const columns: AdminColumn<AdminUserRow>[] = [
   },
   {
     key: 'membership',
-    label: '会员 / 额度',
+    label: '会员 / 积分',
     render: (user) => (
       <div>
         <div className="text-sm text-neutral-900">{user.membership}</div>
-        <div className="text-xs text-neutral-500">{user.credits} 点额度</div>
+        <div className="text-xs text-neutral-500">{user.points} 积分</div>
       </div>
     ),
   },
@@ -104,7 +104,9 @@ const columns: AdminColumn<AdminUserRow>[] = [
     key: 'actions',
     label: '操作',
     className: 'text-right',
-    render: (user) => <AdminUserActions userId={user.id} />,
+    render: (user) => (
+      <AdminUserActions userId={user.id} currentPoints={user.points} />
+    ),
   },
 ];
 
@@ -161,10 +163,10 @@ export function AdminUsersModule({
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-base font-semibold text-neutral-950">用户管理</h2>
-          <p className="mt-1 text-sm text-neutral-600">账号生命周期、身份绑定、会员额度、活动与审计摘要。</p>
+          <p className="mt-1 text-sm text-neutral-600">账号生命周期、身份绑定、真实积分余额、活动与审计摘要。</p>
         </div>
         <StatusBadge
-          value={source === 'database' ? 'PostgreSQL' : '种子数据'}
+          value={source === 'database' ? '数据库' : '种子数据'}
           tone={source === 'database' ? 'success' : 'warning'}
         />
       </div>

@@ -183,6 +183,14 @@ Use the lowest meaningful layer first.
 - Database changes: `pnpm db:generate`, `pnpm db:migrate`, `pnpm db:seed`, plus focused repository checks.
 - UI behavior: run `pnpm dev` or built app and verify in browser. Use screenshots for layout-sensitive work.
 
+Browser verification expectations:
+
+- User-visible admin UI changes default to browser verification.
+- Prefer local Playwright execution for interactive browser checks.
+- Prepare Playwright browsers locally instead of treating browser download as a normal remote-server step.
+- Before standalone Playwright runs, execute `pnpm build` so browser verification matches current source wiring.
+- If authenticated browser coverage is blocked by missing credentials, missing database state, or local setup gaps, record the exact blocker in the verification note instead of implying that coverage happened.
+
 If a command cannot run because of missing infrastructure such as `DATABASE_URL`, report the exact blocker and still run non-dependent checks.
 
 ## 10. Debugging

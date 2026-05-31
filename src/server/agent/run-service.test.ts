@@ -213,15 +213,79 @@ test('createAndRunAgentRun routes chat through selected model adapter and bills 
     input: {},
   });
 
-  assert.equal(run.status, 'succeeded');
-  assert.equal(run.finalMessage, 'provider response');
-  assert.deepEqual(run.usage, { promptTokens: 10, completionTokens: 20, totalTokens: 30 });
-  assert.equal(run.selectedModel?.code, 'dev-free-chat');
-  assert.equal(run.billing?.status, 'billed');
-  assert.equal(run.billing?.creditCost, 1);
-  assert.equal(run.billing?.ledgerEntryId, 'ledger-1');
+  assert.equal(run.status, 'running');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const completed = await repository.getRunForUser(run.id, 'user-1');
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.finalMessage, 'provider response');
+  assert.deepEqual(completed?.usage, { promptTokens: 10, completionTokens: 20, totalTokens: 30 });
+  assert.equal(completed?.selectedModel?.code, 'dev-free-chat');
+  assert.equal(completed?.billing?.status, 'billed');
+  assert.equal(completed?.billing?.creditCost, 1);
+  assert.equal(completed?.billing?.ledgerEntryId, 'ledger-1');
   assert.equal(debits.length, 1);
   assert.equal(debits[0].modelCode, 'dev-free-chat');
+});
+
+test('createAndRunAgentRun returns running chat run immediately and persists stream events', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let unblockFinal: (() => void) | null = null;
+  const finalReached = new Promise<void>((resolve) => {
+    unblockFinal = resolve;
+  });
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveChatModelForUser: async () => resolvedChatModel(),
+    assertCanAffordMinimum: async () => {},
+    createChatProviderAdapter: () => ({
+      kind: 'development',
+      async runChat() {
+        throw new Error('stream path should be used');
+      },
+      async *streamChat() {
+        yield { type: 'delta', delta: 'hello ' };
+        yield { type: 'delta', delta: 'world' };
+        unblockFinal?.();
+        yield {
+          type: 'final',
+          finalMessage: 'hello world',
+          usage: { promptTokens: 5, completionTokens: 6, totalTokens: 11 },
+          rawMetadata: { streamed: true },
+        };
+      },
+    }),
+    debitForAgentRun: async () => ({ entryId: 'ledger-1', balanceAfter: 88 }),
+  });
+
+  const run = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'chat',
+    prompt: 'hello',
+    modelId: 'seed-model-free',
+    input: {},
+  });
+
+  assert.equal(run.status, 'running');
+  await finalReached;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const events = await repository.listRunEvents(run.id);
+  const completed = await repository.getRunForUser(run.id, 'user-1');
+
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    [
+      'assistant_message_started',
+      'assistant_delta',
+      'assistant_delta',
+      'assistant_message_completed',
+      'billing_recorded',
+      'run_completed',
+    ],
+  );
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.finalMessage, 'hello world');
 });
 
 test('createAndRunAgentRun persists failed billing metadata when debit fails after provider success', async () => {
@@ -254,15 +318,20 @@ test('createAndRunAgentRun persists failed billing metadata when debit fails aft
     input: {},
   });
 
-  assert.equal(run.status, 'failed');
-  assert.equal(run.finalMessage, 'provider response before billing failed');
-  assert.deepEqual(run.usage, { promptTokens: 11, completionTokens: 22, totalTokens: 33 });
-  assert.equal(run.selectedModel?.code, 'dev-free-chat');
-  assert.equal(run.billing?.status, 'failed');
-  assert.equal(run.billing?.creditCost, 1);
-  assert.equal(run.billing?.ledgerEntryId, null);
-  assert.equal(run.artifacts.length, 1);
-  assert.equal(run.artifacts[0].body, 'provider response before billing failed');
+  assert.equal(run.status, 'running');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const failed = await repository.getRunForUser(run.id, 'user-1');
+  const events = await repository.listRunEvents(run.id);
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.finalMessage, 'provider response before billing failed');
+  assert.deepEqual(failed?.usage, { promptTokens: 11, completionTokens: 22, totalTokens: 33 });
+  assert.equal(failed?.selectedModel?.code, 'dev-free-chat');
+  assert.equal(failed?.billing?.status, 'failed');
+  assert.equal(failed?.billing?.creditCost, 1);
+  assert.equal(failed?.billing?.ledgerEntryId, null);
+  assert.equal(failed?.artifacts.length, 1);
+  assert.equal(failed?.artifacts[0].body, 'provider response before billing failed');
+  assert.equal(events.at(-1)?.eventType, 'run_failed');
 });
 
 test('createAndRunAgentRun marks billing failed when provider fails after run creation', async () => {
@@ -288,12 +357,17 @@ test('createAndRunAgentRun marks billing failed when provider fails after run cr
     input: {},
   });
 
-  assert.equal(run.status, 'failed');
-  assert.equal(run.usage, null);
-  assert.equal(run.selectedModel?.code, 'dev-free-chat');
-  assert.equal(run.billing?.status, 'failed');
-  assert.equal(run.billing?.creditCost, null);
-  assert.equal(run.billing?.ledgerEntryId, null);
+  assert.equal(run.status, 'running');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const failed = await repository.getRunForUser(run.id, 'user-1');
+  const events = await repository.listRunEvents(run.id);
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.usage, null);
+  assert.equal(failed?.selectedModel?.code, 'dev-free-chat');
+  assert.equal(failed?.billing?.status, 'failed');
+  assert.equal(failed?.billing?.creditCost, null);
+  assert.equal(failed?.billing?.ledgerEntryId, null);
+  assert.equal(events.at(-1)?.eventType, 'run_failed');
 });
 
 test('createAndRunAgentRun does not call provider when model resolution fails', async () => {
