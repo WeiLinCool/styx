@@ -136,6 +136,13 @@ export default function PartnerBenefitsPage() {
 
   return (
     <div className="min-h-screen bg-white">
+      <Link
+        href="/home"
+        className="fixed left-4 top-4 z-40 flex items-center gap-1 rounded-full border border-black/[0.06] bg-white/80 px-3 py-2 text-xs font-medium text-[#555555] shadow-sm backdrop-blur-xl transition-colors hover:text-[#1d1d1f]"
+      >
+        <ArrowLeft size={16} />
+        <span>返回</span>
+      </Link>
       <div className="max-w-6xl mx-auto px-4 py-20">
         {/* Header */}
         <div className={`text-center mb-16 transition-all duration-1000 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>

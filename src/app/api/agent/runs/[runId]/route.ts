@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { serviceErrorToResponse } from '../route';
+import { createDeleteAgentRunResponse, serviceErrorToResponse } from '../route';
 import { requireActiveAccount } from '@/server/auth/guards';
 import { getAgentRunRepository } from '@/server/repositories/agent-runs';
 
@@ -26,3 +26,14 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
+export async function DELETE(_request: Request, context: RouteContext) {
+  try {
+    const session = await requireActiveAccount();
+    const { runId } = await context.params;
+    const run = await getAgentRunRepository().softDeleteRunForUser(runId, session.user.id);
+
+    return createDeleteAgentRunResponse(run);
+  } catch (error) {
+    return serviceErrorToResponse(error);
+  }
+}

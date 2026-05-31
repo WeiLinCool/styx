@@ -348,6 +348,57 @@ test('OpenAI-compatible adapter accumulates streaming SSE delta content response
   }
 });
 
+test('OpenAI-compatible streamChat yields deltas before the SSE response closes', async () => {
+  const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
+  process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';
+  const encoder = new TextEncoder();
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+
+  try {
+    const stream = new ReadableStream<Uint8Array>({
+      start(nextController) {
+        controller = nextController;
+      },
+    });
+    const adapter = createOpenAiCompatibleChatProviderAdapter({
+      fetch: async () =>
+        new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    });
+
+    const iterator = adapter.streamChat?.({
+      runId: 'run-1',
+      userId: 'user-1',
+      model: resolvedModel({
+        providerType: 'openai_compatible',
+        baseUrl: 'https://provider.example/v1',
+        credentialEnvKey: 'TEST_OPENAI_COMPATIBLE_KEY',
+      }),
+      messages: [{ role: 'user', content: 'Hello' }],
+    });
+
+    assert.ok(iterator);
+    const activeController = controller;
+    assert.ok(activeController);
+    activeController.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"石头"}}]}\n\n'));
+
+    const first = await Promise.race([
+      iterator.next(),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 50)),
+    ]);
+
+    activeController.close();
+
+    assert.notEqual(first, 'timeout');
+    assert.deepEqual(first, { done: false, value: { type: 'delta', delta: '石头' } });
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TEST_OPENAI_COMPATIBLE_KEY;
+    } else {
+      process.env.TEST_OPENAI_COMPATIBLE_KEY = originalKey;
+    }
+  }
+});
+
 test('OpenAI-compatible adapter normalizes fetch exceptions', async () => {
   const originalKey = process.env.TEST_OPENAI_COMPATIBLE_KEY;
   process.env.TEST_OPENAI_COMPATIBLE_KEY = 'test-secret';

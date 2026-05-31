@@ -40,6 +40,7 @@ export type CreateAgentRunRequest = {
   taskType: AgentTaskType;
   prompt: string;
   modelId?: string;
+  conversationId?: string;
   input?: Record<string, unknown>;
 };
 
@@ -151,6 +152,19 @@ export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailDt
   }
 
   return payload;
+}
+
+export async function deleteAgentRun(runId: string): Promise<AgentRunDto> {
+  const response = await fetch(`/api/agent/runs/${runId}`, {
+    method: 'DELETE',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '历史记录删除失败');
+  }
+
+  return payload.run;
 }
 
 export function createAgentRunEventsUrl(runId: string) {

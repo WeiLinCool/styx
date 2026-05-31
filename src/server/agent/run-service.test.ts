@@ -8,6 +8,7 @@ import {
 } from '@/server/repositories/agent-runs';
 import type { ResolvedChatModel } from '@/server/repositories/ai-models';
 import type { AgentTaskType } from './types';
+import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
 import { createDeterministicPiRuntime } from './pi-runtime';
 import {
   AgentRunModelRequiredError,
@@ -286,6 +287,54 @@ test('createAndRunAgentRun returns running chat run immediately and persists str
   );
   assert.equal(completed?.status, 'succeeded');
   assert.equal(completed?.finalMessage, 'hello world');
+});
+
+test('createAndRunAgentRun sends prior conversation messages to chat provider', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let messages: ChatProviderMessage[] = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveChatModelForUser: async () => resolvedChatModel(),
+    assertCanAffordMinimum: async () => {},
+    createChatProviderAdapter: () => ({
+      kind: 'development',
+      async runChat(request) {
+        messages = request.messages;
+        return {
+          finalMessage: 'second response',
+          usage: { promptTokens: 8, completionTokens: 9, totalTokens: 17 },
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForAgentRun: async () => ({ entryId: 'ledger-1', balanceAfter: 88 }),
+  });
+
+  const first = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'chat',
+    prompt: 'first prompt',
+    modelId: 'seed-model-free',
+    input: {},
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'chat',
+    prompt: 'second prompt',
+    modelId: 'seed-model-free',
+    conversationId: first.conversationId ?? undefined,
+    input: {},
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(messages, [
+    { role: 'user', content: 'first prompt' },
+    { role: 'assistant', content: 'second response' },
+    { role: 'user', content: 'second prompt' },
+  ]);
 });
 
 test('createAndRunAgentRun persists failed billing metadata when debit fails after provider success', async () => {

@@ -5,10 +5,22 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
-import { productValueProps, publicNavLinks, publicToolCards } from '@/features/public/home-data';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  productValueProps,
+  publicAiToolLinks,
+  publicExploreLinks,
+  publicNavLinks,
+  publicToolCards,
+} from '@/features/public/home-data';
 import {
   User, Menu, X, ArrowRight, Camera, Check, Hammer, Truck, Star,
-  ChevronRight, ImageIcon, Video, Workflow,
+  ChevronDown, ChevronRight, ImageIcon, Video, Workflow,
 } from 'lucide-react';
 
 /* ── 滚动渐现 ── */
@@ -38,7 +50,7 @@ function Navbar({ onLoginClick }: { onLoginClick: () => void }) {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  const links = [{ href: '/home', label: '首页' }, ...publicNavLinks];
+  const links = publicNavLinks;
 
   return (
     <nav className={`fixed top-3 right-0 left-0 z-50 px-4 transition-all duration-500 ${scrolled ? 'opacity-100' : 'opacity-100'}`}>
@@ -49,11 +61,46 @@ function Navbar({ onLoginClick }: { onLoginClick: () => void }) {
         </Link>
 
         <div className="hidden items-center gap-0.5 lg:flex">
+          <Link href="/home" className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#1d1d1f] transition-all hover:bg-black/[0.04] hover:backdrop-blur-md">
+            首页
+          </Link>
           {links.map((l) => (
             <Link key={l.href} href={l.href} className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#1d1d1f] transition-all hover:bg-black/[0.04] hover:backdrop-blur-md">
               {l.label}
             </Link>
           ))}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#1d1d1f] outline-none transition-all hover:bg-black/[0.04] hover:backdrop-blur-md data-[state=open]:bg-black/[0.04]">
+              探索
+              <ChevronDown size={13} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48 rounded-xl border-black/[0.06] bg-white/95 p-1.5 shadow-xl backdrop-blur-2xl">
+              {publicExploreLinks.map((l) => (
+                <DropdownMenuItem key={l.href} asChild className="cursor-pointer rounded-lg px-3 py-2 text-[#1d1d1f] focus:bg-black/[0.04]">
+                  <Link href={l.href} className="flex flex-col items-start">
+                    <span className="text-[13px] font-medium">{l.label}</span>
+                    <span className="text-[11px] text-[#86868b]">{l.desc}</span>
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#1d1d1f] outline-none transition-all hover:bg-black/[0.04] hover:backdrop-blur-md data-[state=open]:bg-black/[0.04]">
+              AI工具
+              <ChevronDown size={13} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48 rounded-xl border-black/[0.06] bg-white/95 p-1.5 shadow-xl backdrop-blur-2xl">
+              {publicAiToolLinks.map((l) => (
+                <DropdownMenuItem key={l.href} asChild className="cursor-pointer rounded-lg px-3 py-2 text-[#1d1d1f] focus:bg-black/[0.04]">
+                  <Link href={l.href} className="flex flex-col items-start">
+                    <span className="text-[13px] font-medium">{l.label}</span>
+                    <span className="text-[11px] text-[#86868b]">{l.desc}</span>
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="hidden items-center gap-3 lg:flex">
@@ -80,8 +127,29 @@ function Navbar({ onLoginClick }: { onLoginClick: () => void }) {
       {open && (
         <div className="mx-4 mt-2 overflow-hidden rounded-2xl border border-black/[0.06] bg-white/80 shadow-xl backdrop-blur-2xl lg:hidden">
           <div className="flex flex-col gap-0.5 p-4">
+            <Link href="/home" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 text-[13px] text-[#1d1d1f] hover:bg-black/[0.04]">
+              首页
+            </Link>
             {links.map((l) => (
               <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 text-[13px] text-[#1d1d1f] hover:bg-black/[0.04]">
+                {l.label}
+              </Link>
+            ))}
+            <div className="my-1 h-px bg-black/[0.06]" />
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#86868b]">
+              探索
+            </div>
+            {publicExploreLinks.map((l) => (
+              <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="rounded-lg px-5 py-2 text-[13px] text-[#1d1d1f] hover:bg-black/[0.04]">
+                {l.label}
+              </Link>
+            ))}
+            <div className="my-1 h-px bg-black/[0.06]" />
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#86868b]">
+              AI工具
+            </div>
+            {publicAiToolLinks.map((l) => (
+              <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="rounded-lg px-5 py-2 text-[13px] text-[#1d1d1f] hover:bg-black/[0.04]">
                 {l.label}
               </Link>
             ))}

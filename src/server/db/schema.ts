@@ -723,6 +723,7 @@ export const agentRuns = pgTable(
   'agent_runs',
   {
     id,
+    conversationId: uuid('conversation_id'),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -740,10 +741,12 @@ export const agentRuns = pgTable(
     errorMessage: text('error_message'),
     startedAt: timestamp('started_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: now,
     updatedAt: updated,
   },
   (table) => [
+    index('agent_runs_conversation_id_idx').on(table.conversationId),
     index('agent_runs_user_id_idx').on(table.userId),
     index('agent_runs_status_idx').on(table.status),
     index('agent_runs_task_type_idx').on(table.taskType),

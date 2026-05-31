@@ -199,10 +199,15 @@ export function createOpenAiCompatibleChatProviderAdapter(input: {
         );
       }
 
-      const raw = await readJsonResponse(response);
-      const parsed = parseOpenAiCompatibleResponse(raw, request.messages);
-      yield { type: 'delta', delta: parsed.finalMessage };
-      yield { type: 'final', ...parsed };
+      if (!response.body) {
+        const raw = await readJsonResponse(response);
+        const parsed = parseOpenAiCompatibleResponse(raw, request.messages);
+        yield { type: 'delta', delta: parsed.finalMessage };
+        yield { type: 'final', ...parsed };
+        return;
+      }
+
+      yield* streamOpenAiCompatibleResponse(response, request.messages);
     },
   };
 }
@@ -308,6 +313,98 @@ function parseSseJsonPayload(body: string): unknown | null {
   }
 
   return parsedEvents.at(-1) ?? null;
+}
+
+async function* streamOpenAiCompatibleResponse(
+  response: Response,
+  messages: ChatProviderMessage[],
+): AsyncGenerator<ChatProviderStreamEvent, void, void> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalMessage = '';
+  let usage: unknown = null;
+  let lastRecord: Record<string, unknown> = {};
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (value) {
+      buffer += decoder.decode(value, { stream: !done });
+    }
+
+    const chunks = buffer.split(/\r?\n\r?\n/);
+    buffer = done ? '' : chunks.pop() ?? '';
+
+    for (const chunk of chunks) {
+      const payload = chunk
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .join('\n');
+      if (!payload || payload === '[DONE]') {
+        continue;
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(payload) as unknown;
+      } catch {
+        continue;
+      }
+      if (!isRecord(parsed)) {
+        continue;
+      }
+
+      lastRecord = parsed;
+      if (isRecord(parsed.usage)) {
+        usage = parsed.usage;
+      }
+
+      const delta = readDeltaContent(parsed);
+      if (delta) {
+        finalMessage += delta;
+        yield { type: 'delta', delta };
+      }
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (!finalMessage) {
+    throw new ProviderRequestError('Provider response did not include an assistant message.');
+  }
+
+  yield {
+    type: 'final',
+    finalMessage,
+    usage: parseUsage(usage, messages, finalMessage),
+    rawMetadata: lastRecord,
+  };
+}
+
+function readDeltaContent(event: Record<string, unknown>) {
+  let content = '';
+  const choices = Array.isArray(event.choices) ? event.choices : [];
+  for (const choice of choices) {
+    if (!isRecord(choice)) {
+      continue;
+    }
+    const delta = isRecord(choice.delta) ? choice.delta : null;
+    if (typeof delta?.content === 'string') {
+      content += delta.content;
+    }
+    const message = isRecord(choice.message) ? choice.message : null;
+    if (!content && typeof message?.content === 'string') {
+      content += message.content;
+    }
+  }
+  return content;
 }
 
 function combineSseDeltaEvents(events: unknown[]): Record<string, unknown> | null {

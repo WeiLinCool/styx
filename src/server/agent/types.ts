@@ -98,6 +98,7 @@ export type AgentRunDetailDto = {
 
 export type AgentRunDto = {
   id: string;
+  conversationId: string;
   taskType: AgentTaskType;
   status: AgentRunStatus;
   prompt: string;

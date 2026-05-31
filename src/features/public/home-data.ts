@@ -1,8 +1,17 @@
+export const publicAiToolLinks = [
+  { href: '/chat', label: 'AI对话', desc: '智能问答助手' },
+  { href: '/image-gen', label: 'AI生图', desc: '一键生成印画' },
+  { href: '/video-gen', label: 'AI视频', desc: '动态石头印画' },
+  { href: '/workflow', label: '工作流', desc: '批量场景生成' },
+];
+
+export const publicExploreLinks = [
+  { href: '/gallery', label: '作品展示', desc: '客户真实案例' },
+  { href: '/brand-story', label: '品牌故事', desc: '了解南风石印' },
+  { href: '/academy', label: '南风学院', desc: '从入门到精通' },
+];
+
 export const publicNavLinks = [
-  { href: '/chat', label: 'AI对话' },
-  { href: '/image-gen', label: 'AI生图' },
-  { href: '/video-gen', label: 'AI视频' },
-  { href: '/workflow', label: '工作流' },
   { href: '/shop', label: '商城' },
   { href: '/membership', label: '会员' },
   { href: '/user-benefits', label: '用户权益' },

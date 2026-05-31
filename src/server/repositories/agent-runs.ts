@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 
 import type {
   AgentArtifactDto,
@@ -18,6 +18,7 @@ import { db, schema } from '@/server/db';
 
 export type CreateAgentRunInput = {
   userId: string;
+  conversationId?: string | null;
   taskType: AgentTaskType;
   prompt: string;
   provider: string;
@@ -51,6 +52,7 @@ type StoredAgentRun = AgentRunDto & {
   model: string;
   capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
   input: Record<string, unknown>;
+  deletedAt?: string | null;
 };
 
 export type AgentRunFailureInput = {
@@ -65,7 +67,9 @@ export type AgentRunRepository = {
   createRun(input: CreateAgentRunInput): Promise<AgentRunDto>;
   getRunForUser(id: string, userId: string): Promise<AgentRunDto | null>;
   getRunDetailForUser(id: string, userId: string): Promise<AgentRunDetailDto | null>;
+  listConversationRunsForUser(conversationId: string, userId: string): Promise<AgentRunDto[]>;
   listRunsForUser(userId: string): Promise<AgentRunDto[]>;
+  softDeleteRunForUser(id: string, userId: string): Promise<AgentRunDto | null>;
   markRunRunning(runId: string): Promise<AgentRunDto | null>;
   completeRun(
     runId: string,
@@ -104,6 +108,7 @@ function toAgentRunDto(run: StoredAgentRun): AgentRunDto {
 
   return {
     id: run.id,
+    conversationId: run.conversationId ?? run.id,
     taskType: run.taskType,
     status: run.status,
     prompt: run.prompt,
@@ -281,6 +286,7 @@ function toAgentRunDtoFromDatabase(input: {
 
   return {
     id: input.run.id,
+    conversationId: input.run.conversationId ?? input.run.id,
     taskType: input.run.taskType,
     status: input.run.status,
     prompt: input.run.prompt,
@@ -339,9 +345,12 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
 
   return {
     async createRun(input) {
+      const runId = randomUUID();
       const [run] = await database
         .insert(schema.agentRuns)
         .values({
+          id: runId,
+          conversationId: input.conversationId ?? runId,
           userId: input.userId,
           taskType: input.taskType,
           prompt: input.prompt,
@@ -363,10 +372,16 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       const [run] = await database
         .select()
         .from(schema.agentRuns)
-        .where(eq(schema.agentRuns.id, id))
+        .where(
+          and(
+            eq(schema.agentRuns.id, id),
+            eq(schema.agentRuns.userId, userId),
+            isNull(schema.agentRuns.deletedAt),
+          ),
+        )
         .limit(1);
 
-      if (!run || run.userId !== userId) {
+      if (!run) {
         return null;
       }
 
@@ -376,10 +391,16 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       const [run] = await database
         .select()
         .from(schema.agentRuns)
-        .where(eq(schema.agentRuns.id, id))
+        .where(
+          and(
+            eq(schema.agentRuns.id, id),
+            eq(schema.agentRuns.userId, userId),
+            isNull(schema.agentRuns.deletedAt),
+          ),
+        )
         .limit(1);
 
-      if (!run || run.userId !== userId) {
+      if (!run) {
         return null;
       }
 
@@ -400,16 +421,64 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
         events: streamEvents.map((event) => toStreamEventDto(event)),
       };
     },
+    async listConversationRunsForUser(conversationId, userId) {
+      const runs = await database
+        .select()
+        .from(schema.agentRuns)
+        .where(
+          and(
+            eq(schema.agentRuns.conversationId, conversationId),
+            eq(schema.agentRuns.userId, userId),
+            eq(schema.agentRuns.taskType, 'chat'),
+            isNull(schema.agentRuns.deletedAt),
+          ),
+        )
+        .orderBy(asc(schema.agentRuns.createdAt));
+
+      const dtos = await Promise.all(runs.map((run) => getDatabaseRunDto(database, run.id)));
+      return dtos.filter((run): run is AgentRunDto => Boolean(run));
+    },
     async listRunsForUser(userId) {
       const runs = await database
         .select()
         .from(schema.agentRuns)
-        .where(eq(schema.agentRuns.userId, userId))
+        .where(and(eq(schema.agentRuns.userId, userId), isNull(schema.agentRuns.deletedAt)))
         .orderBy(desc(schema.agentRuns.createdAt))
         .limit(100);
 
       const dtos = await Promise.all(runs.map((run) => getDatabaseRunDto(database, run.id)));
       return dtos.filter((run): run is AgentRunDto => Boolean(run));
+    },
+    async softDeleteRunForUser(id, userId) {
+      const [existing] = await database
+        .select({ conversationId: schema.agentRuns.conversationId })
+        .from(schema.agentRuns)
+        .where(
+          and(
+            eq(schema.agentRuns.id, id),
+            eq(schema.agentRuns.userId, userId),
+            isNull(schema.agentRuns.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!existing) {
+        return null;
+      }
+
+      const conversationId = existing.conversationId ?? id;
+      const [run] = await database
+        .update(schema.agentRuns)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.agentRuns.conversationId, conversationId),
+            eq(schema.agentRuns.userId, userId),
+            isNull(schema.agentRuns.deletedAt),
+          ),
+        )
+        .returning();
+
+      return run ? toAgentRunDtoFromDatabase({ run, artifacts: [] }) : null;
     },
     async markRunRunning(runId) {
       await database
@@ -552,8 +621,10 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
   return {
     async createRun(input) {
       const now = new Date().toISOString();
+      const runId = randomUUID();
       const run: StoredAgentRun = {
-        id: randomUUID(),
+        id: runId,
+        conversationId: input.conversationId ?? runId,
         userId: input.userId,
         taskType: input.taskType,
         status: 'queued',
@@ -583,11 +654,11 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
     },
     async getRunForUser(id, userId) {
       const run = runs.get(id);
-      return run?.userId === userId ? toAgentRunDto(run) : null;
+      return run?.userId === userId && !run.deletedAt ? toAgentRunDto(run) : null;
     },
     async getRunDetailForUser(id, userId) {
       const run = runs.get(id);
-      if (!run || run.userId !== userId) {
+      if (!run || run.userId !== userId || run.deletedAt) {
         return null;
       }
 
@@ -596,11 +667,38 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
         events: [...(streamEvents.get(id) ?? [])],
       };
     },
+    async listConversationRunsForUser(conversationId, userId) {
+      return Array.from(runs.values())
+        .filter(
+          (run) =>
+            run.userId === userId &&
+            run.taskType === 'chat' &&
+            !run.deletedAt &&
+            (run.conversationId ?? run.id) === conversationId,
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map(toAgentRunDto);
+    },
     async listRunsForUser(userId) {
       return Array.from(runs.values())
-        .filter((run) => run.userId === userId)
+        .filter((run) => run.userId === userId && !run.deletedAt)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map(toAgentRunDto);
+    },
+    async softDeleteRunForUser(id, userId) {
+      const run = runs.get(id);
+      if (!run || run.userId !== userId || run.deletedAt) {
+        return null;
+      }
+
+      const conversationId = run.conversationId ?? run.id;
+      for (const item of runs.values()) {
+        if (item.userId === userId && (item.conversationId ?? item.id) === conversationId && !item.deletedAt) {
+          item.deletedAt = new Date().toISOString();
+          touch(item);
+        }
+      }
+      return toAgentRunDto(run);
     },
     async markRunRunning(runId) {
       const run = runs.get(runId);

@@ -32,7 +32,6 @@ async function createChatRun(repo: ReturnType<typeof createMemoryAgentRunReposit
 test('memory agent run repository returns only runs owned by the requesting user', async () => {
   const repo = createMemoryAgentRunRepository();
   const aliceRun = await createChatRun(repo);
-
   await repo.createRun({
     userId: 'user-bob',
     taskType: 'chat',
@@ -173,6 +172,55 @@ test('memory agent run repository lists stream events in sequence and exposes ru
   assert.ok(detail);
   assert.equal(detail?.events.length, 2);
   assert.equal(detail?.events[1]?.payload.delta, 'hello');
+});
+
+test('memory agent run repository soft deletes runs from user-visible history', async () => {
+  const repo = createMemoryAgentRunRepository();
+  const aliceRun = await createChatRun(repo);
+  const aliceFollowUp = await repo.createRun({
+    userId: 'user-alice',
+    conversationId: aliceRun.conversationId,
+    taskType: 'chat',
+    prompt: '继续',
+    provider: 'pi',
+    model: 'pi-default',
+    capabilitySnapshot: {
+      bundleId: 'bundle-chat',
+      bundleCode: 'chat-default',
+      provider: 'pi',
+      model: 'pi-default',
+      capabilities: [],
+    },
+    input: {},
+  });
+  const bobRun = await repo.createRun({
+    userId: 'user-bob',
+    taskType: 'chat',
+    prompt: 'Bob prompt',
+    provider: 'pi',
+    model: 'pi-default',
+    capabilitySnapshot: {
+      bundleId: 'bundle-chat',
+      bundleCode: 'chat-default',
+      provider: 'pi',
+      model: 'pi-default',
+      capabilities: [],
+    },
+    input: {},
+  });
+
+  const wrongUserDelete = await repo.softDeleteRunForUser(aliceRun.id, 'user-bob');
+  const deleted = await repo.softDeleteRunForUser(aliceRun.id, 'user-alice');
+
+  assert.equal(wrongUserDelete, null);
+  assert.equal(deleted?.id, aliceRun.id);
+  assert.deepEqual(await repo.listRunsForUser('user-alice'), []);
+  assert.equal(await repo.getRunForUser(aliceRun.id, 'user-alice'), null);
+  assert.equal(await repo.getRunForUser(aliceFollowUp.id, 'user-alice'), null);
+  assert.equal(await repo.getRunDetailForUser(aliceRun.id, 'user-alice'), null);
+  assert.equal((await repo.listRunsForUser('user-bob')).length, 1);
+  assert.equal((await repo.getRunForUser(bobRun.id, 'user-bob'))?.id, bobRun.id);
+  assert.equal(await repo.softDeleteRunForUser(aliceRun.id, 'user-alice'), null);
 });
 
 test('agent run repository fails closed in production without database config', () => {

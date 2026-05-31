@@ -12,6 +12,7 @@ import {
   ModelNotAvailableError,
 } from '@/server/repositories/ai-models';
 import {
+  createDeleteAgentRunResponse,
   parseCreateAgentRunBody,
   parseCreateAgentRunRequestBody,
   serviceErrorToResponse,
@@ -156,4 +157,35 @@ test('serviceErrorToResponse returns localized fallback message for unexpected i
   assert.equal(response.status, 500);
   assert.equal(body.error.code, 'internal_error');
   assert.equal(body.error.message, 'AI 请求失败，请稍后再试');
+});
+
+test('createDeleteAgentRunResponse returns deleted run payload', async () => {
+  const response = createDeleteAgentRunResponse({
+    id: 'run-1',
+    conversationId: 'run-1',
+    taskType: 'chat',
+    status: 'succeeded',
+    prompt: 'hello',
+    finalMessage: 'hi',
+    errorMessage: null,
+    capabilitySummary: { provider: 'pi', model: 'pi-default', capabilities: [] },
+    selectedModel: null,
+    usage: null,
+    billing: null,
+    artifacts: [],
+    createdAt: '2026-05-31T00:00:00.000Z',
+    updatedAt: '2026-05-31T00:00:00.000Z',
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.run.id, 'run-1');
+});
+
+test('createDeleteAgentRunResponse returns not found for missing or already deleted run', async () => {
+  const response = createDeleteAgentRunResponse(null);
+  const body = await response.json();
+
+  assert.equal(response.status, 404);
+  assert.equal(body.error.code, 'run_not_found');
 });

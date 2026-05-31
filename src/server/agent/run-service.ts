@@ -43,6 +43,11 @@ type DebitForAgentRun = (input: {
   amount: number;
 }) => Promise<{ entryId: string; balanceAfter: number }>;
 
+type ChatMessage = {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+};
+
 export type CreateAgentRunServiceInput = {
   repository: AgentRunRepository;
   runtime: PiAgentRuntime;
@@ -60,6 +65,7 @@ export type CreateAndRunAgentRunInput = {
   taskType: AgentTaskType;
   prompt: string;
   modelId?: string;
+  conversationId?: string;
   input: Record<string, unknown>;
 };
 
@@ -148,6 +154,18 @@ function toChatRunInput(input: Record<string, unknown>, model: ResolvedChatModel
     modelId: model.id,
     selectedModel: toSelectedModelSnapshot(model),
   };
+}
+
+function toChatProviderMessages(runs: AgentRunDto[], nextPrompt: string): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  for (const run of runs) {
+    messages.push({ role: 'user', content: run.prompt });
+    if (run.finalMessage) {
+      messages.push({ role: 'assistant', content: run.finalMessage });
+    }
+  }
+  messages.push({ role: 'user', content: nextPrompt });
+  return messages;
 }
 
 function toFailedChatSnapshot(input: {
@@ -303,6 +321,7 @@ async function createAndRunChatAgentRun(input: {
   const runInput = toChatRunInput(request.input, model);
   const created = await repository.createRun({
     userId: request.userId,
+    conversationId: request.conversationId,
     taskType: request.taskType,
     prompt: request.prompt,
     provider: capabilitySnapshot.provider,
@@ -365,6 +384,11 @@ async function runChatOrchestration(input: {
   debitForAgentRun: DebitForAgentRun;
 }) {
   const adapter = input.createChatProviderAdapter(input.model);
+  const priorRuns = input.running.conversationId
+    ? await input.repository.listConversationRunsForUser(input.running.conversationId, input.request.userId)
+    : [];
+  const priorCompletedRuns = priorRuns.filter((run) => run.id !== input.running.id && run.status === 'succeeded');
+  const messages = toChatProviderMessages(priorCompletedRuns, input.request.prompt);
   await input.repository.appendRunEvent(input.running.id, {
     eventType: 'assistant_message_started',
     payload: {
@@ -378,13 +402,14 @@ async function runChatOrchestration(input: {
         runId: input.running.id,
         adapter,
         model: input.model,
-        request: input.request,
+        userId: input.request.userId,
+        messages,
       })
     : await adapter.runChat({
         runId: input.running.id,
         userId: input.request.userId,
         model: input.model,
-        messages: [{ role: 'user', content: input.request.prompt }],
+        messages,
       });
 
   await input.repository.appendRunEvents(input.running.id, [
@@ -500,20 +525,21 @@ async function collectStreamedChatResult(input: {
   runId: string;
   adapter: ChatProviderAdapter;
   model: ResolvedChatModel;
-  request: CreateAndRunAgentRunInput;
+  userId: string;
+  messages: ChatMessage[];
 }) {
   const stream = input.adapter.streamChat?.({
     runId: input.runId,
-    userId: input.request.userId,
+    userId: input.userId,
     model: input.model,
-    messages: [{ role: 'user', content: input.request.prompt }],
+    messages: input.messages,
   });
   if (!stream) {
     return input.adapter.runChat({
       runId: input.runId,
-      userId: input.request.userId,
+      userId: input.userId,
       model: input.model,
-      messages: [{ role: 'user', content: input.request.prompt }],
+      messages: input.messages,
     });
   }
 

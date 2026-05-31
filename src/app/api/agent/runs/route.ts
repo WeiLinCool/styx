@@ -18,6 +18,7 @@ import {
   ModelEntitlementRequiredError,
   ModelNotAvailableError,
 } from '@/server/repositories/ai-models';
+import type { AgentRunDto } from '@/server/agent/types';
 
 const createAgentRunBodySchema = z
   .object({
@@ -27,6 +28,7 @@ const createAgentRunBodySchema = z
       .transform((value) => value.trim())
       .pipe(z.string().min(1, 'Prompt is required.')),
     modelId: z.string().min(1, 'modelId is required for chat requests.').optional(),
+    conversationId: z.string().uuid('conversationId must be a valid UUID.').optional(),
     input: z.record(z.string(), z.unknown()).default({}),
   })
   .superRefine((body, context) => {
@@ -66,6 +68,14 @@ export async function parseCreateAgentRunRequestBody(request: Request): Promise<
 
 function jsonError(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
+}
+
+export function createDeleteAgentRunResponse(run: AgentRunDto | null) {
+  if (!run) {
+    return jsonError('run_not_found', 'Agent run was not found.', 404);
+  }
+
+  return NextResponse.json({ run });
 }
 
 function validationMessage(error: z.ZodError) {
@@ -129,6 +139,7 @@ export async function POST(request: Request) {
       taskType: body.taskType,
       prompt: body.prompt,
       modelId: body.modelId,
+      conversationId: body.conversationId,
       input: body.input,
     });
 
