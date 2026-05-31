@@ -49,6 +49,21 @@ export type AgentArtifactDto = {
   createdAt: string;
 };
 
+export type TransientAgentArtifactDto = {
+  kind: Extract<AgentArtifactKind, 'image' | 'video'>;
+  title: string;
+  mimeType: string;
+  dataUrl?: string;
+  filename?: string;
+  metadata: Record<string, unknown> & {
+    transient: true;
+    width?: number;
+    height?: number;
+    byteLength?: number;
+    model?: string;
+  };
+};
+
 export type AiUsage = {
   promptTokens: number;
   completionTokens: number;
@@ -115,4 +130,9 @@ export type AgentRunDto = {
   artifacts: AgentArtifactDto[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type CreateAgentRunResult = {
+  run: AgentRunDto;
+  transientArtifacts: TransientAgentArtifactDto[];
 };

@@ -53,7 +53,7 @@ export default function VideoGenPage() {
     setGenerationMessage(null);
 
     try {
-      const run = await createAgentRun({
+      const { run } = await createAgentRun({
         taskType: 'video',
         prompt: prompt.trim(),
         input: {

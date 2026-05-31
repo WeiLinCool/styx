@@ -19,6 +19,14 @@ const TABS = [
   { id: 'style-transfer', name: '图片换风格', icon: Wand2 },
 ];
 
+type GeneratedImageResult = {
+  dataUrl: string;
+  title: string;
+  mimeType: string;
+  filename: string;
+  prompt: string;
+};
+
 export default function ImageGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
@@ -29,6 +37,7 @@ export default function ImageGenPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generatedImage, setGeneratedImage] = useState<GeneratedImageResult | null>(null);
   const [hdModel, setHdModel] = useState(hdModels[0].id);
   const [hdScale, setHdScale] = useState('2x');
   const [hdPrompt, setHdPrompt] = useState('高清修复，增强细节，提升画质，保留原始构图');
@@ -39,6 +48,12 @@ export default function ImageGenPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
     if (isGenerating) return;
+    if (activeTab !== 'generate') {
+      setGeneratedImage(null);
+      setGenerationMessage(null);
+      setGenerationError('高清修复和图片换风格需要上传原图，上传处理将在下一步开放。');
+      return;
+    }
 
     const promptByTab = {
       generate: prompt,
@@ -56,14 +71,15 @@ export default function ImageGenPage() {
     setIsGenerating(true);
     setGenerationError(null);
     setGenerationMessage(null);
+    setGeneratedImage(null);
 
     try {
-      const run = await createAgentRun({
+      const { run, transientArtifacts } = await createAgentRun({
         taskType: 'image',
         prompt: runPrompt,
         input: {
           mode: activeTab,
-          model: activeTab === 'hd-fix' ? hdModel : selectedModel,
+          model: selectedModel,
           size: selectedSize,
           hdScale,
           style: selectedStyle,
@@ -73,11 +89,48 @@ export default function ImageGenPage() {
         setGenerationError(run.errorMessage ?? '图片生成请求失败');
         return;
       }
-      setGenerationMessage(run.finalMessage ?? '图片任务已完成，但没有返回可展示的结果说明。');
+      const imageArtifact = transientArtifacts.find((artifact) => artifact.kind === 'image' && artifact.dataUrl);
+      if (!imageArtifact?.dataUrl) {
+        setGenerationMessage(run.finalMessage ?? '任务完成，但没有返回可展示图片。请重试或联系管理员。');
+        return;
+      }
+
+      setGeneratedImage({
+        dataUrl: imageArtifact.dataUrl,
+        title: imageArtifact.title,
+        mimeType: imageArtifact.mimeType,
+        filename: imageArtifact.filename ?? `styx-ai-image-${run.id}.png`,
+        prompt: runPrompt,
+      });
+      setGenerationMessage(run.finalMessage ?? '图片已生成，请及时下载保存。');
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : '图片生成请求失败');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleDownloadImage = () => {
+    if (!generatedImage) return;
+    try {
+      const link = document.createElement('a');
+      link.href = generatedImage.dataUrl;
+      link.download = generatedImage.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      setGenerationError('下载未能自动开始，请在图片上右键另存为。');
+    }
+  };
+
+  const handleCopyPrompt = async () => {
+    if (!generatedImage) return;
+    try {
+      await navigator.clipboard.writeText(generatedImage.prompt);
+      setGenerationMessage('提示词已复制。图片不会保存到服务器，请及时下载。');
+    } catch {
+      setGenerationError('提示词复制失败，请手动复制输入框内容。');
     }
   };
 
@@ -303,6 +356,24 @@ export default function ImageGenPage() {
               <div className="flex flex-col items-center">
                 <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-black/8 border-t-white" />
                 <p className="text-sm text-[#444444]">AI 正在创作中...</p>
+              </div>
+            ) : generatedImage ? (
+              <div className="flex w-full flex-col items-center gap-4 text-center">
+                <div className="w-full overflow-hidden rounded-xl border border-black/5 bg-[#f5f5f7]">
+                  <img src={generatedImage.dataUrl} alt={generatedImage.title} className="aspect-square w-full object-contain" />
+                </div>
+                <div className="flex w-full flex-col gap-2 sm:flex-row">
+                  <button onClick={handleDownloadImage} className="apple-btn apple-btn-primary flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-medium">
+                    下载图片
+                  </button>
+                  <button onClick={handleCopyPrompt} className="cursor-pointer rounded-xl border border-black/8 px-4 py-2.5 text-sm text-[#1d1d1f] transition-colors hover:border-black/15">
+                    复制提示词
+                  </button>
+                </div>
+                <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
+                  图片不会保存到服务器，请及时下载。刷新、离开页面或生成下一张后无法恢复。
+                </div>
+                {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
               </div>
             ) : generationError ? (
               <div className="flex flex-col items-center text-center">

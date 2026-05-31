@@ -293,7 +293,7 @@ export default function ChatPage() {
       const currentConversationId = selectedRunId
         ? recentRuns.find((run) => run.id === selectedRunId)?.conversationId
         : undefined;
-      const run = await createAgentRun({
+      const { run } = await createAgentRun({
         taskType: 'chat',
         prompt,
         modelId: selectedModelId,

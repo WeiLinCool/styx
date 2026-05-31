@@ -14,7 +14,15 @@ import {
   resolveChatModelForUser as defaultResolveChatModelForUser,
   type ResolvedChatModel,
 } from '@/server/repositories/ai-models';
-import type { AgentCapabilitySnapshot, AgentRunDto, AgentTaskType, AiUsage } from './types';
+import type {
+  AgentCapabilitySnapshot,
+  AgentRunDto,
+  AgentTaskType,
+  AiUsage,
+  CreateAgentRunResult,
+  TransientAgentArtifactDto,
+} from './types';
+import type { AgentArtifactInput } from '@/server/repositories/agent-runs';
 import {
   createUnconfiguredCapabilitySnapshot,
   type PiAgentRuntime,
@@ -75,6 +83,87 @@ function toErrorMessage(error: unknown) {
 
 function cloneRecord(record: Record<string, unknown>) {
   return structuredClone(record);
+}
+
+const MEDIA_ARTIFACT_KINDS = new Set(['image', 'video']);
+
+function readArtifactString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function readArtifactNumber(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function toTransientArtifact(artifact: AgentArtifactInput): TransientAgentArtifactDto | null {
+  if (!MEDIA_ARTIFACT_KINDS.has(artifact.kind)) {
+    return null;
+  }
+
+  const metadata = cloneRecord(artifact.metadata ?? {});
+  const mimeType = readArtifactString(metadata, 'mimeType') ?? 'application/octet-stream';
+  const dataUrl = artifact.body && artifact.body.startsWith('data:') ? artifact.body : undefined;
+  const url = artifact.url && artifact.url.startsWith('data:') ? artifact.url : undefined;
+  const payload = dataUrl ?? url;
+  if (!payload) {
+    return null;
+  }
+
+  const width = readArtifactNumber(metadata, 'width') ?? undefined;
+  const height = readArtifactNumber(metadata, 'height') ?? undefined;
+  const byteLength = readArtifactNumber(metadata, 'byteLength') ?? undefined;
+  const model = readArtifactString(metadata, 'model') ?? undefined;
+
+  return {
+    kind: artifact.kind as TransientAgentArtifactDto['kind'],
+    title: artifact.title,
+    mimeType,
+    dataUrl: payload,
+    filename: readArtifactString(metadata, 'filename') ?? undefined,
+    metadata: {
+      ...metadata,
+      transient: true,
+      ...(width !== undefined ? { width } : {}),
+      ...(height !== undefined ? { height } : {}),
+      ...(byteLength !== undefined ? { byteLength } : {}),
+      ...(model !== undefined ? { model } : {}),
+    },
+  };
+}
+
+function toDurableArtifactSummary(artifact: AgentArtifactInput): AgentArtifactInput {
+  if (!MEDIA_ARTIFACT_KINDS.has(artifact.kind)) {
+    return artifact;
+  }
+
+  return {
+    kind: artifact.kind,
+    title: artifact.title,
+    body: null,
+    url: null,
+    metadata: {
+      ...cloneRecord(artifact.metadata ?? {}),
+      transient: true,
+    },
+  };
+}
+
+function splitTransientArtifacts(artifacts: AgentArtifactInput[]) {
+  return {
+    durableArtifacts: artifacts.map(toDurableArtifactSummary),
+    transientArtifacts: artifacts
+      .map(toTransientArtifact)
+      .filter((artifact): artifact is TransientAgentArtifactDto => artifact !== null),
+  };
+}
+
+function runResult(
+  run: AgentRunDto,
+  transientArtifacts: TransientAgentArtifactDto[] = [],
+): CreateAgentRunResult {
+  return { run, transientArtifacts };
 }
 
 async function recordEventIfSupported(
@@ -220,7 +309,7 @@ export function createAgentRunService({
   debitForAgentRun = defaultDebitForAgentRun,
 }: CreateAgentRunServiceInput) {
   return {
-    async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<AgentRunDto> {
+    async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<CreateAgentRunResult> {
       if (input.taskType === 'chat') {
         return createAndRunChatAgentRun({
           input,
@@ -255,7 +344,7 @@ export function createAgentRunService({
         await recordEventIfSupported(repository, created.id, 'failed', error.message, {
           reason: 'missing_default_capability_bundle',
         });
-        return requireUpdatedRun(await repository.failRun(created.id, error.message), 'fail run');
+        return runResult(requireUpdatedRun(await repository.failRun(created.id, error.message), 'fail run'));
       }
 
       try {
@@ -275,11 +364,12 @@ export function createAgentRunService({
           capabilities: structuredClone(capabilitySnapshot.capabilities),
           input: cloneRecord(input.input),
         });
+        const { durableArtifacts, transientArtifacts } = splitTransientArtifacts(result.artifacts);
 
         const completed = requireUpdatedRun(
           await repository.completeRun(running.id, {
             finalMessage: result.finalMessage,
-            artifacts: result.artifacts,
+            artifacts: durableArtifacts,
           }),
           'complete run',
         );
@@ -287,11 +377,11 @@ export function createAgentRunService({
           artifactCount: result.artifacts.length,
         });
 
-        return completed;
+        return runResult(completed, transientArtifacts);
       } catch (error) {
         const errorMessage = toErrorMessage(error);
         await recordEventIfSupported(repository, created.id, 'failed', errorMessage);
-        return requireUpdatedRun(await repository.failRun(created.id, errorMessage), 'fail run');
+        return runResult(requireUpdatedRun(await repository.failRun(created.id, errorMessage), 'fail run'));
       }
     },
   };
@@ -307,7 +397,7 @@ async function createAndRunChatAgentRun(input: {
   ) => Promise<void>;
   createChatProviderAdapter: (model: ResolvedChatModel) => ChatProviderAdapter;
   debitForAgentRun: DebitForAgentRun;
-}) {
+}): Promise<CreateAgentRunResult> {
   const { repository, resolveChatModelForUser, assertCanAffordMinimum } = input;
   const request = input.input;
   if (!request.modelId) {
@@ -370,7 +460,7 @@ async function createAndRunChatAgentRun(input: {
     });
   });
 
-  return running;
+  return runResult(running);
 }
 
 async function runChatOrchestration(input: {
