@@ -7,13 +7,15 @@ import {
   type AgentRunRepository,
 } from '@/server/repositories/agent-runs';
 import {
+  ModelEntitlementRequiredError,
   ModelNotAvailableError,
   type ResolvedChatModel,
   type ResolvedImageModel,
 } from '@/server/repositories/ai-models';
 import type { AgentTaskType } from './types';
 import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
-import { calculateImageCreditCost } from '@/server/billing/credits';
+import { ProviderRequestError } from '@/server/ai/provider-adapters';
+import { calculateImageCreditCost, InsufficientCreditsError } from '@/server/billing/credits';
 import { createDeterministicPiRuntime } from './pi-runtime';
 import {
   AgentRunModelRequiredError,
@@ -381,6 +383,248 @@ test('image run rejects unsupported selected model before creating a run', async
   );
 
   assert.equal(providerCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('image run rejects entitlement errors before creating a run or calling provider', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerCalled = false;
+  let debitCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async (_userId, modelId, mode) => {
+      assert.equal(modelId, 'model-pro-image');
+      assert.equal(mode, 'generate');
+      throw new ModelEntitlementRequiredError();
+    },
+    assertCanAffordMinimum: async () => {
+      throw new Error('credit preflight should not run');
+    },
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        throw new Error('provider should not run');
+      },
+    }),
+    debitForImageAgentRun: async () => {
+      debitCalled = true;
+      throw new Error('debit should not run');
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '山水',
+        modelId: 'model-pro-image',
+        input: { mode: 'generate' },
+      }),
+    ModelEntitlementRequiredError,
+  );
+
+  assert.equal(providerCalled, false);
+  assert.equal(debitCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('image run rejects insufficient credits before creating a run or calling provider', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerCalled = false;
+  let debitCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () =>
+      resolvedImageModel({
+        id: 'model-expensive-image',
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 0,
+          completionCreditsPer1k: 0,
+          minimumCredits: 50,
+        },
+      }),
+    assertCanAffordMinimum: async (_userId, pricing) => {
+      assert.equal(pricing.minimumCredits, 50);
+      throw new InsufficientCreditsError();
+    },
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        throw new Error('provider should not run');
+      },
+    }),
+    debitForImageAgentRun: async () => {
+      debitCalled = true;
+      throw new Error('debit should not run');
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '山水',
+        modelId: 'model-expensive-image',
+        input: { mode: 'generate' },
+      }),
+    InsufficientCreditsError,
+  );
+
+  assert.equal(providerCalled, false);
+  assert.equal(debitCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('image run records failed billing metadata when provider fails after run creation', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let debitCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => resolvedImageModel({ id: 'model-provider-fails' }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        throw new ProviderRequestError('image provider unavailable');
+      },
+    }),
+    debitForImageAgentRun: async () => {
+      debitCalled = true;
+      throw new Error('debit should not run');
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '山水',
+    modelId: 'model-provider-fails',
+    input: { mode: 'generate' },
+  });
+
+  assert.equal(result.run.status, 'failed');
+  assert.equal(result.run.errorMessage, 'image provider unavailable');
+  assert.equal(result.run.selectedModel?.code, 'dev-free-image');
+  assert.equal(result.run.billing?.status, 'failed');
+  assert.equal(result.run.billing?.creditCost, null);
+  assert.equal(result.run.billing?.ledgerEntryId, null);
+  assert.equal(debitCalled, false);
+
+  const storedRuns = await repository.listRunsForUser('user-1');
+  assert.equal(storedRuns.length, 1);
+});
+
+test('image run remains billed and succeeded when post-debit event persistence fails', async () => {
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async appendRunEvent(runId, input) {
+      if (input.eventType === 'billing_recorded') {
+        throw new Error('event store unavailable after debit');
+      }
+      return baseRepository.appendRunEvent(runId, input);
+    },
+  };
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () =>
+      resolvedImageModel({
+        id: 'model-billed-image',
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 0,
+          completionCreditsPer1k: 0,
+          minimumCredits: 9,
+        },
+      }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        return {
+          finalMessage: '图片已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图',
+              body: 'data:image/png;base64,RESULT',
+              metadata: { mimeType: 'image/png' },
+            },
+          ],
+          rawMetadata: { provider: 'test' },
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-after-debit', balanceAfter: 91 }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '山水',
+    modelId: 'model-billed-image',
+    input: { mode: 'generate' },
+  });
+
+  assert.equal(result.run.status, 'succeeded');
+  assert.equal(result.run.billing?.status, 'billed');
+  assert.equal(result.run.billing?.creditCost, 9);
+  assert.equal(result.run.billing?.ledgerEntryId, 'ledger-after-debit');
+  assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,RESULT');
+});
+
+test('image run rejects upscale without source image before model resolution or run creation', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let resolverCalled = false;
+  let providerCalled = false;
+  let debitCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => {
+      resolverCalled = true;
+      throw new Error('model resolution should not run');
+    },
+    assertCanAffordMinimum: async () => {
+      throw new Error('credit preflight should not run');
+    },
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        throw new Error('provider should not run');
+      },
+    }),
+    debitForImageAgentRun: async () => {
+      debitCalled = true;
+      throw new Error('debit should not run');
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '放大图片',
+        modelId: 'model-upscale',
+        input: { mode: 'upscale' },
+      }),
+    /source image is required/,
+  );
+
+  assert.equal(resolverCalled, false);
+  assert.equal(providerCalled, false);
+  assert.equal(debitCalled, false);
   assert.deepEqual(await repository.listRunsForUser('user-1'), []);
 });
 

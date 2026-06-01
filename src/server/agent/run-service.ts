@@ -52,6 +52,13 @@ export class AgentRunModelRequiredError extends Error {
   }
 }
 
+export class AgentRunImageSourceRequiredError extends Error {
+  constructor() {
+    super('source image is required for edit and upscale image requests.');
+    this.name = 'AgentRunImageSourceRequiredError';
+  }
+}
+
 type DebitForAgentRun = (input: {
   userId: string;
   runId: string;
@@ -214,6 +221,18 @@ async function recordEventIfSupported(
   }
 }
 
+async function appendRunEventIfSupported(
+  repository: AgentRunRepository,
+  runId: string,
+  event: Parameters<AgentRunRepository['appendRunEvent']>[1],
+) {
+  try {
+    await repository.appendRunEvent(runId, event);
+  } catch {
+    // Stream events are observational. State transitions and billing snapshots should not depend on event persistence.
+  }
+}
+
 function requireUpdatedRun(run: AgentRunDto | null, action: string): AgentRunDto {
   if (!run) {
     throw new Error(`Agent run repository returned null while trying to ${action}`);
@@ -234,6 +253,15 @@ function toSelectedModelSnapshot(model: ResolvedChatModel | ResolvedImageModel) 
 
 function toImageMode(value: unknown): ImageModelMode {
   return value === 'edit' || value === 'upscale' ? value : 'generate';
+}
+
+function readRequiredSourceImageDataUrl(mode: ImageModelMode, input: Record<string, unknown>) {
+  const sourceImageDataUrl = typeof input.sourceImageDataUrl === 'string' ? input.sourceImageDataUrl : undefined;
+  if ((mode === 'edit' || mode === 'upscale') && !sourceImageDataUrl) {
+    throw new AgentRunImageSourceRequiredError();
+  }
+
+  return sourceImageDataUrl;
 }
 
 function toChatCapabilitySnapshot(model: ResolvedChatModel): AgentCapabilitySnapshot & Record<string, unknown> {
@@ -600,10 +628,7 @@ async function createAndRunImageAgentRun(input: {
   }
 
   const mode = toImageMode(request.input.mode);
-  const sourceImageDataUrl =
-    typeof request.input.sourceImageDataUrl === 'string'
-      ? request.input.sourceImageDataUrl
-      : undefined;
+  const sourceImageDataUrl = readRequiredSourceImageDataUrl(mode, request.input);
   const model = await resolveImageModelForUser(request.userId, request.modelId, mode);
   await assertCanAffordMinimum(request.userId, model.pricing);
 
@@ -697,7 +722,7 @@ async function createAndRunImageAgentRun(input: {
       return runResult(failed);
     }
 
-    await repository.appendRunEvent(running.id, {
+    await appendRunEventIfSupported(repository, running.id, {
       eventType: 'billing_recorded',
       payload: {
         creditCost,
@@ -729,7 +754,7 @@ async function createAndRunImageAgentRun(input: {
       'complete run',
     );
 
-    await repository.appendRunEvent(completed.id, {
+    await appendRunEventIfSupported(repository, completed.id, {
       eventType: 'run_completed',
       payload: {
         finalMessage: providerResult.finalMessage,

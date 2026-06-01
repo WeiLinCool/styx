@@ -93,6 +93,19 @@ test('parseCreateAgentRunRawBody requires source image for edit mode', () => {
   );
 });
 
+test('parseCreateAgentRunRawBody requires source image for upscale mode', () => {
+  assert.throws(
+    () =>
+      parseCreateAgentRunRawBody({
+        taskType: 'image',
+        prompt: '放大图片',
+        modelId: 'model-1',
+        input: { mode: 'upscale' },
+      }),
+    /source image is required/,
+  );
+});
+
 test('parseCreateAgentRunBody preserves non-chat requests without modelId', () => {
   const parsed = parseCreateAgentRunBody({
     taskType: 'workflow',
