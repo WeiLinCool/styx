@@ -16,6 +16,12 @@ export type ChatModelOption = {
   pricingSummary: string;
 };
 
+export type ImageModelMode = 'generate' | 'edit' | 'upscale';
+
+export type ImageModelOption = ChatModelOption & {
+  supportedModes: ImageModelMode[];
+};
+
 export type AgentRuntimeApiErrorCode =
   | 'invalid_request'
   | 'model_required'
@@ -94,7 +100,43 @@ function parseChatModel(value: unknown): ChatModelOption | null {
   };
 }
 
+function isImageModelMode(value: unknown): value is ImageModelMode {
+  return value === 'generate' || value === 'edit' || value === 'upscale';
+}
+
+function parseImageModel(value: unknown): ImageModelOption | null {
+  const model = parseChatModel(value);
+  if (!model || !value || typeof value !== 'object') {
+    return null;
+  }
+
+  const supportedModes = (value as Record<string, unknown>).supportedModes;
+  if (
+    !Array.isArray(supportedModes) ||
+    supportedModes.length === 0 ||
+    !supportedModes.every(isImageModelMode)
+  ) {
+    return null;
+  }
+
+  return {
+    ...model,
+    supportedModes,
+  };
+}
+
 export function selectChatModelId(models: ChatModelOption[], priorModelId?: string | null): string | null {
+  if (priorModelId && models.some((model) => model.id === priorModelId)) {
+    return priorModelId;
+  }
+
+  return models.find((model) => model.isDefault)?.id ?? models[0]?.id ?? null;
+}
+
+export function selectImageModelId(
+  models: ImageModelOption[],
+  priorModelId?: string | null,
+): string | null {
   if (priorModelId && models.some((model) => model.id === priorModelId)) {
     return priorModelId;
   }
@@ -116,6 +158,24 @@ export async function listChatModels(): Promise<ChatModelOption[]> {
       : [];
 
   return rawModels.map(parseChatModel).filter((model): model is ChatModelOption => model !== null);
+}
+
+export async function listImageModels(mode: ImageModelMode): Promise<ImageModelOption[]> {
+  const response = await userApiRequest(`/api/agent/image-models?mode=${encodeURIComponent(mode)}`, {
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '图片模型列表加载失败');
+  }
+
+  const rawModels =
+    payload && typeof payload === 'object' && Array.isArray((payload as { models?: unknown }).models)
+      ? (payload as { models: unknown[] }).models
+      : [];
+
+  return rawModels.map(parseImageModel).filter((model): model is ImageModelOption => model !== null);
 }
 
 export async function createAgentRun(input: CreateAgentRunRequest): Promise<CreateAgentRunResult> {

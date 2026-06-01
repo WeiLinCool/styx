@@ -5,10 +5,36 @@ import {
   AgentRuntimeApiError,
   createAgentRun,
   getAgentRunDetail,
+  listImageModels,
   listChatModels,
+  selectImageModelId,
   selectChatModelId,
   type ChatModelOption,
+  type ImageModelOption,
 } from './agent-runtime-client';
+
+function installFetchMock(payload: unknown) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json(payload);
+
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
+}
+
+function makeImageModel(overrides: Partial<ImageModelOption> = {}): ImageModelOption {
+  return {
+    id: 'model-image',
+    code: 'image',
+    name: 'Image',
+    providerName: 'Development',
+    isDefault: false,
+    entitlementLabel: 'Free',
+    pricingSummary: '5 credits minimum',
+    supportedModes: ['generate'],
+    ...overrides,
+  };
+}
 
 test('createAgentRun throws fallback message for non-JSON error responses', async () => {
   const originalFetch = globalThis.fetch;
@@ -61,6 +87,31 @@ test('listChatModels returns typed model options from API payload', async () => 
     ]);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('listImageModels returns parsed image model options', async () => {
+  const restore = installFetchMock({
+    models: [
+      {
+        id: 'model-1',
+        code: 'doubao-image',
+        name: 'Doubao Image',
+        providerName: 'Doubao',
+        isDefault: true,
+        entitlementLabel: 'Pro',
+        pricingSummary: '5 credits minimum',
+        supportedModes: ['generate', 'edit'],
+      },
+    ],
+  });
+
+  try {
+    const models = await listImageModels('generate');
+    assert.equal(models[0]?.id, 'model-1');
+    assert.deepEqual(models[0]?.supportedModes, ['generate', 'edit']);
+  } finally {
+    restore();
   }
 });
 
@@ -192,4 +243,13 @@ test('selectChatModelId keeps valid prior selection before falling back to defau
   assert.equal(selectChatModelId(models, 'model-pro'), 'model-pro');
   assert.equal(selectChatModelId(models, 'missing'), 'model-free');
   assert.equal(selectChatModelId([], 'model-pro'), null);
+});
+
+test('selectImageModelId falls back to default compatible model', () => {
+  const models = [
+    makeImageModel({ id: 'a', isDefault: false }),
+    makeImageModel({ id: 'b', isDefault: true }),
+  ];
+
+  assert.equal(selectImageModelId(models, 'missing'), 'b');
 });
