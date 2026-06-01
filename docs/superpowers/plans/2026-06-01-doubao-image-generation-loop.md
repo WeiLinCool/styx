@@ -1,7 +1,7 @@
 ---
 change: doubao-image-generation-loop
 design-doc: docs/superpowers/specs/2026-06-01-doubao-image-generation-loop-design.md
-base-ref: 1d21a60fb0f0a8a9d4af709dd129e377ebff5fa2
+base-ref: dac833aad03fbfcb6430918d6326e0493c3aad34
 ---
 
 # Doubao Image Generation Loop Implementation Plan
