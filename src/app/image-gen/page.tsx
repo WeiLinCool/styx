@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -43,6 +43,7 @@ export default function ImageGenPage() {
   const [generatedImage, setGeneratedImage] = useState<GeneratedImageResult | null>(null);
   const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const [submittedPrompt, setSubmittedPrompt] = useState('');
+  const imageReceivedRunIdRef = useRef<string | null>(null);
   const [hdModel, setHdModel] = useState(hdModels[0].id);
   const [hdScale, setHdScale] = useState('2x');
   const [hdPrompt, setHdPrompt] = useState('高清修复，增强细节，提升画质，保留原始构图');
@@ -62,6 +63,7 @@ export default function ImageGenPage() {
         return;
       }
 
+      imageReceivedRunIdRef.current = streamRunId;
       setGeneratedImage({ artifact, prompt: submittedPrompt });
       setGenerationError(null);
       setGenerationMessage('图片已生成，请及时下载。');
@@ -79,6 +81,7 @@ export default function ImageGenPage() {
         typeof (payload.payload as Record<string, unknown>).message === 'string'
           ? ((payload.payload as Record<string, unknown>).message as string)
           : '图片生成请求失败';
+      imageReceivedRunIdRef.current = null;
       setGeneratedImage(null);
       setGenerationError(failureMessage);
       setIsGenerating(false);
@@ -87,6 +90,11 @@ export default function ImageGenPage() {
     });
     eventSource.onerror = () => {
       eventSource.close();
+      setIsGenerating(false);
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+      if (imageReceivedRunIdRef.current !== streamRunId) {
+        setGenerationError('图片生成连接中断，请重试。');
+      }
     };
 
     return () => {
@@ -123,6 +131,7 @@ export default function ImageGenPage() {
     setGenerationMessage(null);
     setGeneratedImage(null);
     setSubmittedPrompt(runPrompt);
+    imageReceivedRunIdRef.current = null;
 
     try {
       const { run } = await createAgentRun({
