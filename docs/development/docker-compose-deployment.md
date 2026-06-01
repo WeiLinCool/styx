@@ -309,3 +309,317 @@ http://服务器IP:8080
 
 数据库卷 `styx-postgres-data` 必须持久化，并纳入备份策略。
 
+## 10. OrbStack 本地构建、导出镜像并部署到 CentOS
+
+本节适用于：在本地 macOS + OrbStack 构建镜像，导出为 `.tar` 文件，上传到 CentOS 服务器后直接启动。服务器不需要放置完整源码，只需要镜像包、Compose 文件和环境变量文件。
+
+### 10.1 确认目标服务器 CPU 架构
+
+先在 CentOS 服务器执行：
+
+```bash
+uname -m
+```
+
+常见结果：
+
+- `x86_64`：构建平台使用 `linux/amd64`。
+- `aarch64`：构建平台使用 `linux/arm64`。
+
+如果你的本地 Mac 是 Apple Silicon，而服务器是常见的 CentOS x86_64，必须按 `linux/amd64` 构建，否则服务器可能无法运行镜像。
+
+后续示例默认服务器是 `x86_64`：
+
+```bash
+export TARGET_PLATFORM=linux/amd64
+export APP_IMAGE=styx-webui:prod-$(date +%Y%m%d%H%M)
+```
+
+### 10.2 本地准备 Dockerfile 和环境变量
+
+在项目根目录确认已经按本文第 3 节新增 `Dockerfile`。
+
+准备生产环境变量文件：
+
+```bash
+cp .env.local .env.production
+```
+
+编辑 `.env.production`，至少确认以下值：
+
+```env
+DATABASE_URL=postgresql://styx:change-me@postgres:5432/styx
+PORT=5000
+HOSTNAME=0.0.0.0
+NODE_ENV=production
+COZE_PROJECT_ENV=PROD
+
+STYX_ADMIN_AUTH_SECRET=replace-with-a-long-random-secret
+STYX_ADMIN_ACCOUNTS_JSON=[{"userId":"00000000-0000-4000-8000-000000000001","username":"admin","passwordHash":"<sha256-password-hash>","phone":"13800000000","allowWhitelistBypass":true}]
+STYX_TRANSPORT_SECURITY_MODE=compatible
+```
+
+生成管理端密码 hash：
+
+```bash
+node -e "console.log(require('crypto').createHash('sha256').update('你的管理端密码').digest('hex'))"
+```
+
+生产环境不要设置 `STYX_ENABLE_DEV_AUTH=true`。
+
+### 10.3 在 OrbStack 本地构建应用镜像
+
+在项目根目录执行：
+
+```bash
+docker buildx build \
+  --platform "$TARGET_PLATFORM" \
+  -t "$APP_IMAGE" \
+  --load \
+  .
+```
+
+确认镜像存在：
+
+```bash
+docker image ls "$APP_IMAGE"
+```
+
+如果服务器不能访问 Docker Hub，还需要提前拉取并导出 PostgreSQL 镜像：
+
+```bash
+docker pull --platform "$TARGET_PLATFORM" postgres:16-alpine
+```
+
+### 10.4 本地导出镜像包
+
+创建导出目录：
+
+```bash
+mkdir -p deploy-artifacts
+```
+
+导出应用镜像：
+
+```bash
+docker save "$APP_IMAGE" | gzip > "deploy-artifacts/${APP_IMAGE//:/-}.tar.gz"
+```
+
+如果服务器不能联网拉取 PostgreSQL 镜像，同时导出数据库镜像：
+
+```bash
+docker save postgres:16-alpine | gzip > deploy-artifacts/postgres-16-alpine.tar.gz
+```
+
+记录应用镜像名，后续服务器 Compose 文件要使用同一个值：
+
+```bash
+echo "$APP_IMAGE" > deploy-artifacts/app-image.txt
+```
+
+### 10.5 准备服务器 Compose 文件
+
+在本地创建 `deploy-artifacts/docker-compose.prod.yml`，注意把 `image` 替换为 `app-image.txt` 里的应用镜像名：
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: styx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: styx
+      POSTGRES_USER: styx
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - styx-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U styx -d styx"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: styx-webui:prod-YYYYMMDDHHMM
+    container_name: styx-app
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://styx:change-me@postgres:5432/styx
+      HOSTNAME: 0.0.0.0
+      PORT: 5000
+      NODE_ENV: production
+      COZE_PROJECT_ENV: PROD
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  styx-postgres-data:
+```
+
+这里不要使用 `build:`，因为服务器只加载并运行已经导出的镜像。
+
+复制生产环境变量文件：
+
+```bash
+cp .env.production deploy-artifacts/.env.production
+```
+
+### 10.6 上传到 CentOS 服务器
+
+示例服务器目录：
+
+```bash
+ssh root@服务器IP "mkdir -p /opt/styx"
+scp deploy-artifacts/* root@服务器IP:/opt/styx/
+scp deploy-artifacts/.env.production root@服务器IP:/opt/styx/.env.production
+```
+
+如果你使用非 root 用户，把路径和用户替换成实际值，并确保该用户可以运行 Docker。
+
+### 10.7 CentOS 安装运行依赖
+
+服务器需要 Docker Engine 和 Docker Compose v2。已安装可跳过。
+
+检查：
+
+```bash
+docker --version
+docker compose version
+```
+
+如果防火墙开启，并且暂时直接暴露 `5000` 端口：
+
+```bash
+firewall-cmd --permanent --add-port=5000/tcp
+firewall-cmd --reload
+```
+
+生产环境更推荐只让反向代理对外暴露 HTTPS，再把流量转发到本机或内网的 `5000` 端口。
+
+### 10.8 在 CentOS 加载镜像
+
+进入部署目录：
+
+```bash
+cd /opt/styx
+```
+
+加载应用镜像：
+
+```bash
+gunzip -c styx-webui-prod-*.tar.gz | docker load
+```
+
+如果上传了 PostgreSQL 镜像，也加载它：
+
+```bash
+gunzip -c postgres-16-alpine.tar.gz | docker load
+```
+
+确认镜像已存在：
+
+```bash
+docker image ls | grep -E 'styx-webui|postgres'
+```
+
+### 10.9 首次启动和初始化数据库
+
+先启动数据库：
+
+```bash
+docker compose -f docker-compose.prod.yml up -d postgres
+```
+
+执行迁移：
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm app pnpm db:migrate
+```
+
+初始化种子数据：
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm app pnpm db:seed
+```
+
+启动应用：
+
+```bash
+docker compose -f docker-compose.prod.yml up -d app
+```
+
+查看状态和日志：
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f app
+```
+
+访问：
+
+```text
+http://服务器IP:5000
+http://服务器IP:5000/admin
+```
+
+### 10.10 后续升级流程
+
+本地重新构建并导出新镜像：
+
+```bash
+export TARGET_PLATFORM=linux/amd64
+export APP_IMAGE=styx-webui:prod-$(date +%Y%m%d%H%M)
+
+docker buildx build \
+  --platform "$TARGET_PLATFORM" \
+  -t "$APP_IMAGE" \
+  --load \
+  .
+
+mkdir -p deploy-artifacts
+docker save "$APP_IMAGE" | gzip > "deploy-artifacts/${APP_IMAGE//:/-}.tar.gz"
+echo "$APP_IMAGE" > deploy-artifacts/app-image.txt
+```
+
+更新 `docker-compose.prod.yml` 里的 `app.image` 为新镜像名，然后上传新的应用镜像包和 Compose 文件。
+
+服务器加载新镜像：
+
+```bash
+cd /opt/styx
+gunzip -c styx-webui-prod-*.tar.gz | docker load
+```
+
+升级前备份数据库：
+
+```bash
+docker compose -f docker-compose.prod.yml exec postgres pg_dump -U styx -d styx > styx-backup-$(date +%Y%m%d%H%M).sql
+```
+
+执行迁移并重启应用：
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm app pnpm db:migrate
+docker compose -f docker-compose.prod.yml up -d app
+```
+
+确认新容器正常后，可以清理不用的旧应用镜像：
+
+```bash
+docker image prune
+```
+
+### 10.11 CentOS 部署检查清单
+
+- `docker compose -f docker-compose.prod.yml config` 能正常渲染配置。
+- `.env.production` 中 `DATABASE_URL` 使用 `postgres` 服务名，而不是 `localhost`。
+- `POSTGRES_PASSWORD` 和 `DATABASE_URL` 的密码一致。
+- `docker compose -f docker-compose.prod.yml ps` 中 `postgres` 和 `app` 均为运行状态。
+- `docker compose -f docker-compose.prod.yml logs app` 没有 `DATABASE_URL is required`、迁移缺失或端口监听错误。
+- 如果没有 HTTPS，先使用 `STYX_TRANSPORT_SECURITY_MODE=compatible`。
+- 管理端登录前确认 `STYX_ADMIN_ACCOUNTS_JSON` 是合法 JSON，且 `passwordHash` 是 SHA-256。
