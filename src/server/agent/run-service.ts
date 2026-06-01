@@ -61,6 +61,11 @@ type ChatMessage = {
   content: string;
 };
 
+type MediaRunScheduler = {
+  schedule(runId: string, task: () => Promise<void>): void;
+  getActiveRunIds(): string[];
+};
+
 export type CreateAgentRunServiceInput = {
   repository: AgentRunRepository;
   runtime: PiAgentRuntime;
@@ -179,6 +184,26 @@ function runResult(
   return { run, transientArtifacts };
 }
 
+function createMediaRunScheduler(): MediaRunScheduler {
+  const activeRuns = new Map<string, Promise<void>>();
+
+  return {
+    schedule(runId, task) {
+      const scheduled = Promise.resolve().then(task);
+      activeRuns.set(runId, scheduled);
+      const cleanup = () => {
+        if (activeRuns.get(runId) === scheduled) {
+          activeRuns.delete(runId);
+        }
+      };
+      scheduled.then(cleanup, cleanup);
+    },
+    getActiveRunIds() {
+      return [...activeRuns.keys()];
+    },
+  };
+}
+
 async function recordEventIfSupported(
   repository: AgentRunRepository,
   runId: string,
@@ -207,6 +232,30 @@ function requireUpdatedRun(run: AgentRunDto | null, action: string): AgentRunDto
   }
 
   return run;
+}
+
+async function appendRunEventIfSupported(
+  repository: AgentRunRepository,
+  runId: string,
+  input: Parameters<AgentRunRepository['appendRunEvent']>[1],
+) {
+  try {
+    await repository.appendRunEvent(runId, input);
+  } catch {
+    // Stream events are best-effort. Durable run state remains the source of truth.
+  }
+}
+
+async function appendRunEventsIfSupported(
+  repository: AgentRunRepository,
+  runId: string,
+  input: Parameters<AgentRunRepository['appendRunEvents']>[1],
+) {
+  try {
+    await repository.appendRunEvents(runId, input);
+  } catch {
+    // Stream events are best-effort. Durable run state remains the source of truth.
+  }
 }
 
 function toSelectedModelSnapshot(model: ResolvedChatModel) {
@@ -321,6 +370,8 @@ export function createAgentRunService({
   createChatProviderAdapter = defaultCreateChatProviderAdapter,
   debitForAgentRun = defaultDebitForAgentRun,
 }: CreateAgentRunServiceInput) {
+  const mediaRunScheduler = createMediaRunScheduler();
+
   return {
     async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<CreateAgentRunResult> {
       if (input.taskType === 'chat') {
@@ -367,23 +418,18 @@ export function createAgentRunService({
           model: capabilitySnapshot.model,
         });
 
-        void runMediaOrchestration({
-          repository,
-          runtime,
-          request: input,
-          capabilitySnapshot,
-          running,
-        }).catch(async (error) => {
-          const errorMessage = toErrorMessage(error);
-          await recordEventIfSupported(repository, running.id, 'failed', errorMessage);
-          await repository.appendRunEvent(running.id, {
-            eventType: 'run_failed',
-            payload: {
-              message: errorMessage,
-              failedAt: new Date().toISOString(),
-            },
-          });
-          await repository.failRun(running.id, errorMessage);
+        mediaRunScheduler.schedule(running.id, async () => {
+          try {
+            await runMediaOrchestration({
+              repository,
+              runtime,
+              request: input,
+              capabilitySnapshot,
+              running,
+            });
+          } catch (error) {
+            await failMediaRun(repository, running.id, toErrorMessage(error));
+          }
         });
 
         return runResult(running);
@@ -429,6 +475,18 @@ export function createAgentRunService({
   };
 }
 
+async function failMediaRun(repository: AgentRunRepository, runId: string, errorMessage: string) {
+  await recordEventIfSupported(repository, runId, 'failed', errorMessage);
+  await repository.failRun(runId, errorMessage);
+  await appendRunEventIfSupported(repository, runId, {
+    eventType: 'run_failed',
+    payload: {
+      message: errorMessage,
+      failedAt: new Date().toISOString(),
+    },
+  });
+}
+
 async function runMediaOrchestration(input: {
   repository: AgentRunRepository;
   runtime: PiAgentRuntime;
@@ -436,7 +494,7 @@ async function runMediaOrchestration(input: {
   capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
   running: AgentRunDto;
 }) {
-  await input.repository.appendRunEvent(input.running.id, {
+  await appendRunEventIfSupported(input.repository, input.running.id, {
     eventType: 'artifact_started',
     payload: {
       taskType: input.request.taskType,
@@ -463,7 +521,8 @@ async function runMediaOrchestration(input: {
     .map(toDirectMediaResult)
     .filter((artifact): artifact is NonNullable<ReturnType<typeof toDirectMediaResult>> => artifact !== null);
 
-  await input.repository.appendRunEvents(
+  await appendRunEventsIfSupported(
+    input.repository,
     input.running.id,
     directMediaResults.map((artifact) => ({
       eventType: 'artifact_completed',
@@ -479,7 +538,7 @@ async function runMediaOrchestration(input: {
     'complete run',
   );
 
-  await input.repository.appendRunEvent(completed.id, {
+  await appendRunEventIfSupported(input.repository, completed.id, {
     eventType: 'run_completed',
     payload: {
       finalMessage: result.finalMessage,

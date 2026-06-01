@@ -259,6 +259,39 @@ test('createAndRunAgentRun records failure when runtime throws', async () => {
   assert.equal(events.at(-1)?.eventType, 'run_failed');
 });
 
+test('createAndRunAgentRun marks media run failed when run_failed event persistence fails', async () => {
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async appendRunEvent(runId, input) {
+      if (input.eventType === 'run_failed') {
+        throw new Error('stream event store unavailable');
+      }
+      return baseRepository.appendRunEvent(runId, input);
+    },
+  };
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        throw new Error('pi unavailable');
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: 'hello',
+    input: {},
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const failed = await repository.getRunForUser(result.run.id, 'user-1');
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.errorMessage, 'pi unavailable');
+});
+
 test('createAndRunAgentRun keeps completed run succeeded when succeeded event recording fails', async () => {
   const repository: AgentRunRepository = {
     ...createMemoryAgentRunRepository(),
@@ -282,6 +315,42 @@ test('createAndRunAgentRun keeps completed run succeeded when succeeded event re
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const completed = await repository.getRunForUser(run.id, 'user-1');
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.errorMessage, null);
+});
+
+test('createAndRunAgentRun keeps media run succeeded when run_completed event persistence fails', async () => {
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async appendRunEvent(runId, input) {
+      if (input.eventType === 'run_completed') {
+        throw new Error('stream event store unavailable');
+      }
+      return baseRepository.appendRunEvent(runId, input);
+    },
+    async appendRunEvents(runId, input) {
+      const appended = [];
+      for (const event of input) {
+        const stored = await this.appendRunEvent(runId, event);
+        if (stored) {
+          appended.push(stored);
+        }
+      }
+      return appended;
+    },
+  };
+  const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: 'hello',
+    input: {},
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const completed = await repository.getRunForUser(result.run.id, 'user-1');
   assert.equal(completed?.status, 'succeeded');
   assert.equal(completed?.errorMessage, null);
 });
