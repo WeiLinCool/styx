@@ -64,6 +64,33 @@ export type TransientAgentArtifactDto = {
   };
 };
 
+export type DirectMediaDeliveryMode = 'provider_url' | 'data_url';
+export type DirectMediaStorageStatus = 'provider_direct' | 'stored';
+
+export type DirectMediaResultDto = {
+  kind: Extract<AgentArtifactKind, 'image' | 'video'>;
+  title: string;
+  delivery: {
+    mode: DirectMediaDeliveryMode;
+    url: string;
+    expiresAt: string | null;
+  };
+  metadata: Record<string, unknown> & {
+    storageStatus: DirectMediaStorageStatus;
+    mimeType?: string;
+    filename?: string;
+    width?: number;
+    height?: number;
+    durationSeconds?: number;
+    providerTaskId?: string;
+    model?: string;
+  };
+};
+
+export type DirectMediaArtifactCompletedPayload = {
+  artifact: DirectMediaResultDto;
+};
+
 export type AiUsage = {
   promptTokens: number;
   completionTokens: number;
