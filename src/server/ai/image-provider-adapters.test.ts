@@ -147,6 +147,32 @@ test('doubao adapter includes source image for edit mode', async () => {
   });
 
   assert.equal(requests[0]?.image, 'data:image/png;base64,SOURCE');
+  assert.equal(Object.hasOwn(requests[0] ?? {}, 'sourceImageDataUrl'), false);
+});
+
+test('doubao adapter includes provider image field for upscale mode', async () => {
+  const requests: Record<string, unknown>[] = [];
+  const adapter = createDoubaoImageProviderAdapter({
+    fetch: async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ data: [{ b64_json: 'abc' }] }), { status: 200 });
+    },
+    readEnv: () => 'test-key',
+  });
+
+  await adapter.runImage({
+    runId: 'run-1',
+    userId: 'user-1',
+    model: makeResolvedImageModel(),
+    mode: 'upscale',
+    prompt: 'make it sharper',
+    scale: '2x',
+    sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+  });
+
+  assert.equal(requests[0]?.image, 'data:image/png;base64,SOURCE');
+  assert.equal(requests[0]?.scale, '2x');
+  assert.equal(Object.hasOwn(requests[0] ?? {}, 'sourceImageDataUrl'), false);
 });
 
 test('doubao adapter rejects missing configuration and env values', async () => {
@@ -192,6 +218,25 @@ test('doubao adapter rejects missing configuration and env values', async () => 
   );
 });
 
+test('doubao adapter rejects invalid base url as configuration error', async () => {
+  const adapter = createDoubaoImageProviderAdapter({
+    fetch: async () => new Response('{}'),
+    readEnv: () => 'test-key',
+  });
+
+  await assert.rejects(
+    () =>
+      adapter.runImage({
+        runId: 'run-1',
+        userId: 'user-1',
+        model: makeResolvedImageModel({ baseUrl: 'not a valid url' }),
+        mode: 'generate',
+        prompt: 'mountain lake',
+      }),
+    ProviderConfigurationError,
+  );
+});
+
 test('doubao adapter normalizes upstream fetch errors', async () => {
   const adapter = createDoubaoImageProviderAdapter({
     fetch: async () => {
@@ -213,9 +258,19 @@ test('doubao adapter normalizes upstream fetch errors', async () => {
   );
 });
 
-test('doubao adapter trims non-ok response body and throws ProviderRequestError', async () => {
+test('doubao adapter redacts non-ok response body and throws ProviderRequestError', async () => {
+  const sensitivePrompt = 'secret prompt with customer name';
+  const sensitiveImage = 'data:image/png;base64,SENSITIVE_SOURCE';
   const adapter = createDoubaoImageProviderAdapter({
-    fetch: async () => new Response(`upstream ${'x'.repeat(700)}`, { status: 429 }),
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          error: 'provider rejected request',
+          prompt: sensitivePrompt,
+          image: sensitiveImage,
+        }),
+        { status: 429 },
+      ),
     readEnv: () => 'test-key',
   });
 
@@ -226,12 +281,14 @@ test('doubao adapter trims non-ok response body and throws ProviderRequestError'
         userId: 'user-1',
         model: makeResolvedImageModel(),
         mode: 'generate',
-        prompt: 'mountain lake',
+        prompt: sensitivePrompt,
       }),
     (error) =>
       error instanceof ProviderRequestError &&
       /status 429/.test(error.message) &&
-      error.message.includes('upstream ') &&
-      error.message.length < 620,
+      /response body redacted/.test(error.message) &&
+      !error.message.includes(sensitivePrompt) &&
+      !error.message.includes(sensitiveImage) &&
+      !error.message.includes('provider rejected request'),
   );
 });

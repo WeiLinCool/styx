@@ -61,9 +61,10 @@ export function createDoubaoImageProviderAdapter(input: {
         );
       }
 
+      const endpoint = createDoubaoImageEndpoint(baseUrl);
       let response: Response;
       try {
-        response = await fetchImpl(new URL('images/generations', ensureTrailingSlash(baseUrl)), {
+        response = await fetchImpl(endpoint, {
           method: 'POST',
           headers: {
             authorization: `Bearer ${apiKey}`,
@@ -120,7 +121,6 @@ function createDoubaoImageRequestBody(request: ImageProviderRequest): Record<str
     ...(request.sourceImageDataUrl && request.mode !== 'generate'
       ? {
           image: request.sourceImageDataUrl,
-          sourceImageDataUrl: request.sourceImageDataUrl,
         }
       : {}),
   };
@@ -198,15 +198,25 @@ async function readJsonResponse(response: Response) {
 
 async function readSafeErrorBody(response: Response) {
   try {
-    const body = await response.text();
-    return body.trim().slice(0, 500) || 'empty response body';
+    const byteLength = (await response.text()).length;
+    return byteLength > 0
+      ? `response body redacted (${byteLength} chars)`
+      : 'empty response body';
   } catch {
-    return 'unreadable response body';
+    return 'response body unavailable';
   }
 }
 
 function ensureTrailingSlash(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
+}
+
+function createDoubaoImageEndpoint(baseUrl: string) {
+  try {
+    return new URL('images/generations', ensureTrailingSlash(baseUrl));
+  } catch {
+    throw new ProviderConfigurationError('Doubao image provider has invalid base URL.');
+  }
 }
 
 function imageTitle(index: number) {
