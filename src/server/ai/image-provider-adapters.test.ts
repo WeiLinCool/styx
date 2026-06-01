@@ -123,7 +123,6 @@ test('doubao adapter sends expected request shape to images/generations', async 
     model: 'doubao-seedream',
     prompt: 'mountain lake',
     size: '1024x1024',
-    response_format: 'b64_json',
   });
 });
 

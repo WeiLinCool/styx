@@ -124,7 +124,6 @@ function createDoubaoImageRequestBody(request: ImageProviderRequest): Record<str
     prompt: request.prompt,
     ...(request.size ? { size: request.size } : {}),
     ...(request.scale ? { scale: request.scale } : {}),
-    response_format: 'b64_json',
     ...(request.sourceImageDataUrl && request.mode !== 'generate'
       ? {
           image: request.sourceImageDataUrl,
