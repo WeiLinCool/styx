@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -10,8 +10,14 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
-import { createAgentRun } from '@/features/public/agent-runtime-client';
+import {
+  createAgentRun,
+  createAgentRunEventsUrl,
+  parseDirectMediaArtifactPayload,
+  parseStreamEventPayload,
+} from '@/features/public/agent-runtime-client';
 import { videoModels } from '@/features/public/tool-data';
+import type { DirectMediaResultDto } from '@/server/agent/types';
 
 const VIDEO_STYLES = [
   '石头印画', '水墨意境', '赛博朋克', '梦幻童话', '极简抽象', '复古胶片',
@@ -37,6 +43,61 @@ export default function VideoGenPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [streamRunId, setStreamRunId] = useState<string | null>(null);
+  const [generatedVideo, setGeneratedVideo] = useState<DirectMediaResultDto | null>(null);
+  const videoReceivedRunIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!streamRunId) {
+      return;
+    }
+
+    const eventSource = new EventSource(createAgentRunEventsUrl(streamRunId));
+    eventSource.addEventListener('artifact_completed', (event) => {
+      const payload = parseStreamEventPayload(event);
+      const artifact = parseDirectMediaArtifactPayload(payload);
+      if (!artifact || artifact.kind !== 'video') {
+        return;
+      }
+
+      videoReceivedRunIdRef.current = streamRunId;
+      setGeneratedVideo(artifact);
+      setGenerationError(null);
+      setGenerationMessage('视频已生成，请及时下载。');
+    });
+    eventSource.addEventListener('run_completed', () => {
+      eventSource.close();
+      setIsGenerating(false);
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+    });
+    eventSource.addEventListener('run_failed', (event) => {
+      const payload = parseStreamEventPayload(event);
+      const failureMessage =
+        payload?.payload &&
+        typeof payload.payload === 'object' &&
+        typeof (payload.payload as Record<string, unknown>).message === 'string'
+          ? ((payload.payload as Record<string, unknown>).message as string)
+          : '视频生成请求失败';
+      videoReceivedRunIdRef.current = null;
+      setGeneratedVideo(null);
+      setGenerationError(failureMessage);
+      setIsGenerating(false);
+      eventSource.close();
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+    });
+    eventSource.onerror = () => {
+      eventSource.close();
+      setIsGenerating(false);
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+      if (videoReceivedRunIdRef.current !== streamRunId) {
+        setGenerationError('视频生成连接中断，请重试。');
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [streamRunId]);
 
   const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
@@ -51,6 +112,8 @@ export default function VideoGenPage() {
     setIsGenerating(true);
     setGenerationError(null);
     setGenerationMessage(null);
+    setGeneratedVideo(null);
+    videoReceivedRunIdRef.current = null;
 
     try {
       const { run } = await createAgentRun({
@@ -66,13 +129,38 @@ export default function VideoGenPage() {
       });
       if (run.status === 'failed') {
         setGenerationError(run.errorMessage ?? '视频生成请求失败');
+        setIsGenerating(false);
         return;
       }
-      setGenerationMessage(run.finalMessage ?? '视频任务已完成，但没有返回可展示的结果说明。');
+
+      if (run.status !== 'running') {
+        setGenerationError(run.errorMessage ?? '视频生成请求未进入运行状态，请重试。');
+        setIsGenerating(false);
+        return;
+      }
+
+      setStreamRunId(run.id);
+      setGenerationMessage('任务已提交，正在等待模型返回结果。');
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : '视频生成请求失败');
-    } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleDownloadVideo = () => {
+    if (!generatedVideo) return;
+    try {
+      const link = document.createElement('a');
+      link.href = generatedVideo.delivery.url;
+      link.download =
+        typeof generatedVideo.metadata.filename === 'string'
+          ? generatedVideo.metadata.filename
+          : 'styx-ai-video.mp4';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      setGenerationError('下载未能自动开始，请在视频上右键另存为。');
     }
   };
 
@@ -238,7 +326,32 @@ export default function VideoGenPage() {
 
           {/* Right - Preview */}
           <div className="flex flex-col items-center justify-center rounded-2xl border border-black/5 bg-white/[0.02] p-8">
-            {isGenerating ? (
+            {generatedVideo ? (
+              <div className="flex w-full flex-col items-center gap-4 text-center">
+                <div className="aspect-video w-full overflow-hidden rounded-xl border border-black/5 bg-black">
+                  {typeof generatedVideo.metadata.mimeType === 'string' && generatedVideo.metadata.mimeType.startsWith('video/') ? (
+                    <video
+                      src={generatedVideo.delivery.url}
+                      controls
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <img
+                      src={generatedVideo.delivery.url}
+                      alt={generatedVideo.title}
+                      className="h-full w-full object-contain"
+                    />
+                  )}
+                </div>
+                <button onClick={handleDownloadVideo} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-2.5 text-sm font-medium">
+                  下载视频
+                </button>
+                <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
+                  生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。
+                </div>
+                {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
+              </div>
+            ) : isGenerating ? (
               <div className="flex flex-col items-center">
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
                   <Film size={28} className="animate-pulse text-[#444444]" />
