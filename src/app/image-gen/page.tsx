@@ -52,6 +52,9 @@ type SourceImageState = {
   size: number;
 };
 
+type ModeLoadState = Record<ImageModelMode, boolean>;
+type ModeErrorState = Record<ImageModelMode, string | null>;
+
 export default function ImageGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
@@ -67,8 +70,16 @@ export default function ImageGenPage() {
     edit: null,
     upscale: null,
   });
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsLoadingByMode, setModelsLoadingByMode] = useState<ModeLoadState>({
+    generate: false,
+    edit: false,
+    upscale: false,
+  });
+  const [modelsErrorByMode, setModelsErrorByMode] = useState<ModeErrorState>({
+    generate: null,
+    edit: null,
+    upscale: null,
+  });
   const [selectedSize, setSelectedSize] = useState('1:1');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
@@ -89,6 +100,8 @@ export default function ImageGenPage() {
   const activeModels = modelsByMode[activeMode];
   const selectedModelId = selectedModelsByMode[activeMode];
   const selectedModel = activeModels.find((model) => model.id === selectedModelId) ?? null;
+  const modelsLoading = modelsLoadingByMode[activeMode];
+  const modelsError = modelsErrorByMode[activeMode];
   const activeSourceImage = activeMode === 'upscale' || activeMode === 'edit' ? sourceImages[activeMode] : null;
 
   useEffect(() => {
@@ -101,16 +114,16 @@ export default function ImageGenPage() {
     if (!isLoggedIn || !user || requiresActivation(user)) {
       setModelsByMode({ generate: [], edit: [], upscale: [] });
       setSelectedModelsByMode({ generate: null, edit: null, upscale: null });
-      setModelsError(null);
-      setModelsLoading(false);
+      setModelsErrorByMode({ generate: null, edit: null, upscale: null });
+      setModelsLoadingByMode({ generate: false, edit: false, upscale: false });
       return;
     }
 
     let cancelled = false;
 
     async function loadModelsForMode() {
-      setModelsLoading(true);
-      setModelsError(null);
+      setModelsLoadingByMode((current) => ({ ...current, [activeMode]: true }));
+      setModelsErrorByMode((current) => ({ ...current, [activeMode]: null }));
 
       try {
         const models = await listImageModels(activeMode);
@@ -128,10 +141,13 @@ export default function ImageGenPage() {
         if (cancelled) return;
         setModelsByMode((current) => ({ ...current, [activeMode]: [] }));
         setSelectedModelsByMode((current) => ({ ...current, [activeMode]: null }));
-        setModelsError(readRuntimeErrorMessage(error, '图片模型列表加载失败'));
+        setModelsErrorByMode((current) => ({
+          ...current,
+          [activeMode]: readRuntimeErrorMessage(error, '图片模型列表加载失败'),
+        }));
       } finally {
         if (!cancelled) {
-          setModelsLoading(false);
+          setModelsLoadingByMode((current) => ({ ...current, [activeMode]: false }));
         }
       }
     }

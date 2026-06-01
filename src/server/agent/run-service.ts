@@ -54,7 +54,7 @@ export class AgentRunModelRequiredError extends Error {
 
 export class AgentRunImageSourceRequiredError extends Error {
   constructor() {
-    super('source image is required for edit and upscale image requests.');
+    super('source image must be a supported data URL for edit and upscale image requests.');
     this.name = 'AgentRunImageSourceRequiredError';
   }
 }
@@ -255,9 +255,20 @@ function toImageMode(value: unknown): ImageModelMode {
   return value === 'edit' || value === 'upscale' ? value : 'generate';
 }
 
+const MAX_SOURCE_IMAGE_DATA_URL_BYTES = 10 * 1024 * 1024;
+const SOURCE_IMAGE_DATA_URL_PATTERN = /^data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
 function readRequiredSourceImageDataUrl(mode: ImageModelMode, input: Record<string, unknown>) {
   const sourceImageDataUrl = typeof input.sourceImageDataUrl === 'string' ? input.sourceImageDataUrl : undefined;
-  if ((mode === 'edit' || mode === 'upscale') && !sourceImageDataUrl) {
+  if (mode !== 'edit' && mode !== 'upscale') {
+    return sourceImageDataUrl;
+  }
+
+  if (
+    !sourceImageDataUrl ||
+    sourceImageDataUrl.length > MAX_SOURCE_IMAGE_DATA_URL_BYTES ||
+    !SOURCE_IMAGE_DATA_URL_PATTERN.test(sourceImageDataUrl)
+  ) {
     throw new AgentRunImageSourceRequiredError();
   }
 
@@ -453,7 +464,7 @@ export function createAgentRunService({
         });
       }
 
-      if (input.taskType === 'image' && input.modelId) {
+      if (input.taskType === 'image') {
         return createAndRunImageAgentRun({
           input,
           repository,

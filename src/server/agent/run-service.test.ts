@@ -18,6 +18,7 @@ import { ProviderRequestError } from '@/server/ai/provider-adapters';
 import { calculateImageCreditCost, InsufficientCreditsError } from '@/server/billing/credits';
 import { createDeterministicPiRuntime } from './pi-runtime';
 import {
+  AgentRunImageSourceRequiredError,
   AgentRunModelRequiredError,
   createAgentRunService,
 } from './run-service';
@@ -67,27 +68,22 @@ function resolvedImageModel(overrides: Partial<ResolvedImageModel> = {}): Resolv
   };
 }
 
-test('createAndRunAgentRun completes run with deterministic Pi adapter output', async () => {
+test('createAndRunAgentRun rejects image without modelId before legacy runtime fallback', async () => {
   const repository = createMemoryAgentRunRepository();
   const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
 
-  const result = await service.createAndRunAgentRun({
-    userId: 'user-1',
-    taskType: 'image',
-    prompt: '帮我设计一个石头印画作品',
-    input: {},
-  });
-  const run = result.run;
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '帮我设计一个石头印画作品',
+        input: {},
+      }),
+    AgentRunModelRequiredError,
+  );
 
-  assert.equal(run.status, 'succeeded');
-  assert.match(run.finalMessage ?? '', /及时下载保存/);
-  assert.equal(run.capabilitySummary.provider, 'pi');
-  assert.equal(run.artifacts.length, 1);
-  assert.equal(run.artifacts[0]?.kind, 'image');
-  assert.equal(run.artifacts[0]?.body, null);
-  assert.equal(run.artifacts[0]?.url, null);
-  assert.equal(result.transientArtifacts.length, 1);
-  assert.match(result.transientArtifacts[0]?.dataUrl ?? '', /^data:image\/svg\+xml;base64,/);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
 });
 
 test('createAndRunAgentRun returns transient image artifact while persisting only summary data', async () => {
@@ -118,7 +114,7 @@ test('createAndRunAgentRun returns transient image artifact while persisting onl
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
-    taskType: 'image',
+    taskType: 'workflow',
     prompt: '一只戴红围巾的小猫石头印画',
     input: { mode: 'generate', size: '1:1' },
   });
@@ -153,7 +149,7 @@ test('createAndRunAgentRun records failure when runtime throws', async () => {
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
-    taskType: 'image',
+    taskType: 'workflow',
     prompt: 'hello',
     input: {},
   });
@@ -176,7 +172,7 @@ test('createAndRunAgentRun keeps completed run succeeded when succeeded event re
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
-    taskType: 'image',
+    taskType: 'workflow',
     prompt: 'hello',
     input: {},
   });
@@ -207,7 +203,7 @@ test('createAndRunAgentRun clones runtime request input and capabilities', async
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
-    taskType: 'image',
+    taskType: 'workflow',
     prompt: 'hello',
     input: callerInput,
   });
@@ -619,12 +615,52 @@ test('image run rejects upscale without source image before model resolution or 
         modelId: 'model-upscale',
         input: { mode: 'upscale' },
       }),
-    /source image is required/,
+    AgentRunImageSourceRequiredError,
   );
 
   assert.equal(resolverCalled, false);
   assert.equal(providerCalled, false);
   assert.equal(debitCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('image run rejects malformed source image before model resolution or run creation', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let resolverCalled = false;
+  let providerCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => {
+      resolverCalled = true;
+      throw new Error('model resolution should not run');
+    },
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        throw new Error('provider should not run');
+      },
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '编辑图片',
+        modelId: 'model-edit',
+        input: {
+          mode: 'edit',
+          sourceImageDataUrl: 'data:text/plain;base64,NOT_IMAGE',
+        },
+      }),
+    AgentRunImageSourceRequiredError,
+  );
+
+  assert.equal(resolverCalled, false);
+  assert.equal(providerCalled, false);
   assert.deepEqual(await repository.listRunsForUser('user-1'), []);
 });
 
