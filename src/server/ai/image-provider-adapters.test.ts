@@ -127,6 +127,38 @@ test('doubao adapter sends expected request shape to images/generations', async 
   });
 });
 
+test('doubao adapter forwards configured OpenAI-compatible proxy dispatcher to fetch', async () => {
+  const originalProxy = process.env.STYX_OPENAI_COMPAT_PROXY_URL;
+  process.env.STYX_OPENAI_COMPAT_PROXY_URL = 'http://127.0.0.1:10808';
+  let seenInit: RequestInit | undefined;
+
+  try {
+    const adapter = createDoubaoImageProviderAdapter({
+      fetch: async (_url, init) => {
+        seenInit = init;
+        return new Response(JSON.stringify({ data: [{ b64_json: 'abc' }] }), { status: 200 });
+      },
+      readEnv: () => 'test-key',
+    });
+
+    await adapter.runImage({
+      runId: 'run-1',
+      userId: 'user-1',
+      model: makeResolvedImageModel(),
+      mode: 'generate',
+      prompt: 'mountain lake',
+    });
+
+    assert.equal(Boolean((seenInit as RequestInit & { dispatcher?: unknown })?.dispatcher), true);
+  } finally {
+    if (originalProxy === undefined) {
+      delete process.env.STYX_OPENAI_COMPAT_PROXY_URL;
+    } else {
+      process.env.STYX_OPENAI_COMPAT_PROXY_URL = originalProxy;
+    }
+  }
+});
+
 test('doubao adapter includes source image for edit mode', async () => {
   const requests: Record<string, unknown>[] = [];
   const adapter = createDoubaoImageProviderAdapter({

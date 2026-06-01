@@ -1,7 +1,10 @@
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
-
 import type { AiUsage } from '@/server/agent/types';
 import type { ResolvedChatModel } from '@/server/repositories/ai-models';
+import {
+  proxyRequestInit,
+  selectOpenAiCompatibleFetch,
+  type RequestInitWithDispatcher,
+} from './openai-compatible-transport';
 
 export type ChatProviderMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -56,11 +59,6 @@ export class ProviderRequestError extends Error {
 }
 
 type FetchLike = typeof fetch;
-type RequestInitWithDispatcher = RequestInit & {
-  dispatcher?: ProxyAgent;
-};
-
-let cachedProxyConfig: { url: string; agent: ProxyAgent } | null = null;
 
 function estimateTokensFromText(text: string) {
   return Math.max(1, Math.ceil(text.trim().length / 4));
@@ -222,28 +220,6 @@ export function createChatProviderAdapter(model: ResolvedChatModel): ChatProvide
 
 function ensureTrailingSlash(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
-}
-
-function proxyRequestInit(): Pick<RequestInitWithDispatcher, 'dispatcher'> {
-  const proxyUrl = process.env.STYX_OPENAI_COMPAT_PROXY_URL?.trim();
-  if (!proxyUrl) {
-    return {};
-  }
-
-  if (!cachedProxyConfig || cachedProxyConfig.url !== proxyUrl) {
-    cachedProxyConfig = {
-      url: proxyUrl,
-      agent: new ProxyAgent(proxyUrl),
-    };
-  }
-
-  return { dispatcher: cachedProxyConfig.agent };
-}
-
-function selectOpenAiCompatibleFetch(): FetchLike {
-  return process.env.STYX_OPENAI_COMPAT_PROXY_URL?.trim()
-    ? (undiciFetch as unknown as FetchLike)
-    : fetch;
 }
 
 function toErrorMessage(error: unknown) {

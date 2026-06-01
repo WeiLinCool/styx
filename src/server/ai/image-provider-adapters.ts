@@ -7,6 +7,11 @@ import {
   ProviderConfigurationError,
   ProviderRequestError,
 } from './provider-adapters';
+import {
+  proxyRequestInit,
+  selectOpenAiCompatibleFetch,
+  type RequestInitWithDispatcher,
+} from './openai-compatible-transport';
 
 export type ImageProviderRequest = {
   runId: string;
@@ -42,7 +47,7 @@ export function createDoubaoImageProviderAdapter(input: {
   fetch?: FetchLike;
   readEnv?: ReadEnv;
 } = {}): ImageProviderAdapter {
-  const fetchImpl = input.fetch ?? fetch;
+  const fetchImpl = input.fetch ?? selectOpenAiCompatibleFetch();
   const readEnv = input.readEnv ?? ((key) => process.env[key]);
 
   return {
@@ -71,7 +76,8 @@ export function createDoubaoImageProviderAdapter(input: {
             'content-type': 'application/json',
           },
           body: JSON.stringify(createDoubaoImageRequestBody(request)),
-        });
+          ...proxyRequestInit(),
+        } satisfies RequestInitWithDispatcher);
       } catch (error) {
         throw new ProviderRequestError(`Provider request failed: ${toErrorMessage(error)}`);
       }
