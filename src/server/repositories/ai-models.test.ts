@@ -10,7 +10,9 @@ import {
   getSeedAiModelAdminData,
   getSeedChatModelsForUser,
   getSeedImageModelsForUser,
+  listDatabaseImageModelsForUserFromRows,
   normalizeDefaultChatTarget,
+  resolveDatabaseImageModelForUserFromRows,
   resolveSeedChatModelForUser,
   resolveSeedImageModelForUser,
   summarizeAdminAiConfigTestResult,
@@ -18,6 +20,7 @@ import {
   updateAiModel,
   updateAiProvider,
   validateProviderTestConfiguration,
+  type DatabaseImageModelRow,
 } from './ai-models';
 
 const activeProEntitlement: ActiveUserEntitlement = {
@@ -27,6 +30,51 @@ const activeProEntitlement: ActiveUserEntitlement = {
   startsAt: '2026-01-01T00:00:00.000Z',
   expiresAt: null,
 };
+
+function buildDatabaseImageModelRow(input: {
+  id: string;
+  code: string;
+  status?: 'enabled' | 'disabled' | 'archived';
+  providerStatus?: 'enabled' | 'disabled' | 'archived';
+  supportsImageGeneration?: boolean;
+  supportsImageEdit?: boolean;
+  supportsImageUpscale?: boolean;
+  isDefaultImage?: boolean;
+  requirement?: DatabaseImageModelRow['requirement'];
+}): DatabaseImageModelRow {
+  return {
+    model: {
+      id: input.id,
+      providerId: `provider-${input.id}`,
+      code: input.code,
+      name: input.code,
+      model: input.code,
+      status: input.status ?? 'enabled',
+      supportsChat: false,
+      supportsImageGeneration: input.supportsImageGeneration ?? false,
+      supportsImageEdit: input.supportsImageEdit ?? false,
+      supportsImageUpscale: input.supportsImageUpscale ?? false,
+      isDefaultChat: false,
+      isDefaultImage: input.isDefaultImage ?? false,
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 1,
+        completionCreditsPer1k: 0,
+        minimumCredits: 1,
+      },
+    },
+    provider: {
+      id: `provider-${input.id}`,
+      code: 'development',
+      name: 'Development Provider',
+      providerType: 'development',
+      status: input.providerStatus ?? 'enabled',
+      baseUrl: null,
+      credentialEnvKey: null,
+    },
+    requirement: input.requirement ?? null,
+  };
+}
 
 test('getSeedChatModelsForUser returns free model for users without entitlements', async () => {
   const models = await getSeedChatModelsForUser('user-free', []);
@@ -76,6 +124,123 @@ test('resolveSeedImageModelForUser allows premium image model with active pro en
   assert.equal(model.code, 'dev-pro-image');
   assert.equal(model.entitlement.basis, 'membership_plan');
   assert.equal(model.supportedModes.includes('upscale'), true);
+});
+
+test('listDatabaseImageModelsForUserFromRows filters provider status, model status, mode support and entitlement', () => {
+  const rows: DatabaseImageModelRow[] = [
+    buildDatabaseImageModelRow({
+      id: 'model-free-generate',
+      code: 'db-free-generate',
+      supportsImageGeneration: true,
+      supportsImageEdit: true,
+      isDefaultImage: true,
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+    buildDatabaseImageModelRow({
+      id: 'model-pro-generate',
+      code: 'db-pro-generate',
+      supportsImageGeneration: true,
+      requirement: {
+        requirementType: 'membership_plan',
+        requirementValue: 'pro-monthly',
+        label: 'Pro',
+      },
+    }),
+    buildDatabaseImageModelRow({
+      id: 'model-disabled',
+      code: 'db-disabled',
+      status: 'disabled',
+      supportsImageGeneration: true,
+    }),
+    buildDatabaseImageModelRow({
+      id: 'model-provider-disabled',
+      code: 'db-provider-disabled',
+      providerStatus: 'disabled',
+      supportsImageGeneration: true,
+    }),
+    buildDatabaseImageModelRow({
+      id: 'model-edit-only',
+      code: 'db-edit-only',
+      supportsImageEdit: true,
+    }),
+  ];
+
+  const models = listDatabaseImageModelsForUserFromRows(rows, 'generate', []);
+
+  assert.deepEqual(models.map((model) => model.code), ['db-free-generate']);
+  assert.equal(models[0]?.isDefault, true);
+  assert.deepEqual(models[0]?.supportedModes, ['generate', 'edit']);
+});
+
+test('resolveDatabaseImageModelForUserFromRows rejects unavailable mode before entitlement', () => {
+  const rows: DatabaseImageModelRow[] = [
+    buildDatabaseImageModelRow({
+      id: 'model-edit-only',
+      code: 'db-edit-only',
+      supportsImageEdit: true,
+      requirement: {
+        requirementType: 'membership_plan',
+        requirementValue: 'pro-monthly',
+        label: 'Pro',
+      },
+    }),
+  ];
+
+  assert.throws(
+    () => resolveDatabaseImageModelForUserFromRows(rows, 'model-edit-only', 'upscale', []),
+    /Model is not available/,
+  );
+});
+
+test('resolveDatabaseImageModelForUserFromRows rejects unentitled premium image model', () => {
+  const rows: DatabaseImageModelRow[] = [
+    buildDatabaseImageModelRow({
+      id: 'model-pro-generate',
+      code: 'db-pro-generate',
+      supportsImageGeneration: true,
+      requirement: {
+        requirementType: 'membership_plan',
+        requirementValue: 'pro-monthly',
+        label: 'Pro',
+      },
+    }),
+  ];
+
+  assert.throws(
+    () => resolveDatabaseImageModelForUserFromRows(rows, 'model-pro-generate', 'generate', []),
+    /Model entitlement is required/,
+  );
+});
+
+test('resolveDatabaseImageModelForUserFromRows allows entitled premium image model', () => {
+  const rows: DatabaseImageModelRow[] = [
+    buildDatabaseImageModelRow({
+      id: 'model-pro-upscale',
+      code: 'db-pro-upscale',
+      supportsImageGeneration: true,
+      supportsImageUpscale: true,
+      requirement: {
+        requirementType: 'membership_plan',
+        requirementValue: 'pro-monthly',
+        label: 'Pro',
+      },
+    }),
+  ];
+
+  const model = resolveDatabaseImageModelForUserFromRows(
+    rows,
+    'model-pro-upscale',
+    'upscale',
+    [activeProEntitlement],
+  );
+
+  assert.equal(model.code, 'db-pro-upscale');
+  assert.equal(model.entitlement.basis, 'membership_plan');
+  assert.deepEqual(model.supportedModes, ['generate', 'upscale']);
 });
 
 test('buildModelRequirementSeedKey normalizes free requirement null value', () => {
@@ -157,6 +322,7 @@ test('getSeedAiModelAdminData shows provider, model, default and entitlement det
   const data = await getSeedAiModelAdminData();
   const freeModel = data.records.find((record) => record.code === 'dev-free-chat');
   const proModel = data.records.find((record) => record.code === 'dev-pro-chat');
+  const freeImageModel = data.records.find((record) => record.code === 'dev-free-image');
 
   assert.equal(data.source, 'seed');
   assert.equal(data.providers.length, 1);
@@ -166,6 +332,10 @@ test('getSeedAiModelAdminData shows provider, model, default and entitlement det
   assert.equal(proModel?.entitlementSummary, 'Pro');
   assert.equal(freeModel?.providerStatus, 'enabled');
   assert.equal(freeModel?.credential.status, 'not_required');
+  assert.equal(freeImageModel?.supportsImageGeneration, true);
+  assert.equal(freeImageModel?.supportsImageEdit, true);
+  assert.equal(freeImageModel?.supportsImageUpscale, false);
+  assert.equal(freeImageModel?.isDefaultImage, true);
 });
 
 test('buildModelStatusActions only offers meaningful enabled and disabled transitions', () => {

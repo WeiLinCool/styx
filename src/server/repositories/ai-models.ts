@@ -80,6 +80,10 @@ export type AdminAiModelRow = {
   status: AiModelStatus;
   supportsChat: boolean;
   isDefaultChat: boolean;
+  supportsImageGeneration: boolean;
+  supportsImageEdit: boolean;
+  supportsImageUpscale: boolean;
+  isDefaultImage: boolean;
   entitlementSummary: string;
   pricingSummary: string;
   credential: CredentialReferenceSummary;
@@ -200,6 +204,13 @@ const seedModels: ResolvedChatModel[] = [
   },
 ];
 
+const imageSeedFreePricing: AiModelPricing = {
+  unit: 'token',
+  promptCreditsPer1k: 1,
+  completionCreditsPer1k: 0,
+  minimumCredits: 1,
+};
+
 const seedImageModels: ResolvedImageModel[] = [
   {
     id: 'seed-model-free-image',
@@ -215,7 +226,7 @@ const seedImageModels: ResolvedImageModel[] = [
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-free-image',
-    pricing: defaultPricing,
+    pricing: imageSeedFreePricing,
     entitlement: { allowed: true, basis: 'none', label: 'Free', value: null },
     supportedModes: ['generate', 'edit'],
   },
@@ -278,6 +289,33 @@ type ChatModelRow = {
 };
 
 type ImageModelRow = ChatModelRow;
+
+export type DatabaseImageModelRow = {
+  model: Pick<
+    typeof schema.aiModels.$inferSelect,
+    | 'id'
+    | 'providerId'
+    | 'code'
+    | 'name'
+    | 'model'
+    | 'status'
+    | 'supportsChat'
+    | 'supportsImageGeneration'
+    | 'supportsImageEdit'
+    | 'supportsImageUpscale'
+    | 'isDefaultChat'
+    | 'isDefaultImage'
+    | 'pricing'
+  >;
+  provider: Pick<
+    typeof schema.aiProviders.$inferSelect,
+    'id' | 'code' | 'name' | 'providerType' | 'status' | 'baseUrl' | 'credentialEnvKey'
+  >;
+  requirement: Pick<
+    typeof schema.aiModelEntitlementRequirements.$inferSelect,
+    'requirementType' | 'requirementValue' | 'label'
+  > | null;
+};
 
 export async function getSeedChatModelsForUser(
   _userId: string,
@@ -402,9 +440,11 @@ export async function listAvailableImageModelsForUser(
     return getSeedImageModelsForUser(userId, mode, entitlements);
   }
 
-  return groupResolvedImageRows(await loadDatabaseImageModelRows(mode), entitlements)
-    .filter((model) => model.entitlement.allowed)
-    .map(toPublicImageModel);
+  return listDatabaseImageModelsForUserFromRows(
+    await loadDatabaseImageModelRows(mode),
+    mode,
+    entitlements,
+  );
 }
 
 export async function resolveImageModelForUser(
@@ -418,10 +458,31 @@ export async function resolveImageModelForUser(
     return resolveSeedImageModelForUser(userId, modelId, mode, entitlements);
   }
 
-  const models = groupResolvedImageRows(
+  return resolveDatabaseImageModelForUserFromRows(
     await loadDatabaseImageModelRows(mode, modelId),
+    modelId,
+    mode,
     entitlements,
   );
+}
+
+export function listDatabaseImageModelsForUserFromRows(
+  rows: DatabaseImageModelRow[],
+  mode: ImageModelMode,
+  entitlements: ActiveUserEntitlement[],
+): PublicImageModelDto[] {
+  return groupResolvedDatabaseImageRows(rows, mode, entitlements)
+    .filter((model) => model.entitlement.allowed)
+    .map(toPublicImageModel);
+}
+
+export function resolveDatabaseImageModelForUserFromRows(
+  rows: DatabaseImageModelRow[],
+  modelId: string,
+  mode: ImageModelMode,
+  entitlements: ActiveUserEntitlement[],
+): ResolvedImageModel {
+  const models = groupResolvedDatabaseImageRows(rows, mode, entitlements, modelId);
   const model = models.find((item) => item.id === modelId);
   if (!model) {
     throw new ModelNotAvailableError();
@@ -584,6 +645,10 @@ export async function updateAiModelStatus(input: {
         status: input.status,
         supportsChat: true,
         isDefaultChat: seed.isDefault,
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
+        isDefaultImage: false,
         pricing: seed.pricing,
       },
       provider: seedProviders[0],
@@ -642,6 +707,10 @@ export async function setDefaultAiChatModel(input: {
         status: 'enabled',
         supportsChat: true,
         isDefaultChat: true,
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
+        isDefaultImage: false,
         pricing: seed.pricing,
       },
       provider: seedProviders[0],
@@ -885,6 +954,10 @@ export async function createAiModel(input: {
         status: input.status,
         supportsChat: input.supportsChat,
         isDefaultChat: false,
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
+        isDefaultImage: false,
         pricing: defaultPricing,
       },
       provider,
@@ -945,6 +1018,10 @@ export async function updateAiModel(input: {
         status: input.status,
         supportsChat: input.supportsChat,
         isDefaultChat: input.modelId === 'seed-model-free',
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
+        isDefaultImage: false,
         pricing: defaultPricing,
       },
       provider,
@@ -1149,7 +1226,7 @@ async function waitForAdminTestRunCompletion(
 }
 
 export function getSeedAiModelAdminData(): AdminAiModelData {
-  const records = seedModels.map((model) =>
+  const chatRecords = seedModels.map((model) =>
     toAdminAiModelRow({
       model: {
         id: model.id,
@@ -1160,12 +1237,38 @@ export function getSeedAiModelAdminData(): AdminAiModelData {
         status: 'enabled',
         supportsChat: true,
         isDefaultChat: model.isDefault,
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
+        isDefaultImage: false,
         pricing: model.pricing,
       },
       provider: seedProviders[0],
       requirements: seedRequirementForModel(model),
     }),
   );
+  const imageRecords = seedImageModels.map((model) =>
+    toAdminAiModelRow({
+      model: {
+        id: model.id,
+        providerId: model.providerId,
+        code: model.code,
+        name: model.name,
+        model: model.model,
+        status: 'enabled',
+        supportsChat: false,
+        isDefaultChat: false,
+        supportsImageGeneration: model.supportedModes.includes('generate'),
+        supportsImageEdit: model.supportedModes.includes('edit'),
+        supportsImageUpscale: model.supportedModes.includes('upscale'),
+        isDefaultImage: model.isDefault,
+        pricing: model.pricing,
+      },
+      provider: seedProviders[0],
+      requirements: seedRequirementForModel(model),
+    }),
+  );
+  const records = [...chatRecords, ...imageRecords];
 
   const providers = seedProviders.map((provider) =>
     toAdminAiProviderRow({
@@ -1317,6 +1420,20 @@ function groupResolvedRows(
   });
 }
 
+function modelSupportsImageMode(
+  model: Pick<
+    typeof schema.aiModels.$inferSelect,
+    'supportsImageGeneration' | 'supportsImageEdit' | 'supportsImageUpscale'
+  >,
+  mode: ImageModelMode,
+) {
+  return mode === 'generate'
+    ? model.supportsImageGeneration
+    : mode === 'edit'
+      ? model.supportsImageEdit
+      : model.supportsImageUpscale;
+}
+
 function supportedImageModesForModel(
   model: Pick<
     typeof schema.aiModels.$inferSelect,
@@ -1352,6 +1469,23 @@ function groupResolvedImageRows(
       },
     ),
   }));
+}
+
+function groupResolvedDatabaseImageRows(
+  rows: DatabaseImageModelRow[],
+  mode: ImageModelMode,
+  entitlements: ActiveUserEntitlement[],
+  modelId?: string,
+): ResolvedImageModel[] {
+  const availableRows = rows.filter(
+    (row) =>
+      (!modelId || row.model.id === modelId) &&
+      row.model.status === 'enabled' &&
+      row.provider.status === 'enabled' &&
+      modelSupportsImageMode(row.model, mode),
+  );
+
+  return groupResolvedImageRows(availableRows as ImageModelRow[], entitlements);
 }
 
 async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow[]> {
@@ -1442,6 +1576,10 @@ type AdminAiModelGroup = {
     | 'status'
     | 'supportsChat'
     | 'isDefaultChat'
+    | 'supportsImageGeneration'
+    | 'supportsImageEdit'
+    | 'supportsImageUpscale'
+    | 'isDefaultImage'
     | 'pricing'
   >;
   provider: Pick<
@@ -1505,6 +1643,10 @@ function toAdminAiModelRow(group: AdminAiModelGroup): AdminAiModelRow {
     status: group.model.status,
     supportsChat: group.model.supportsChat,
     isDefaultChat: group.model.isDefaultChat,
+    supportsImageGeneration: group.model.supportsImageGeneration,
+    supportsImageEdit: group.model.supportsImageEdit,
+    supportsImageUpscale: group.model.supportsImageUpscale,
+    isDefaultImage: group.model.isDefaultImage,
     entitlementSummary: summarizeRequirements(group.requirements),
     pricingSummary: pricingSummary(pricing),
     credential: summarizeProviderCredentialReference({
@@ -1662,6 +1804,10 @@ async function loadAdminAiModelRows(modelId?: string): Promise<AdminAiModelRowSo
         status: schema.aiModels.status,
         supportsChat: schema.aiModels.supportsChat,
         isDefaultChat: schema.aiModels.isDefaultChat,
+        supportsImageGeneration: schema.aiModels.supportsImageGeneration,
+        supportsImageEdit: schema.aiModels.supportsImageEdit,
+        supportsImageUpscale: schema.aiModels.supportsImageUpscale,
+        isDefaultImage: schema.aiModels.isDefaultImage,
         pricing: schema.aiModels.pricing,
       },
       provider: {
