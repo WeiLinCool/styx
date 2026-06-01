@@ -5,6 +5,7 @@ import {
   selectOpenAiCompatibleFetch,
   type RequestInitWithDispatcher,
 } from './openai-compatible-transport';
+import { readSafeProviderErrorBody } from './provider-error-body';
 
 export type ChatProviderMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -151,7 +152,7 @@ export function createOpenAiCompatibleChatProviderAdapter(input: {
 
       if (!response.ok) {
         throw new ProviderRequestError(
-          `Provider request failed with status ${response.status}: ${await readSafeErrorBody(response)}`,
+          `Provider request failed with status ${response.status}: ${await readSafeProviderErrorBody(response)}`,
         );
       }
 
@@ -193,7 +194,7 @@ export function createOpenAiCompatibleChatProviderAdapter(input: {
 
       if (!response.ok) {
         throw new ProviderRequestError(
-          `Provider request failed with status ${response.status}: ${await readSafeErrorBody(response)}`,
+          `Provider request failed with status ${response.status}: ${await readSafeProviderErrorBody(response)}`,
         );
       }
 
@@ -224,15 +225,6 @@ function ensureTrailingSlash(value: string) {
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function readSafeErrorBody(response: Response) {
-  try {
-    const body = await response.text();
-    return body.trim().slice(0, 500) || 'empty response body';
-  } catch {
-    return 'unreadable response body';
-  }
 }
 
 async function readJsonResponse(response: Response) {

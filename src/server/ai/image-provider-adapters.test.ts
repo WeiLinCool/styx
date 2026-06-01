@@ -297,7 +297,11 @@ test('doubao adapter redacts non-ok response body and throws ProviderRequestErro
     fetch: async () =>
       new Response(
         JSON.stringify({
-          error: 'provider rejected request',
+          error: {
+            message: 'rate limit exceeded',
+            type: 'requests',
+            code: 'rate_limit_exceeded',
+          },
           prompt: sensitivePrompt,
           image: sensitiveImage,
         }),
@@ -318,9 +322,10 @@ test('doubao adapter redacts non-ok response body and throws ProviderRequestErro
     (error) =>
       error instanceof ProviderRequestError &&
       /status 429/.test(error.message) &&
-      /response body redacted/.test(error.message) &&
+      /rate limit exceeded/.test(error.message) &&
+      /rate_limit_exceeded/.test(error.message) &&
       !error.message.includes(sensitivePrompt) &&
       !error.message.includes(sensitiveImage) &&
-      !error.message.includes('provider rejected request'),
+      !error.message.includes('data:image/png'),
   );
 });

@@ -12,6 +12,7 @@ import {
   selectOpenAiCompatibleFetch,
   type RequestInitWithDispatcher,
 } from './openai-compatible-transport';
+import { readSafeProviderErrorBody } from './provider-error-body';
 
 export type ImageProviderRequest = {
   runId: string;
@@ -84,7 +85,7 @@ export function createDoubaoImageProviderAdapter(input: {
 
       if (!response.ok) {
         throw new ProviderRequestError(
-          `Provider request failed with status ${response.status}: ${await readSafeErrorBody(response)}`,
+          `Provider request failed with status ${response.status}: ${await readSafeProviderErrorBody(response)}`,
         );
       }
 
@@ -199,17 +200,6 @@ async function readJsonResponse(response: Response) {
     return JSON.parse(body) as unknown;
   } catch (error) {
     throw new ProviderRequestError(`Provider returned invalid JSON: ${toErrorMessage(error)}`);
-  }
-}
-
-async function readSafeErrorBody(response: Response) {
-  try {
-    const byteLength = (await response.text()).length;
-    return byteLength > 0
-      ? `response body redacted (${byteLength} chars)`
-      : 'empty response body';
-  } catch {
-    return 'response body unavailable';
   }
 }
 
