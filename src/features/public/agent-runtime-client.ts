@@ -3,6 +3,7 @@ import type {
   AgentRunDto,
   AgentTaskType,
   CreateAgentRunResult,
+  DirectMediaResultDto,
 } from '@/server/agent/types';
 
 export type ChatModelOption = {
@@ -177,4 +178,62 @@ export async function deleteAgentRun(runId: string): Promise<AgentRunDto> {
 
 export function createAgentRunEventsUrl(runId: string) {
   return `/api/agent/runs/${runId}/events`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function parseStreamEventPayload(event: Pick<MessageEvent, 'data'>): Record<string, unknown> | null {
+  if (typeof event.data !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(event.data);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseDirectMediaArtifactPayload(value: unknown): DirectMediaResultDto | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const payload = isRecord(value.payload) ? value.payload : value;
+  const artifact = isRecord(payload.artifact) ? payload.artifact : null;
+  if (!artifact) {
+    return null;
+  }
+
+  const delivery = isRecord(artifact.delivery) ? artifact.delivery : null;
+  const metadata = isRecord(artifact.metadata) ? artifact.metadata : null;
+  if (
+    (artifact.kind !== 'image' && artifact.kind !== 'video') ||
+    typeof artifact.title !== 'string' ||
+    !delivery ||
+    (delivery.mode !== 'provider_url' && delivery.mode !== 'data_url') ||
+    typeof delivery.url !== 'string' ||
+    (delivery.expiresAt !== null && typeof delivery.expiresAt !== 'string') ||
+    !metadata ||
+    metadata.storageStatus !== 'provider_direct'
+  ) {
+    return null;
+  }
+
+  return {
+    kind: artifact.kind,
+    title: artifact.title,
+    delivery: {
+      mode: delivery.mode,
+      url: delivery.url,
+      expiresAt: delivery.expiresAt,
+    },
+    metadata: {
+      ...metadata,
+      storageStatus: 'provider_direct',
+    },
+  };
 }

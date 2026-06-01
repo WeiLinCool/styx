@@ -4,8 +4,11 @@ import test from 'node:test';
 import {
   AgentRuntimeApiError,
   createAgentRun,
+  createAgentRunEventsUrl,
   getAgentRunDetail,
   listChatModels,
+  parseDirectMediaArtifactPayload,
+  parseStreamEventPayload,
   selectChatModelId,
   type ChatModelOption,
 } from './agent-runtime-client';
@@ -192,4 +195,37 @@ test('selectChatModelId keeps valid prior selection before falling back to defau
   assert.equal(selectChatModelId(models, 'model-pro'), 'model-pro');
   assert.equal(selectChatModelId(models, 'missing'), 'model-free');
   assert.equal(selectChatModelId([], 'model-pro'), null);
+});
+
+test('createAgentRunEventsUrl returns the run SSE route', () => {
+  assert.equal(createAgentRunEventsUrl('run-1'), '/api/agent/runs/run-1/events');
+});
+
+test('parseDirectMediaArtifactPayload reads provider-direct image payload', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    payload: {
+      artifact: {
+        kind: 'image',
+        title: '生成图片',
+        delivery: {
+          mode: 'data_url',
+          url: 'data:image/png;base64,abc',
+          expiresAt: null,
+        },
+        metadata: {
+          storageStatus: 'provider_direct',
+          mimeType: 'image/png',
+          filename: 'image.png',
+        },
+      },
+    },
+  });
+
+  assert.equal(parsed?.kind, 'image');
+  assert.equal(parsed?.delivery.url, 'data:image/png;base64,abc');
+  assert.equal(parsed?.metadata.storageStatus, 'provider_direct');
+});
+
+test('parseStreamEventPayload returns null for invalid event JSON', () => {
+  assert.equal(parseStreamEventPayload({ data: '{' } as MessageEvent), null);
 });
