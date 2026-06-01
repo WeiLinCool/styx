@@ -138,7 +138,13 @@ function toTransientArtifact(artifact: AgentArtifactInput): TransientAgentArtifa
   const metadata = cloneRecord(artifact.metadata ?? {});
   const mimeType = readArtifactString(metadata, 'mimeType') ?? 'application/octet-stream';
   const dataUrl = artifact.body && artifact.body.startsWith('data:') ? artifact.body : undefined;
-  const url = artifact.url && artifact.url.startsWith('data:') ? artifact.url : undefined;
+  const url =
+    artifact.url &&
+    (artifact.url.startsWith('data:') ||
+      artifact.url.startsWith('https://') ||
+      artifact.url.startsWith('http://'))
+      ? artifact.url
+      : undefined;
   const payload = dataUrl ?? url;
   if (!payload) {
     return null;

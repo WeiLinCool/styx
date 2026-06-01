@@ -136,6 +136,42 @@ test('createAndRunAgentRun returns transient image artifact while persisting onl
   assert.equal(stored?.artifacts[0]?.url, null);
 });
 
+test('createAndRunAgentRun returns transient image artifact from provider URL output', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        return {
+          finalMessage: 'Generated 1 image.',
+          artifacts: [
+            {
+              kind: 'image',
+              title: 'Generated image',
+              url: 'https://provider.example/generated.png',
+              metadata: {
+                mimeType: 'image/png',
+              },
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'workflow',
+    prompt: '一张石印风格插画',
+    input: { mode: 'generate', size: '1:1' },
+  });
+
+  assert.equal(result.run.status, 'succeeded');
+  assert.equal(result.transientArtifacts.length, 1);
+  assert.equal(result.transientArtifacts[0]?.dataUrl, 'https://provider.example/generated.png');
+  assert.equal(result.run.artifacts[0]?.url, null);
+});
+
 test('createAndRunAgentRun records failure when runtime throws', async () => {
   const repository = createMemoryAgentRunRepository();
   const service = createAgentRunService({
