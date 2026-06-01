@@ -27,6 +27,11 @@ import {
   createUnconfiguredCapabilitySnapshot,
   type PiAgentRuntime,
 } from './pi-runtime';
+import {
+  createDirectMediaEventPayload,
+  sanitizeDirectMediaArtifact,
+  toDirectMediaResult,
+} from './media-results';
 
 export class AgentCapabilityBundleNotFoundError extends Error {
   constructor(taskType: AgentTaskType) {
@@ -157,6 +162,14 @@ function splitTransientArtifacts(artifacts: AgentArtifactInput[]) {
       .map(toTransientArtifact)
       .filter((artifact): artifact is TransientAgentArtifactDto => artifact !== null),
   };
+}
+
+function isMediaTask(taskType: AgentTaskType) {
+  return taskType === 'image' || taskType === 'video';
+}
+
+function hasUsableDirectMedia(artifacts: AgentArtifactInput[]) {
+  return artifacts.some((artifact) => toDirectMediaResult(artifact));
 }
 
 function runResult(
@@ -347,6 +360,35 @@ export function createAgentRunService({
         return runResult(requireUpdatedRun(await repository.failRun(created.id, error.message), 'fail run'));
       }
 
+      if (isMediaTask(input.taskType)) {
+        const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+        await recordEventIfSupported(repository, running.id, 'running', 'Agent runtime started', {
+          provider: capabilitySnapshot.provider,
+          model: capabilitySnapshot.model,
+        });
+
+        void runMediaOrchestration({
+          repository,
+          runtime,
+          request: input,
+          capabilitySnapshot,
+          running,
+        }).catch(async (error) => {
+          const errorMessage = toErrorMessage(error);
+          await recordEventIfSupported(repository, running.id, 'failed', errorMessage);
+          await repository.appendRunEvent(running.id, {
+            eventType: 'run_failed',
+            payload: {
+              message: errorMessage,
+              failedAt: new Date().toISOString(),
+            },
+          });
+          await repository.failRun(running.id, errorMessage);
+        });
+
+        return runResult(running);
+      }
+
       try {
         const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
         await recordEventIfSupported(repository, running.id, 'running', 'Agent runtime started', {
@@ -385,6 +427,72 @@ export function createAgentRunService({
       }
     },
   };
+}
+
+async function runMediaOrchestration(input: {
+  repository: AgentRunRepository;
+  runtime: PiAgentRuntime;
+  request: CreateAndRunAgentRunInput;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  running: AgentRunDto;
+}) {
+  await input.repository.appendRunEvent(input.running.id, {
+    eventType: 'artifact_started',
+    payload: {
+      taskType: input.request.taskType,
+      startedAt: new Date().toISOString(),
+    },
+  });
+
+  const result = await input.runtime.run({
+    runId: input.running.id,
+    userId: input.request.userId,
+    taskType: input.request.taskType,
+    prompt: input.request.prompt,
+    provider: input.capabilitySnapshot.provider,
+    model: input.capabilitySnapshot.model,
+    capabilities: structuredClone(input.capabilitySnapshot.capabilities),
+    input: cloneRecord(input.request.input),
+  });
+
+  if (!hasUsableDirectMedia(result.artifacts)) {
+    throw new Error('模型任务完成，但没有返回可展示的图片或视频。');
+  }
+
+  const directMediaResults = result.artifacts
+    .map(toDirectMediaResult)
+    .filter((artifact): artifact is NonNullable<ReturnType<typeof toDirectMediaResult>> => artifact !== null);
+
+  await input.repository.appendRunEvents(
+    input.running.id,
+    directMediaResults.map((artifact) => ({
+      eventType: 'artifact_completed',
+      payload: createDirectMediaEventPayload(artifact),
+    })),
+  );
+
+  const completed = requireUpdatedRun(
+    await input.repository.completeRun(input.running.id, {
+      finalMessage: result.finalMessage,
+      artifacts: result.artifacts.map(sanitizeDirectMediaArtifact),
+    }),
+    'complete run',
+  );
+
+  await input.repository.appendRunEvent(completed.id, {
+    eventType: 'run_completed',
+    payload: {
+      finalMessage: result.finalMessage,
+      artifactCount: directMediaResults.length,
+      storageStatus: 'provider_direct',
+      completedAt: new Date().toISOString(),
+    },
+  });
+
+  await recordEventIfSupported(input.repository, completed.id, 'succeeded', 'Agent run succeeded', {
+    artifactCount: directMediaResults.length,
+    storageStatus: 'provider_direct',
+  });
 }
 
 async function createAndRunChatAgentRun(input: {
