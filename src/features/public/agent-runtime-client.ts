@@ -104,7 +104,7 @@ function isImageModelMode(value: unknown): value is ImageModelMode {
   return value === 'generate' || value === 'edit' || value === 'upscale';
 }
 
-function parseImageModel(value: unknown): ImageModelOption | null {
+export function parseImageModel(value: unknown): ImageModelOption | null {
   const model = parseChatModel(value);
   if (!model || !value || typeof value !== 'object') {
     return null;

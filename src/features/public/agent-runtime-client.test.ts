@@ -7,6 +7,7 @@ import {
   getAgentRunDetail,
   listImageModels,
   listChatModels,
+  parseImageModel,
   selectImageModelId,
   selectChatModelId,
   type ChatModelOption,
@@ -110,6 +111,34 @@ test('listImageModels returns parsed image model options', async () => {
     const models = await listImageModels('generate');
     assert.equal(models[0]?.id, 'model-1');
     assert.deepEqual(models[0]?.supportedModes, ['generate', 'edit']);
+  } finally {
+    restore();
+  }
+});
+
+test('parseImageModel rejects malformed supported modes', () => {
+  const validModel = makeImageModel();
+
+  assert.equal(parseImageModel({ ...validModel, supportedModes: undefined }), null);
+  assert.equal(parseImageModel({ ...validModel, supportedModes: [] }), null);
+  assert.equal(parseImageModel({ ...validModel, supportedModes: ['generate', 'video'] }), null);
+  assert.equal(parseImageModel({ ...validModel, supportedModes: 'generate' }), null);
+});
+
+test('listImageModels drops malformed image model options', async () => {
+  const validModel = makeImageModel({ id: 'valid', supportedModes: ['generate', 'edit'] });
+  const restore = installFetchMock({
+    models: [
+      { ...validModel, id: 'missing-modes', supportedModes: undefined },
+      { ...validModel, id: 'invalid-mode', supportedModes: ['generate', 'video'] },
+      validModel,
+    ],
+  });
+
+  try {
+    const models = await listImageModels('generate');
+
+    assert.deepEqual(models.map((model) => model.id), ['valid']);
   } finally {
     restore();
   }
