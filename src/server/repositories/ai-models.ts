@@ -282,11 +282,34 @@ const seedProviders = [
 
 const adminAiLoopTestUserId = '00000000-0000-4000-8000-000000000001';
 
-type ChatModelRow = {
-  model: typeof schema.aiModels.$inferSelect;
-  provider: typeof schema.aiProviders.$inferSelect;
-  requirement: typeof schema.aiModelEntitlementRequirements.$inferSelect | null;
+export type DatabaseChatModelRow = {
+  model: Pick<
+    typeof schema.aiModels.$inferSelect,
+    | 'id'
+    | 'providerId'
+    | 'code'
+    | 'name'
+    | 'model'
+    | 'status'
+    | 'supportsChat'
+    | 'supportsImageGeneration'
+    | 'supportsImageEdit'
+    | 'supportsImageUpscale'
+    | 'isDefaultChat'
+    | 'isDefaultImage'
+    | 'pricing'
+  >;
+  provider: Pick<
+    typeof schema.aiProviders.$inferSelect,
+    'id' | 'code' | 'name' | 'providerType' | 'status' | 'baseUrl' | 'credentialEnvKey'
+  >;
+  requirement: Pick<
+    typeof schema.aiModelEntitlementRequirements.$inferSelect,
+    'requirementType' | 'requirementValue' | 'label'
+  > | null;
 };
+
+type ChatModelRow = DatabaseChatModelRow;
 
 type ImageModelRow = ChatModelRow;
 
@@ -403,9 +426,7 @@ export async function listAvailableChatModelsForUser(
     return getSeedChatModelsForUser(userId, entitlements);
   }
 
-  return groupResolvedRows(await loadDatabaseChatModelRows(), entitlements)
-    .filter((model) => model.entitlement.allowed)
-    .map(toPublicModel);
+  return listDatabaseChatModelsForUserFromRows(await loadDatabaseChatModelRows(), entitlements);
 }
 
 export async function resolveChatModelForUser(
@@ -418,16 +439,11 @@ export async function resolveChatModelForUser(
     return resolveSeedChatModelForUser(userId, modelId, entitlements);
   }
 
-  const models = groupResolvedRows(await loadDatabaseChatModelRows(modelId), entitlements);
-  const model = models.find((item) => item.id === modelId);
-  if (!model) {
-    throw new ModelNotAvailableError();
-  }
-  if (!model.entitlement.allowed) {
-    throw new ModelEntitlementRequiredError();
-  }
-
-  return model;
+  return resolveDatabaseChatModelForUserFromRows(
+    await loadDatabaseChatModelRows(modelId),
+    modelId,
+    entitlements,
+  );
 }
 
 export async function listAvailableImageModelsForUser(
@@ -474,6 +490,32 @@ export function listDatabaseImageModelsForUserFromRows(
   return groupResolvedDatabaseImageRows(rows, mode, entitlements)
     .filter((model) => model.entitlement.allowed)
     .map(toPublicImageModel);
+}
+
+export function listDatabaseChatModelsForUserFromRows(
+  rows: DatabaseChatModelRow[],
+  entitlements: ActiveUserEntitlement[],
+): PublicChatModelDto[] {
+  return groupResolvedDatabaseChatRows(rows, entitlements)
+    .filter((model) => model.entitlement.allowed)
+    .map(toPublicModel);
+}
+
+export function resolveDatabaseChatModelForUserFromRows(
+  rows: DatabaseChatModelRow[],
+  modelId: string,
+  entitlements: ActiveUserEntitlement[],
+): ResolvedChatModel {
+  const models = groupResolvedDatabaseChatRows(rows, entitlements, modelId);
+  const model = models.find((item) => item.id === modelId);
+  if (!model) {
+    throw new ModelNotAvailableError();
+  }
+  if (!model.entitlement.allowed) {
+    throw new ModelEntitlementRequiredError();
+  }
+
+  return model;
 }
 
 export function resolveDatabaseImageModelForUserFromRows(
@@ -1382,8 +1424,8 @@ function groupResolvedRows(
   const grouped = new Map<
     string,
     {
-      model: typeof schema.aiModels.$inferSelect;
-      provider: typeof schema.aiProviders.$inferSelect;
+      model: ChatModelRow['model'];
+      provider: ChatModelRow['provider'];
       requirements: ModelEntitlementRequirement[];
     }
   >();
@@ -1395,7 +1437,7 @@ function groupResolvedRows(
       {
         model: row.model,
         provider: row.provider,
-        requirements: [],
+        requirements: [] as ModelEntitlementRequirement[],
       };
 
     if (row.requirement) {
@@ -1447,6 +1489,15 @@ function modelSupportsImageMode(
       : model.supportsImageUpscale;
 }
 
+function modelSupportsAnyImageMode(
+  model: Pick<
+    typeof schema.aiModels.$inferSelect,
+    'supportsImageGeneration' | 'supportsImageEdit' | 'supportsImageUpscale'
+  >,
+) {
+  return model.supportsImageGeneration || model.supportsImageEdit || model.supportsImageUpscale;
+}
+
 function supportedImageModesForModel(
   model: Pick<
     typeof schema.aiModels.$inferSelect,
@@ -1484,6 +1535,23 @@ function groupResolvedImageRows(
   }));
 }
 
+function groupResolvedDatabaseChatRows(
+  rows: DatabaseChatModelRow[],
+  entitlements: ActiveUserEntitlement[],
+  modelId?: string,
+): ResolvedChatModel[] {
+  const availableRows = rows.filter(
+    (row) =>
+      (!modelId || row.model.id === modelId) &&
+      row.model.status === 'enabled' &&
+      row.model.supportsChat &&
+      !modelSupportsAnyImageMode(row.model) &&
+      row.provider.status === 'enabled',
+  );
+
+  return groupResolvedRows(availableRows as ChatModelRow[], entitlements);
+}
+
 function groupResolvedDatabaseImageRows(
   rows: DatabaseImageModelRow[],
   mode: ImageModelMode,
@@ -1511,11 +1579,17 @@ async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow
         eq(schema.aiModels.id, modelId),
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsChat, true),
+        eq(schema.aiModels.supportsImageGeneration, false),
+        eq(schema.aiModels.supportsImageEdit, false),
+        eq(schema.aiModels.supportsImageUpscale, false),
         eq(schema.aiProviders.status, 'enabled'),
       )
     : and(
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsChat, true),
+        eq(schema.aiModels.supportsImageGeneration, false),
+        eq(schema.aiModels.supportsImageEdit, false),
+        eq(schema.aiModels.supportsImageUpscale, false),
         eq(schema.aiProviders.status, 'enabled'),
       );
 

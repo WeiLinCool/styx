@@ -10,8 +10,10 @@ import {
   getSeedAiModelAdminData,
   getSeedChatModelsForUser,
   getSeedImageModelsForUser,
+  listDatabaseChatModelsForUserFromRows,
   listDatabaseImageModelsForUserFromRows,
   normalizeDefaultChatTarget,
+  resolveDatabaseChatModelForUserFromRows,
   resolveDatabaseImageModelForUserFromRows,
   resolveSeedChatModelForUser,
   resolveSeedImageModelForUser,
@@ -20,6 +22,7 @@ import {
   updateAiModel,
   updateAiProvider,
   validateProviderTestConfiguration,
+  type DatabaseChatModelRow,
   type DatabaseImageModelRow,
 } from './ai-models';
 
@@ -76,6 +79,51 @@ function buildDatabaseImageModelRow(input: {
   };
 }
 
+function buildDatabaseChatModelRow(input: {
+  id: string;
+  code: string;
+  status?: 'enabled' | 'disabled' | 'archived';
+  providerStatus?: 'enabled' | 'disabled' | 'archived';
+  supportsImageGeneration?: boolean;
+  supportsImageEdit?: boolean;
+  supportsImageUpscale?: boolean;
+  isDefaultChat?: boolean;
+  requirement?: DatabaseChatModelRow['requirement'];
+}): DatabaseChatModelRow {
+  return {
+    model: {
+      id: input.id,
+      providerId: `provider-${input.id}`,
+      code: input.code,
+      name: input.code,
+      model: input.code,
+      status: input.status ?? 'enabled',
+      supportsChat: true,
+      supportsImageGeneration: input.supportsImageGeneration ?? false,
+      supportsImageEdit: input.supportsImageEdit ?? false,
+      supportsImageUpscale: input.supportsImageUpscale ?? false,
+      isDefaultChat: input.isDefaultChat ?? false,
+      isDefaultImage: false,
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 1,
+        completionCreditsPer1k: 0,
+        minimumCredits: 1,
+      },
+    },
+    provider: {
+      id: `provider-${input.id}`,
+      code: 'development',
+      name: 'Development Provider',
+      providerType: 'development',
+      status: input.providerStatus ?? 'enabled',
+      baseUrl: null,
+      credentialEnvKey: null,
+    },
+    requirement: input.requirement ?? null,
+  };
+}
+
 test('getSeedChatModelsForUser returns free model for users without entitlements', async () => {
   const models = await getSeedChatModelsForUser('user-free', []);
 
@@ -96,6 +144,50 @@ test('resolveSeedChatModelForUser allows premium model with active pro entitleme
   assert.equal(model.code, 'dev-pro-chat');
   assert.equal(model.entitlement.basis, 'membership_plan');
   assert.equal(model.entitlement.value, 'pro-monthly');
+});
+
+test('listDatabaseChatModelsForUserFromRows excludes multimodal models', () => {
+  const rows: DatabaseChatModelRow[] = [
+    buildDatabaseChatModelRow({
+      id: 'model-chat',
+      code: 'db-chat',
+      isDefaultChat: true,
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+    buildDatabaseChatModelRow({
+      id: 'model-multimodal',
+      code: 'db-multimodal',
+      supportsImageGeneration: true,
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+  ];
+
+  const models = listDatabaseChatModelsForUserFromRows(rows, []);
+
+  assert.deepEqual(models.map((model) => model.code), ['db-chat']);
+});
+
+test('resolveDatabaseChatModelForUserFromRows rejects multimodal model ids', () => {
+  const rows: DatabaseChatModelRow[] = [
+    buildDatabaseChatModelRow({
+      id: 'model-multimodal',
+      code: 'db-multimodal',
+      supportsImageGeneration: true,
+    }),
+  ];
+
+  assert.throws(
+    () => resolveDatabaseChatModelForUserFromRows(rows, 'model-multimodal', []),
+    /Model is not available/,
+  );
 });
 
 test('getSeedImageModelsForUser returns entitled models for the requested image mode', async () => {
