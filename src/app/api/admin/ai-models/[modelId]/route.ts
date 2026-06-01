@@ -17,6 +17,9 @@ const bodySchema = z.object({
   model: z.string().trim().min(1),
   status: z.enum(['enabled', 'disabled']),
   supportsChat: z.boolean(),
+  supportsImageGeneration: z.boolean(),
+  supportsImageEdit: z.boolean(),
+  supportsImageUpscale: z.boolean(),
 });
 
 export async function parseAiModelUpdateBody(request: Pick<Request, 'json'>) {

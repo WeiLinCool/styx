@@ -55,6 +55,9 @@ type ModelFormValues = {
   model: string;
   status: 'enabled' | 'disabled';
   supportsChat: boolean;
+  supportsImageGeneration: boolean;
+  supportsImageEdit: boolean;
+  supportsImageUpscale: boolean;
 };
 
 async function postJson(url: string, body: Record<string, unknown>) {
@@ -409,6 +412,54 @@ function ModelDialog({
               />
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FormField
+                control={form.control}
+                name="supportsImageGeneration"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>图像生成</FormLabel>
+                    <FormControl>
+                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="supportsImageEdit"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>图像编辑</FormLabel>
+                    <FormControl>
+                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="supportsImageUpscale"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>图像放大</FormLabel>
+                    <FormControl>
+                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
             {error ? <p className="text-sm text-red-700">{error}</p> : null}
             <DialogFooter>
               <Button type="submit" disabled={isSubmitting}>
@@ -494,7 +545,7 @@ export function CreateAiModelDialog({
         </Button>
       }
       title="新增模型"
-      description="绑定供应商、模型名与 chat 能力。"
+      description="绑定供应商、模型名与 chat / image 能力。"
       submitLabel="保存模型"
       submitUrl="/api/admin/ai-models"
       providers={providers}
@@ -505,6 +556,9 @@ export function CreateAiModelDialog({
         model: '',
         status: 'disabled',
         supportsChat: true,
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
       }}
     />
   );
@@ -526,7 +580,7 @@ export function EditAiModelDialog({
         </Button>
       }
       title="编辑模型"
-      description="更新供应商绑定、模型标识和 chat 状态。"
+      description="更新供应商绑定、模型标识和 chat / image 能力。"
       submitLabel="保存修改"
       submitUrl={`/api/admin/ai-models/${model.id}`}
       providers={providers}
@@ -537,6 +591,9 @@ export function EditAiModelDialog({
         model: model.model,
         status: model.status === 'archived' ? 'disabled' : model.status,
         supportsChat: model.supportsChat,
+        supportsImageGeneration: model.supportsImageGeneration,
+        supportsImageEdit: model.supportsImageEdit,
+        supportsImageUpscale: model.supportsImageUpscale,
       }}
     />
   );

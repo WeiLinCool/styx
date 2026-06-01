@@ -81,6 +81,14 @@ function modelMatchesQuickFilter(model: AdminAiModelRow, filter: string) {
     return model.isDefaultChat;
   }
 
+  if (filter === 'image') {
+    return (
+      model.supportsImageGeneration ||
+      model.supportsImageEdit ||
+      model.supportsImageUpscale
+    );
+  }
+
   return model.status === filter;
 }
 
@@ -96,6 +104,16 @@ function modelMatchesKeyword(model: AdminAiModelRow, keyword: string) {
     model.status,
     model.supportsChat ? 'chat supports_chat 支持对话' : 'no_chat 不支持对话',
     model.isDefaultChat ? 'default 默认模型' : 'not_default 非默认',
+    model.supportsImageGeneration
+      ? 'image generate supports_image_generation 图像生成'
+      : 'no_image_generate 不支持图像生成',
+    model.supportsImageEdit
+      ? 'image edit supports_image_edit 图像编辑'
+      : 'no_image_edit 不支持图像编辑',
+    model.supportsImageUpscale
+      ? 'image upscale supports_image_upscale 图像放大'
+      : 'no_image_upscale 不支持图像放大',
+    model.isDefaultImage ? 'default image 默认图像模型' : 'not_default_image 非默认图像模型',
     model.providerName,
     model.providerCode,
     model.providerType,
@@ -153,7 +171,11 @@ const columns: AiModelColumn[] = [
         items={[
           model.status,
           model.supportsChat ? 'chat' : 'no chat',
-          model.isDefaultChat ? 'default chat' : 'not default',
+          model.supportsImageGeneration ? 'image generate' : 'no image generate',
+          model.supportsImageEdit ? 'image edit' : 'no image edit',
+          model.supportsImageUpscale ? 'image upscale' : 'no image upscale',
+          model.isDefaultChat ? 'default chat' : 'not default chat',
+          model.isDefaultImage ? 'default image' : 'not default image',
         ]}
       />
     ),

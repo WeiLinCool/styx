@@ -507,7 +507,7 @@ export function AdminAiModelActions({
             successMessage: 'AI 模型已停用。',
             variant: 'destructive' as const,
           },
-          ...(!model.isDefaultChat
+          ...(model.supportsChat && !model.isDefaultChat
             ? [
                 {
                   label: '设为默认',

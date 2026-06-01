@@ -935,6 +935,9 @@ export async function createAiModel(input: {
   model: string;
   status: Extract<AiModelStatus, 'enabled' | 'disabled'>;
   supportsChat: boolean;
+  supportsImageGeneration: boolean;
+  supportsImageEdit: boolean;
+  supportsImageUpscale: boolean;
 }): Promise<AdminAiModelRow> {
   const database = requireAiModelDatabase('AI model create');
 
@@ -954,9 +957,9 @@ export async function createAiModel(input: {
         status: input.status,
         supportsChat: input.supportsChat,
         isDefaultChat: false,
-        supportsImageGeneration: false,
-        supportsImageEdit: false,
-        supportsImageUpscale: false,
+        supportsImageGeneration: input.supportsImageGeneration,
+        supportsImageEdit: input.supportsImageEdit,
+        supportsImageUpscale: input.supportsImageUpscale,
         isDefaultImage: false,
         pricing: defaultPricing,
       },
@@ -976,6 +979,10 @@ export async function createAiModel(input: {
       status: input.status,
       supportsChat: input.supportsChat,
       isDefaultChat: false,
+      supportsImageGeneration: input.supportsImageGeneration,
+      supportsImageEdit: input.supportsImageEdit,
+      supportsImageUpscale: input.supportsImageUpscale,
+      isDefaultImage: false,
       sortOrder: 0,
       pricing: defaultPricing,
       metadata: {},
@@ -999,6 +1006,9 @@ export async function updateAiModel(input: {
   model: string;
   status: Extract<AiModelStatus, 'enabled' | 'disabled'>;
   supportsChat: boolean;
+  supportsImageGeneration: boolean;
+  supportsImageEdit: boolean;
+  supportsImageUpscale: boolean;
 }): Promise<AdminAiModelRow> {
   const database = requireAiModelDatabase('AI model update');
 
@@ -1018,9 +1028,9 @@ export async function updateAiModel(input: {
         status: input.status,
         supportsChat: input.supportsChat,
         isDefaultChat: input.modelId === 'seed-model-free',
-        supportsImageGeneration: false,
-        supportsImageEdit: false,
-        supportsImageUpscale: false,
+        supportsImageGeneration: input.supportsImageGeneration,
+        supportsImageEdit: input.supportsImageEdit,
+        supportsImageUpscale: input.supportsImageUpscale,
         isDefaultImage: false,
         pricing: defaultPricing,
       },
@@ -1038,6 +1048,9 @@ export async function updateAiModel(input: {
       model: input.model.trim(),
       status: input.status,
       supportsChat: input.supportsChat,
+      supportsImageGeneration: input.supportsImageGeneration,
+      supportsImageEdit: input.supportsImageEdit,
+      supportsImageUpscale: input.supportsImageUpscale,
       updatedAt: new Date(),
     })
     .where(eq(schema.aiModels.id, input.modelId))
@@ -1728,6 +1741,19 @@ function buildAdminAiModelData(
         tone: 'info',
       },
       {
+        label: 'Image 支持',
+        value: String(
+          records.filter(
+            (record) =>
+              record.supportsImageGeneration ||
+              record.supportsImageEdit ||
+              record.supportsImageUpscale,
+          ).length,
+        ),
+        hint: 'image capabilities',
+        tone: 'info',
+      },
+      {
         label: '凭据检查',
         value: String(invalidCredentialCount),
         hint: invalidCredentialCount > 0 ? 'needs attention' : 'valid',
@@ -1750,6 +1776,16 @@ function buildAdminAiModelData(
         label: 'Chat',
         value: 'chat',
         count: records.filter((record) => record.supportsChat).length,
+      },
+      {
+        label: 'Image',
+        value: 'image',
+        count: records.filter(
+          (record) =>
+            record.supportsImageGeneration ||
+            record.supportsImageEdit ||
+            record.supportsImageUpscale,
+        ).length,
       },
       {
         label: 'Default',

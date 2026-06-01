@@ -437,10 +437,33 @@ test('updateAiModel updates model summary in seed mode', async () => {
     model: 'development-free-chat-updated',
     status: 'enabled',
     supportsChat: true,
+    supportsImageGeneration: false,
+    supportsImageEdit: false,
+    supportsImageUpscale: false,
   });
 
   assert.equal(model.name, 'Development Free Chat Updated');
   assert.equal(model.model, 'development-free-chat-updated');
+});
+
+test('updateAiModel accepts image capability flags in seed mode', async () => {
+  const model = await updateAiModel({
+    modelId: 'seed-model-free-image',
+    providerId: 'seed-provider-development',
+    code: 'dev-free-image',
+    name: 'Development Free Image Updated',
+    model: 'development-free-image-updated',
+    status: 'enabled',
+    supportsChat: false,
+    supportsImageGeneration: true,
+    supportsImageEdit: false,
+    supportsImageUpscale: true,
+  });
+
+  assert.equal(model.supportsChat, false);
+  assert.equal(model.supportsImageGeneration, true);
+  assert.equal(model.supportsImageEdit, false);
+  assert.equal(model.supportsImageUpscale, true);
 });
 
 test('createAiModel returns a new model summary in seed mode', async () => {
@@ -451,8 +474,30 @@ test('createAiModel returns a new model summary in seed mode', async () => {
     model: 'development-preview-chat',
     status: 'disabled',
     supportsChat: true,
+    supportsImageGeneration: false,
+    supportsImageEdit: false,
+    supportsImageUpscale: false,
   });
 
   assert.equal(model.code, 'dev-preview-chat');
   assert.equal(model.providerId, 'seed-provider-development');
+});
+
+test('createAiModel accepts image capability flags in seed mode', async () => {
+  const model = await createAiModel({
+    providerId: 'seed-provider-development',
+    code: 'dev-image-extra',
+    name: 'Development Image Extra',
+    model: 'development-image-extra',
+    status: 'enabled',
+    supportsChat: false,
+    supportsImageGeneration: true,
+    supportsImageEdit: false,
+    supportsImageUpscale: true,
+  });
+
+  assert.equal(model.supportsChat, false);
+  assert.equal(model.supportsImageGeneration, true);
+  assert.equal(model.supportsImageEdit, false);
+  assert.equal(model.supportsImageUpscale, true);
 });
