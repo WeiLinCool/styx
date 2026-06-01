@@ -55,7 +55,7 @@ export function toDirectMediaResult(artifact: AgentArtifactInput): DirectMediaRe
   }
 
   const metadata = cloneMetadata(artifact.metadata);
-  const expiresAt = readString(metadata, 'providerExpiresAt');
+  const expiresAt = readString(metadata, 'providerExpiresAt') ?? readString(metadata, 'expiresAt');
   const mimeType = readString(metadata, 'mimeType') ?? undefined;
   const filename = readString(metadata, 'filename') ?? undefined;
   const width = readNumber(metadata, 'width') ?? undefined;

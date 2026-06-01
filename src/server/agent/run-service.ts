@@ -9,7 +9,7 @@ import {
   type ChatProviderAdapter,
 } from '@/server/ai/provider-adapters';
 import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
-import type { AgentRunRepository } from '@/server/repositories/agent-runs';
+import type { AgentArtifactInput, AgentRunRepository } from '@/server/repositories/agent-runs';
 import {
   resolveChatModelForUser as defaultResolveChatModelForUser,
   type ResolvedChatModel,
@@ -22,7 +22,6 @@ import type {
   CreateAgentRunResult,
   TransientAgentArtifactDto,
 } from './types';
-import type { AgentArtifactInput } from '@/server/repositories/agent-runs';
 import {
   createUnconfiguredCapabilitySnapshot,
   type PiAgentRuntime,
@@ -256,6 +255,14 @@ async function appendRunEventsIfSupported(
   } catch {
     // Stream events are best-effort. Durable run state remains the source of truth.
   }
+}
+
+async function appendRunEventsRequired(
+  repository: AgentRunRepository,
+  runId: string,
+  input: Parameters<AgentRunRepository['appendRunEvents']>[1],
+) {
+  await repository.appendRunEvents(runId, input);
 }
 
 function toSelectedModelSnapshot(model: ResolvedChatModel) {
@@ -521,14 +528,18 @@ async function runMediaOrchestration(input: {
     .map(toDirectMediaResult)
     .filter((artifact): artifact is NonNullable<ReturnType<typeof toDirectMediaResult>> => artifact !== null);
 
-  await appendRunEventsIfSupported(
-    input.repository,
-    input.running.id,
-    directMediaResults.map((artifact) => ({
-      eventType: 'artifact_completed',
-      payload: createDirectMediaEventPayload(artifact),
-    })),
-  );
+  try {
+    await appendRunEventsRequired(
+      input.repository,
+      input.running.id,
+      directMediaResults.map((artifact) => ({
+        eventType: 'artifact_completed',
+        payload: createDirectMediaEventPayload(artifact),
+      })),
+    );
+  } catch {
+    throw new Error('图片或视频结果推送失败，请重试。');
+  }
 
   const completed = requireUpdatedRun(
     await input.repository.completeRun(input.running.id, {

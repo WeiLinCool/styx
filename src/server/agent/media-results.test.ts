@@ -30,6 +30,28 @@ test('toDirectMediaResult accepts provider URL media artifacts', () => {
   assert.equal(result?.metadata.durationSeconds, 5);
 });
 
+test('toDirectMediaResult accepts expiresAt metadata fallback', () => {
+  const result = toDirectMediaResult({
+    kind: 'video',
+    title: '生成视频',
+    url: 'https://provider.example/result.mp4',
+    metadata: {
+      expiresAt: '2026-06-01T11:00:00.000Z',
+    },
+  });
+
+  assert.equal(result?.delivery.expiresAt, '2026-06-01T11:00:00.000Z');
+  const sanitized = sanitizeDirectMediaArtifact({
+    kind: 'video',
+    title: '生成视频',
+    url: 'https://provider.example/result.mp4',
+    metadata: {
+      expiresAt: '2026-06-01T11:00:00.000Z',
+    },
+  });
+  assert.equal(sanitized.metadata.providerExpiresAt, '2026-06-01T11:00:00.000Z');
+});
+
 test('toDirectMediaResult accepts data URL media artifacts', () => {
   const result = toDirectMediaResult({
     kind: 'image',

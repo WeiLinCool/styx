@@ -292,6 +292,69 @@ test('createAndRunAgentRun marks media run failed when run_failed event persiste
   assert.equal(failed?.errorMessage, 'pi unavailable');
 });
 
+test('createAndRunAgentRun marks media run failed when artifact_completed event persistence fails', async () => {
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async appendRunEvent(runId, input) {
+      if (input.eventType === 'artifact_completed') {
+        throw new Error('artifact event store unavailable');
+      }
+
+      return baseRepository.appendRunEvent(runId, input);
+    },
+    async appendRunEvents(runId, input) {
+      const appended = [];
+      for (const event of input) {
+        const stored = await this.appendRunEvent(runId, event);
+        if (stored) {
+          appended.push(stored);
+        }
+      }
+      return appended;
+    },
+  };
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        return {
+          finalMessage: '图片已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图片',
+              body: 'data:image/png;base64,abc',
+              metadata: { mimeType: 'image/png' },
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '山谷里的石头印画',
+    input: {},
+  });
+
+  assert.equal(result.run.status, 'running');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const failed = await repository.getRunForUser(result.run.id, 'user-1');
+  const events = await repository.listRunEvents(result.run.id);
+
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.artifacts.length, 0);
+  assert.equal(failed?.errorMessage, '图片或视频结果推送失败，请重试。');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['artifact_started', 'run_failed'],
+  );
+});
+
 test('createAndRunAgentRun keeps completed run succeeded when succeeded event recording fails', async () => {
   const repository: AgentRunRepository = {
     ...createMemoryAgentRunRepository(),

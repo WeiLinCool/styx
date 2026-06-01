@@ -81,8 +81,6 @@ export default function ImageGenPage() {
         typeof (payload.payload as Record<string, unknown>).message === 'string'
           ? ((payload.payload as Record<string, unknown>).message as string)
           : '图片生成请求失败';
-      imageReceivedRunIdRef.current = null;
-      setGeneratedImage(null);
       setGenerationError(failureMessage);
       setIsGenerating(false);
       eventSource.close();
