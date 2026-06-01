@@ -3,16 +3,31 @@ import { NextResponse } from 'next/server';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { startPasswordResetWorkOrderProcessing } from '@/server/auth/password-reset-work-orders';
 import { requireAdmin } from '@/server/auth/guards';
+import { runProtectedMutation } from '@/server/api-request-guard';
+import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ workOrderId: string }> },
 ) {
   try {
-    await requireAdmin();
+    const session = await requireAdmin();
     const { workOrderId } = await context.params;
-    const workOrder = await startPasswordResetWorkOrderProcessing(workOrderId);
-    return NextResponse.json({ ok: true, workOrder });
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'admin-mutation',
+        operation: 'POST /api/admin/password-reset-work-orders/[workOrderId]/processing',
+        actorType: 'admin',
+        actorId: session.user.id,
+        rawBody: '',
+        parsedBody: null,
+      },
+      async () => {
+        const workOrder = await startPasswordResetWorkOrderProcessing(workOrderId);
+        return createEncryptedJsonResponse({ ok: true, workOrder });
+      },
+    );
   } catch (error) {
     const response = accountErrorToResponse(error);
     return NextResponse.json(response.body, { status: response.status });

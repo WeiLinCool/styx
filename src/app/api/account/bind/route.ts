@@ -8,6 +8,7 @@ import {
 } from '@/server/auth/account-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireActiveAccount } from '@/server/auth/guards';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 
 const bindSchema = z.discriminatedUnion('provider', [
   z.object({
@@ -31,39 +32,53 @@ const bindSchema = z.discriminatedUnion('provider', [
 export async function POST(request: Request) {
   try {
     const session = await requireActiveAccount();
-    const body = bindSchema.parse(await request.json());
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bindSchema.parse(parsedBody);
 
-    const identity =
-      body.provider === 'email'
-        ? await bindEmailIdentity({
-            userId: session.user.id,
-            email: body.subject,
-            label: body.label,
-          })
-        : body.provider === 'phone'
-          ? await bindPhoneIdentity({
-              userId: session.user.id,
-              phone: body.subject,
-              label: body.label,
-            })
-          : await bindProviderIdentity({
-              userId: session.user.id,
-              provider: body.provider,
-              providerSubject: body.subject,
-              label: body.label,
-              metadata: body.metadata,
-            });
-
-    return NextResponse.json({
-      ok: true,
-      identity: {
-        id: identity.id,
-        provider: identity.provider,
-        label: identity.label,
-        isVerified: identity.isVerified,
-        verifiedAt: identity.verifiedAt,
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'sensitive-user-mutation',
+        operation: 'POST /api/account/bind',
+        actorType: 'user',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
       },
-    });
+      async () => {
+        const identity =
+          body.provider === 'email'
+            ? await bindEmailIdentity({
+                userId: session.user.id,
+                email: body.subject,
+                label: body.label,
+              })
+            : body.provider === 'phone'
+              ? await bindPhoneIdentity({
+                  userId: session.user.id,
+                  phone: body.subject,
+                  label: body.label,
+                })
+              : await bindProviderIdentity({
+                  userId: session.user.id,
+                  provider: body.provider,
+                  providerSubject: body.subject,
+                  label: body.label,
+                  metadata: body.metadata,
+                });
+
+        return NextResponse.json({
+          ok: true,
+          identity: {
+            id: identity.id,
+            provider: identity.provider,
+            label: identity.label,
+            isVerified: identity.isVerified,
+            verifiedAt: identity.verifiedAt,
+          },
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

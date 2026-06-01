@@ -17,6 +17,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { readJsonResponse } from '@/lib/api-response';
+import { adminApiRequest } from '@/lib/admin-api-client';
 import { cn } from '@/lib/utils';
 import type { AdminWorkOrderQueueStatus } from '@/server/repositories/admin-activation-work-orders';
 import type {
@@ -40,12 +42,12 @@ type AdminPointAdjustmentState = {
 };
 
 async function postAdminAction(url: string, body: Record<string, unknown>) {
-  const response = await fetch(url, {
+  const response = await adminApiRequest(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = await readJsonResponse(response);
 
   if (!response.ok) {
     const message =

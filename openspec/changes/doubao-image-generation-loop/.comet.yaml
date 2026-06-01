@@ -1,0 +1,12 @@
+workflow: full
+phase: build
+build_mode: null
+isolation: null
+verify_mode: null
+design_doc: docs/superpowers/specs/2026-06-01-doubao-image-generation-loop-design.md
+plan: docs/superpowers/plans/2026-06-01-doubao-image-generation-loop.md
+verify_result: pending
+verification_report: null
+branch_status: pending
+verified_at: null
+archived: false

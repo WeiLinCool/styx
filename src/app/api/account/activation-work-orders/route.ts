@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createActivationWorkOrder } from '@/server/auth/activation-work-orders';
 import { accountErrorToResponse, AccountDomainError } from '@/server/auth/account-types';
 import { resolveSession } from '@/server/auth/session';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 
 const fingerprintSchema = z.object({
   userAgent: z.string().optional(),
@@ -32,22 +33,37 @@ export async function POST(request: Request) {
       throw new AccountDomainError('session_required', '请先登录后再生成激活工单。', 401);
     }
 
-    const body = bodySchema.parse(await request.json());
-    const workOrder = await createActivationWorkOrder({
-      userId: session.user.id,
-      fingerprint: body.fingerprint,
-    });
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
 
-    return NextResponse.json({
-      ok: true,
-      workOrder: {
-        id: workOrder.id,
-        code: workOrder.code,
-        status: workOrder.status,
-        expiresAt: workOrder.expiresAt,
-        deviceMetadata: workOrder.deviceMetadata,
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'sensitive-user-mutation',
+        operation: 'POST /api/account/activation-work-orders',
+        actorType: 'user',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
       },
-    });
+      async () => {
+        const workOrder = await createActivationWorkOrder({
+          userId: session.user.id,
+          fingerprint: body.fingerprint,
+        });
+
+        return NextResponse.json({
+          ok: true,
+          workOrder: {
+            id: workOrder.id,
+            code: workOrder.code,
+            status: workOrder.status,
+            expiresAt: workOrder.expiresAt,
+            deviceMetadata: workOrder.deviceMetadata,
+          },
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

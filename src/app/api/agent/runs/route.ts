@@ -13,6 +13,7 @@ import { InsufficientCreditsError } from '@/server/billing/credits';
 import { createDeterministicPiRuntime } from '@/server/agent/pi-runtime';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireActiveAccount } from '@/server/auth/guards';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { getAgentRunRepository } from '@/server/repositories/agent-runs';
 import {
   ModelEntitlementRequiredError,
@@ -63,6 +64,10 @@ export async function parseCreateAgentRunRequestBody(request: Request): Promise<
     throw new InvalidJsonRequestError();
   }
 
+  return parseCreateAgentRunBody(body);
+}
+
+export function parseCreateAgentRunRawBody(body: unknown): CreateAgentRunBody {
   return parseCreateAgentRunBody(body);
 }
 
@@ -140,17 +145,32 @@ function createService() {
 export async function POST(request: Request) {
   try {
     const session = await requireActiveAccount();
-    const body = await parseCreateAgentRunRequestBody(request);
-    const result = await createService().createAndRunAgentRun({
-      userId: session.user.id,
-      taskType: body.taskType,
-      prompt: body.prompt,
-      modelId: body.modelId,
-      conversationId: body.conversationId,
-      input: body.input,
-    });
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = parseCreateAgentRunRawBody(parsedBody);
 
-    return createAgentRunResponse(result);
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'user-mutation',
+        operation: 'POST /api/agent/runs',
+        actorType: 'user',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
+      },
+      async () => {
+        const result = await createService().createAndRunAgentRun({
+          userId: session.user.id,
+          taskType: body.taskType,
+          prompt: body.prompt,
+          modelId: body.modelId,
+          conversationId: body.conversationId,
+          input: body.input,
+        });
+
+        return createAgentRunResponse(result);
+      },
+    );
   } catch (error) {
     return serviceErrorToResponse(error);
   }

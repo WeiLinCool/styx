@@ -207,6 +207,18 @@ export const contentAssetStatus = pgEnum('content_asset_status', [
   'archived',
 ]);
 
+export const requestIdempotencyActorType = pgEnum('request_idempotency_actor_type', [
+  'anonymous',
+  'user',
+  'admin',
+]);
+
+export const requestIdempotencyStatus = pgEnum('request_idempotency_status', [
+  'processing',
+  'completed',
+  'failed',
+]);
+
 const id = uuid('id').primaryKey().defaultRandom();
 const now = timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updated = timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -981,4 +993,31 @@ export const systemSettings = pgTable(
     updatedAt: updated,
   },
   (table) => [index('system_settings_secret_idx').on(table.isSecret)],
+);
+
+export const requestIdempotencyRecords = pgTable(
+  'request_idempotency_records',
+  {
+    id,
+    key: text('key').notNull(),
+    actorType: requestIdempotencyActorType('actor_type').notNull(),
+    actorId: text('actor_id').notNull().default('anonymous'),
+    operation: text('operation').notNull(),
+    bodyHash: text('body_hash').notNull(),
+    status: requestIdempotencyStatus('status').notNull().default('processing'),
+    responseSummary: jsonb('response_summary').$type<Record<string, unknown> | null>(),
+    createdAt: now,
+    updatedAt: updated,
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('request_idempotency_scope_key_unique_idx').on(
+      table.actorType,
+      table.actorId,
+      table.operation,
+      table.key,
+    ),
+    index('request_idempotency_expires_at_idx').on(table.expiresAt),
+    index('request_idempotency_status_idx').on(table.status),
+  ],
 );

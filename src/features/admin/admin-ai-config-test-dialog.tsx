@@ -13,6 +13,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { adminApiRequest } from '@/lib/admin-api-client';
+import { readJsonResponse } from '@/lib/api-response';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -73,7 +75,7 @@ export function AdminAiConfigTestDialog({
     setResult(null);
 
     try {
-      const response = await fetch(url, {
+      const response = await adminApiRequest(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -81,7 +83,7 @@ export function AdminAiConfigTestDialog({
           prompt: prompt.trim(),
         }),
       });
-      const payload = (await response.json().catch(() => ({}))) as ConfigTestResult;
+      const payload = (await readJsonResponse(response)) as ConfigTestResult;
       setResult(payload);
     } finally {
       setPending(false);

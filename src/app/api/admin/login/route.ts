@@ -6,6 +6,7 @@ import {
 } from '@/server/auth/admin-auth';
 import { ADMIN_SESSION_COOKIE } from '@/server/auth/admin-auth-config';
 import { accountErrorToResponse } from '@/server/auth/account-types';
+import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   username: z.string().min(1).max(64),
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
       ipAddress: request.headers.get('x-forwarded-for'),
     });
 
-    const response = NextResponse.json({
+    const response = await createEncryptedJsonResponse({
       ok: true,
       expiresAt: session.expiresAt,
     });

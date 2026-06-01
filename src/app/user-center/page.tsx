@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { readJsonResponse } from '@/lib/api-response';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 import { userCenterCartFixtures, userCenterPurchaseHistory } from '@/features/public/user-center-data';
+import { userApiRequest } from '@/lib/user-api-client';
 import { ArrowLeft, ShoppingBag, Clock, Star, Crown, Camera, Edit3, Check, X, ChevronRight, Trash2, Minus, Plus, Gift, Copy, CalendarCheck } from 'lucide-react';
 
 interface CartItem {
@@ -54,28 +56,6 @@ export default function UserCenterPage() {
       router.replace('/home');
     }
   }, [isLoggedIn, router, user]);
-
-  useEffect(() => {
-    if (!isLoggedIn || !user) {
-      return;
-    }
-
-    void refreshUser();
-
-    const handleVisibilityRefresh = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshUser();
-      }
-    };
-
-    window.addEventListener('focus', handleVisibilityRefresh);
-    document.addEventListener('visibilitychange', handleVisibilityRefresh);
-
-    return () => {
-      window.removeEventListener('focus', handleVisibilityRefresh);
-      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
-    };
-  }, [isLoggedIn, refreshUser, user]);
 
   if (!isLoggedIn || !user) {
     return null;
@@ -148,8 +128,8 @@ export default function UserCenterPage() {
     setInviteBusy(true);
     setActionMessage(null);
     try {
-      const response = await fetch('/api/user/invite', { cache: 'no-store' });
-      const payload = await response.json();
+      const response = await userApiRequest('/api/user/invite', { cache: 'no-store' });
+      const payload = await readJsonResponse(response);
       if (response.ok && payload.inviteSummary) {
         setInviteSummary(payload.inviteSummary);
         updateUser({ inviteSummary: payload.inviteSummary });
@@ -172,8 +152,8 @@ export default function UserCenterPage() {
     setCheckinPending(true);
     setActionMessage(null);
     try {
-      const response = await fetch('/api/user/points/checkin', { method: 'POST' });
-      const payload = await response.json();
+      const response = await userApiRequest('/api/user/points/checkin', { method: 'POST' });
+      const payload = await readJsonResponse(response);
       if (!response.ok || !payload.checkin) {
         setActionMessage(
           typeof payload?.error?.message === 'string' ? payload.error.message : '签到失败，请稍后重试。',

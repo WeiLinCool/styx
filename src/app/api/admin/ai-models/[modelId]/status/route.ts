@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { updateAiModelStatus } from '@/server/repositories/ai-models';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 
 const paramsSchema = z.object({
   modelId: z.uuid(),
@@ -23,20 +24,35 @@ export async function POST(
   context: { params: Promise<{ modelId: string }> },
 ) {
   try {
-    await requireAdmin();
+    const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
-    const body = await parseAiModelStatusBody(request);
-    const model = await updateAiModelStatus({
-      modelId: params.modelId,
-      status: body.status,
-    });
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
 
-    return NextResponse.json(
+    return runProtectedMutation(
       {
-        ok: true,
-        model,
+        request,
+        routeKind: 'admin-mutation',
+        operation: 'POST /api/admin/ai-models/[modelId]/status',
+        actorType: 'admin',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
       },
-      { status: 200 },
+      async () => {
+        const model = await updateAiModelStatus({
+          modelId: params.modelId,
+          status: body.status,
+        });
+
+        return NextResponse.json(
+          {
+            ok: true,
+            model,
+          },
+          { status: 200 },
+        );
+      },
     );
   } catch (error) {
     if (error instanceof z.ZodError) {

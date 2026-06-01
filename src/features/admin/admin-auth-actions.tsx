@@ -3,9 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Loader2, LogIn, LogOut } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { readJsonResponse } from '@/lib/api-response';
+import { adminApiRequest } from '@/lib/admin-api-client';
 import { cn } from '@/lib/utils';
 
 type AdminAuthActionsProps = {
@@ -36,11 +39,12 @@ export function AdminAuthActions({ authenticated }: AdminAuthActionsProps) {
     setState(null);
 
     try {
-      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      const response = await adminApiRequest('/api/auth/logout', { method: 'POST' });
       if (!response.ok) {
         throw new Error('退出登录失败。');
       }
 
+      toast.success('已退出后台登录。');
       setState({ tone: 'success', message: '已退出后台登录。' });
       router.refresh();
     } catch (error) {
@@ -58,7 +62,7 @@ export function AdminAuthActions({ authenticated }: AdminAuthActionsProps) {
     setState(null);
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await adminApiRequest('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -66,7 +70,7 @@ export function AdminAuthActions({ authenticated }: AdminAuthActionsProps) {
           nickname: nickname.trim() || undefined,
         }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(
@@ -74,6 +78,7 @@ export function AdminAuthActions({ authenticated }: AdminAuthActionsProps) {
         );
       }
 
+      toast.success('进入后台成功。');
       setState({ tone: 'success', message: '登录成功，正在刷新后台。' });
       router.refresh();
     } catch (error) {

@@ -6,6 +6,8 @@ import { CheckCircle2, ClipboardList, Link2, Mail, Phone, ShieldCheck } from 'lu
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth-context';
+import { readJsonResponse } from '@/lib/api-response';
+import { userApiRequest } from '@/lib/user-api-client';
 import { collectBrowserFingerprint } from './browser-fingerprint';
 
 type ActivationPanelProps = {
@@ -36,6 +38,7 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const deadline = new Date(workOrder.expiresAt).getTime();
+    const pollDelayMs = 15_000;
 
     async function pollActivationState() {
       if (cancelled || Date.now() >= deadline) {
@@ -43,13 +46,20 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
         return;
       }
 
+      if (document.visibilityState !== 'visible') {
+        timeoutId = setTimeout(() => {
+          void pollActivationState();
+        }, pollDelayMs);
+        return;
+      }
+
       try {
-        const response = await fetch('/api/auth/me', { cache: 'no-store' });
+        const response = await userApiRequest('/api/auth/me', { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('Failed to refresh auth state.');
         }
 
-        const payload = (await response.json()) as {
+        const payload = (await readJsonResponse(response)) as {
           user?: { accountState?: ActivationPanelProps['accountState'] };
         };
         const nextState = payload.user?.accountState;
@@ -67,13 +77,13 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
 
       timeoutId = setTimeout(() => {
         void pollActivationState();
-      }, 5000);
+      }, pollDelayMs);
     }
 
     setPolling(true);
     timeoutId = setTimeout(() => {
       void pollActivationState();
-    }, 5000);
+    }, pollDelayMs);
 
     return () => {
       cancelled = true;
@@ -88,21 +98,21 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
     setMessage('');
     setWorkOrder(null);
 
-    const response = await fetch('/api/account/activation-work-orders', {
+    const response = await userApiRequest('/api/account/activation-work-orders', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ fingerprint: collectBrowserFingerprint() }),
     });
 
     if (response.ok) {
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       setWorkOrder(payload.workOrder);
       setSubmitState('success');
       setMessage('激活申请已提交，系统会自动检测审核结果。');
       return;
     }
 
-    const payload = await response.json().catch(() => null);
+    const payload = await readJsonResponse(response);
     setSubmitState('error');
     setMessage(payload?.error?.message ?? '激活申请提交失败，请稍后重试。');
   }
@@ -112,7 +122,7 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
     setSubmitState('submitting');
     setMessage('');
 
-    const response = await fetch('/api/account/bind', {
+    const response = await userApiRequest('/api/account/bind', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -127,7 +137,7 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
       return;
     }
 
-    const payload = await response.json().catch(() => null);
+    const payload = await readJsonResponse(response);
     setSubmitState('error');
     setMessage(payload?.error?.message ?? '绑定失败，请确认身份信息。');
   }

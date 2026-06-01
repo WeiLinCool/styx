@@ -2,7 +2,11 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
+import { readJsonResponse } from '@/lib/api-response';
 import { getUserFromCookie, saveUserToCookie, removeUserFromCookie, type UserInfo } from '@/lib/cookie';
+import { shouldReplaceAuthUser } from '@/lib/auth-user';
+import { userApiRequest } from '@/lib/user-api-client';
 import { X, Phone, Lock, User, Camera, Upload, Check, Ticket } from 'lucide-react';
 
 export type UserPointActivity = {
@@ -93,12 +97,12 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
     setSubmitting(true);
     setErrorMessage('');
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await userApiRequest('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ phone, password }),
       });
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       if (!response.ok || !payload.user) {
         const message = typeof payload?.error?.message === 'string' ? payload.error.message : '登录失败，请重试。';
         setErrorMessage(message);
@@ -119,12 +123,12 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
     setSubmitting(true);
     setErrorMessage('');
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await userApiRequest('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ phone, nickname, password, inviteCode: inviteCode || undefined }),
       });
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       if (!response.ok || !payload.user) {
         setErrorMessage(
           typeof payload?.error?.message === 'string' ? payload.error.message : '设置密码失败，请重试。',
@@ -431,12 +435,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     try {
-      const response = await fetch('/api/auth/me', { cache: 'no-store' });
-      const payload = await response.json().catch(() => null);
+      const response = await userApiRequest('/api/auth/me', { cache: 'no-store' });
+      const payload = await readJsonResponse(response);
 
       if (response.ok && payload?.authenticated && payload.user) {
-        saveUserToCookie(payload.user);
-        setUser(payload.user);
+        if (shouldReplaceAuthUser(userRef.current, payload.user)) {
+          saveUserToCookie(payload.user);
+          setUser(payload.user);
+        }
         if (payload.user.mustResetPassword && payload.user.phone) {
           router.push(`/auth/reset-password?phone=${encodeURIComponent(payload.user.phone)}`);
         }
@@ -460,6 +466,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const savedUser = getUserFromCookie();
       if (savedUser) {
         setUser(savedUser);
+        setMounted(true);
+        return;
       }
 
       try {
@@ -476,6 +484,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveUserToCookie(userData);
     setUser(userData);
     setShowLoginModal(false);
+    toast.success('登录成功。');
     if (userData.mustResetPassword && userData.phone) {
       router.push(`/auth/reset-password?phone=${encodeURIComponent(userData.phone)}`);
       return;
@@ -484,9 +493,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const logout = useCallback(() => {
-    void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    void userApiRequest('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     removeUserFromCookie();
     setUser(null);
+    toast.success('已退出登录。');
   }, []);
 
   const updateUser = useCallback((updates: Partial<AuthUserInfo>) => {

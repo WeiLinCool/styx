@@ -7,6 +7,7 @@ import {
   normalizeAiJobReviewAction,
   reviewAiJob,
 } from '@/server/repositories/admin-mutations';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 
 const paramsSchema = z.object({
   jobId: z.uuid(),
@@ -24,22 +25,37 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
-    const body = bodySchema.parse(await request.json());
-    const job = await reviewAiJob({
-      jobId: params.jobId,
-      action: normalizeAiJobReviewAction(body.action),
-      actorId: session.user.id,
-      note: body.note,
-    });
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
 
-    return NextResponse.json({
-      ok: true,
-      job: {
-        id: job.id,
-        status: job.status,
-        updatedAt: job.updatedAt,
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'admin-mutation',
+        operation: 'POST /api/admin/ai-jobs/[jobId]/review',
+        actorType: 'admin',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
       },
-    });
+      async () => {
+        const job = await reviewAiJob({
+          jobId: params.jobId,
+          action: normalizeAiJobReviewAction(body.action),
+          actorId: session.user.id,
+          note: body.note,
+        });
+
+        return NextResponse.json({
+          ok: true,
+          job: {
+            id: job.id,
+            status: job.status,
+            updatedAt: job.updatedAt,
+          },
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

@@ -71,6 +71,20 @@
       "when": 1780229758290,
       "tag": "0010_familiar_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780285654461,
+      "tag": "0010_curvy_crusher_hogan",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1780285809861,
+      "tag": "0011_yielding_sprite",
+      "breakpoints": true
     }
   ]
 }

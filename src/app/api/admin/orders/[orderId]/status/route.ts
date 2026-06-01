@@ -8,6 +8,7 @@ import {
   updateOrderStatus,
   type OrderStatus,
 } from '@/server/repositories/admin-mutations';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 
 const paramsSchema = z.object({
   orderId: z.uuid(),
@@ -32,29 +33,44 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
-    const body = bodySchema.parse(await request.json());
-    const order =
-      body.action === 'add_note'
-        ? await addOrderNote({
-            orderId: params.orderId,
-            actorId: session.user.id,
-            note: body.note,
-          })
-        : await updateOrderStatus({
-            orderId: params.orderId,
-            status: body.status as OrderStatus,
-            actorId: session.user.id,
-            note: body.note,
-          });
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
 
-    return NextResponse.json({
-      ok: true,
-      order: {
-        id: order.id,
-        status: order.status,
-        updatedAt: order.updatedAt,
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'admin-mutation',
+        operation: 'POST /api/admin/orders/[orderId]/status',
+        actorType: 'admin',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
       },
-    });
+      async () => {
+        const order =
+          body.action === 'add_note'
+            ? await addOrderNote({
+                orderId: params.orderId,
+                actorId: session.user.id,
+                note: body.note,
+              })
+            : await updateOrderStatus({
+                orderId: params.orderId,
+                status: body.status as OrderStatus,
+                actorId: session.user.id,
+                note: body.note,
+              });
+
+        return NextResponse.json({
+          ok: true,
+          order: {
+            id: order.id,
+            status: order.status,
+            updatedAt: order.updatedAt,
+          },
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

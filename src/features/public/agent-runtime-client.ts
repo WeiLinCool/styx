@@ -4,6 +4,7 @@ import type {
   AgentTaskType,
   CreateAgentRunResult,
 } from '@/server/agent/types';
+import { userApiRequest } from '@/lib/user-api-client';
 
 export type ChatModelOption = {
   id: string;
@@ -102,7 +103,7 @@ export function selectChatModelId(models: ChatModelOption[], priorModelId?: stri
 }
 
 export async function listChatModels(): Promise<ChatModelOption[]> {
-  const response = await fetch('/api/agent/chat-models', { cache: 'no-store' });
+  const response = await userApiRequest('/api/agent/chat-models', { cache: 'no-store' });
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -118,7 +119,7 @@ export async function listChatModels(): Promise<ChatModelOption[]> {
 }
 
 export async function createAgentRun(input: CreateAgentRunRequest): Promise<CreateAgentRunResult> {
-  const response = await fetch('/api/agent/runs', {
+  const response = await userApiRequest('/api/agent/runs', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
@@ -136,7 +137,7 @@ export async function createAgentRun(input: CreateAgentRunRequest): Promise<Crea
 }
 
 export async function listAgentRuns(): Promise<AgentRunDto[]> {
-  const response = await fetch('/api/agent/runs', {
+  const response = await userApiRequest('/api/agent/runs', {
     method: 'GET',
     cache: 'no-store',
   });
@@ -150,7 +151,7 @@ export async function listAgentRuns(): Promise<AgentRunDto[]> {
 }
 
 export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailDto> {
-  const response = await fetch(`/api/agent/runs/${runId}`, {
+  const response = await userApiRequest(`/api/agent/runs/${runId}`, {
     cache: 'no-store',
   });
   const payload = await response.json().catch(() => null);
@@ -163,7 +164,7 @@ export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailDt
 }
 
 export async function deleteAgentRun(runId: string): Promise<AgentRunDto> {
-  const response = await fetch(`/api/agent/runs/${runId}`, {
+  const response = await userApiRequest(`/api/agent/runs/${runId}`, {
     method: 'DELETE',
   });
   const payload = await response.json().catch(() => null);

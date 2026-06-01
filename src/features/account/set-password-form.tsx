@@ -5,7 +5,9 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { readJsonResponse } from '@/lib/api-response';
 import { removeUserFromCookie } from '@/lib/cookie';
+import { userApiRequest } from '@/lib/user-api-client';
 
 type SetPasswordFormProps = {
   phone: string;
@@ -31,12 +33,12 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
     setSuccessMessage('');
 
     try {
-      const response = await fetch('/api/auth/set-password', {
+      const response = await userApiRequest('/api/auth/set-password', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ phone, password, confirmPassword, mode }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(

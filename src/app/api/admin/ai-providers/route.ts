@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { createAiProvider } from '@/server/repositories/ai-models';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 
 const bodySchema = z.object({
   code: z.string().trim().min(1),
@@ -21,11 +22,26 @@ export async function parseAiProviderCreateBody(request: Pick<Request, 'json'>) 
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin();
-    const body = await parseAiProviderCreateBody(request);
-    const provider = await createAiProvider(body);
+    const session = await requireAdmin();
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
 
-    return NextResponse.json({ ok: true, provider }, { status: 200 });
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'admin-mutation',
+        operation: 'POST /api/admin/ai-providers',
+        actorType: 'admin',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
+      },
+      async () => {
+        const provider = await createAiProvider(body);
+
+        return NextResponse.json({ ok: true, provider }, { status: 200 });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

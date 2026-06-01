@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { adjustUserPointsByAdmin } from '@/server/repositories/users';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   amount: z
@@ -34,19 +36,33 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const params = await parseAdminUserPointsParams(context.params);
-    const body = await parseAdminUserPointsRequest(request);
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody ?? {});
 
-    const result = await adjustUserPointsByAdmin({
-      userId: params.userId,
-      actorId: session.user.id,
-      amount: body.amount,
-      reason: body.reason,
-    });
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'admin-mutation',
+        operation: 'POST /api/admin/users/[userId]/points',
+        actorType: 'admin',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
+      },
+      async () => {
+        const result = await adjustUserPointsByAdmin({
+          userId: params.userId,
+          actorId: session.user.id,
+          amount: body.amount,
+          reason: body.reason,
+        });
 
-    return NextResponse.json({
-      ok: true,
-      adjustment: result,
-    });
+        return createEncryptedJsonResponse({
+          ok: true,
+          adjustment: result,
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

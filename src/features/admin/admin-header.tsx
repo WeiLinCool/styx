@@ -3,7 +3,9 @@
 import { Database, Loader2, LockKeyhole, LogOut, UserRoundCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
+import { adminApiRequest } from '@/lib/admin-api-client';
 import { StatusBadge } from './status-badge';
 import type { SessionContext } from '@/server/auth/account-types';
 
@@ -20,7 +22,8 @@ export function AdminHeader({ session, dataSource = 'database' }: AdminHeaderPro
   async function handleLogout() {
     setPending(true);
     try {
-      await fetch('/api/admin/logout', { method: 'POST' });
+      await adminApiRequest('/api/admin/logout', { method: 'POST' });
+      toast.success('已退出后台登录。');
     } finally {
       router.push('/admin/login');
       router.refresh();

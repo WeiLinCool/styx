@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { createPasswordResetWorkOrder } from '@/server/auth/password-reset-work-orders';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   phone: z.string().min(6).max(32),
@@ -11,16 +13,31 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const body = bodySchema.parse(await request.json());
-    const workOrder = await createPasswordResetWorkOrder({
-      phone: body.phone,
-      reason: body.reason,
-    });
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
 
-    return NextResponse.json({
-      ok: true,
-      workOrderId: workOrder.id,
-    });
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'sensitive-user-mutation',
+        operation: 'POST /api/auth/password-reset-work-orders',
+        actorType: 'anonymous',
+        actorId: body.phone,
+        rawBody,
+        parsedBody,
+      },
+      async () => {
+        const workOrder = await createPasswordResetWorkOrder({
+          phone: body.phone,
+          reason: body.reason,
+        });
+
+        return createEncryptedJsonResponse({
+          ok: true,
+          workOrderId: workOrder.id,
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

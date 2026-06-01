@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { accountErrorToResponse, AccountDomainError } from '@/server/auth/account-types';
 import { hashUserPassword } from '@/server/auth/public-auth';
 import { getUserByPhone, updateUserMetadata } from '@/server/repositories/users';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   phone: z.string().min(6).max(32),
@@ -14,7 +16,8 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const body = bodySchema.parse(await request.json());
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
     if (body.password !== body.confirmPassword) {
       throw new AccountDomainError('session_required', '两次输入的密码不一致。', 400);
     }
@@ -35,13 +38,26 @@ export async function POST(request: Request) {
       throw new AccountDomainError('session_required', '当前账号不需要执行密码重置。', 409);
     }
 
-    await updateUserMetadata(user.id, {
-      ...(user.metadata ?? {}),
-      passwordHash: hashUserPassword(body.password),
-      mustResetPassword: false,
-    });
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'sensitive-user-mutation',
+        operation: 'POST /api/auth/set-password',
+        actorType: 'anonymous',
+        actorId: body.phone,
+        rawBody,
+        parsedBody,
+      },
+      async () => {
+        await updateUserMetadata(user.id, {
+          ...(user.metadata ?? {}),
+          passwordHash: hashUserPassword(body.password),
+          mustResetPassword: false,
+        });
 
-    return NextResponse.json({ ok: true });
+        return createEncryptedJsonResponse({ ok: true });
+      },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { registerOrLoginUser } from '@/server/auth/account-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { DEV_AUTH_BYPASS_COOKIE } from '@/server/auth/session';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 type RegisterOrLoginUserInput = Parameters<typeof registerOrLoginUser>[0];
 type RegisterOrLoginUserResult = Awaited<ReturnType<typeof registerOrLoginUser>>;
@@ -25,43 +27,58 @@ export function createLoginHandler(
 ) {
   return async function POST(request: Request) {
     try {
-      const body = parseLoginBody(await request.json());
-      const result = await implementation({
-        phone: body.phone,
-        password: body.password,
-        displayName: body.nickname,
-        email: body.email,
-        inviteCode: body.inviteCode,
-        userAgent: request.headers.get('user-agent'),
-        ipAddress: request.headers.get('x-forwarded-for'),
-      });
+      const { rawBody, body: parsedBody } = await readJsonBody(request);
+      const body = parseLoginBody(parsedBody);
 
-      const response = NextResponse.json({
-        ok: true,
-        user: {
-          id: result.user.id,
-          displayName: result.user.displayName,
-          phone: result.user.phone,
-          email: result.user.email,
-          accountState: result.user.accountState,
-          mustResetPassword: result.user.metadata?.mustResetPassword === true,
+      return runProtectedMutation(
+        {
+          request,
+          routeKind: 'sensitive-user-mutation',
+          operation: 'POST /api/auth/login',
+          actorType: 'anonymous',
+          actorId: body.phone,
+          rawBody,
+          parsedBody,
         },
-      });
+        async () => {
+          const result = await implementation({
+            phone: body.phone,
+            password: body.password,
+            displayName: body.nickname,
+            email: body.email,
+            inviteCode: body.inviteCode,
+            userAgent: request.headers.get('user-agent'),
+            ipAddress: request.headers.get('x-forwarded-for'),
+          });
 
-      response.cookies.set('nfai_auth_token', result.token, {
-        expires: result.expiresAt,
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-      });
-      response.cookies.set(DEV_AUTH_BYPASS_COOKIE, '', {
-        expires: new Date(0),
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-      });
+          const response = await createEncryptedJsonResponse({
+            ok: true,
+            user: {
+              id: result.user.id,
+              displayName: result.user.displayName,
+              phone: result.user.phone,
+              email: result.user.email,
+              accountState: result.user.accountState,
+              mustResetPassword: result.user.metadata?.mustResetPassword === true,
+            },
+          });
 
-      return response;
+          response.cookies.set('nfai_auth_token', result.token, {
+            expires: result.expiresAt,
+            httpOnly: true,
+            sameSite: 'lax',
+            path: '/',
+          });
+          response.cookies.set(DEV_AUTH_BYPASS_COOKIE, '', {
+            expires: new Date(0),
+            httpOnly: true,
+            sameSite: 'lax',
+            path: '/',
+          });
+
+          return response;
+        },
+      );
     } catch (error) {
       if (error instanceof z.ZodError) {
         return NextResponse.json(

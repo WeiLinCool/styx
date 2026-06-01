@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { approveActivationWorkOrder } from '@/server/auth/activation-work-orders';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 const paramsSchema = z.object({
   workOrderId: z.uuid(),
@@ -20,25 +22,40 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
-    const body = bodySchema.parse(await request.json().catch(() => ({})));
-    const result = await approveActivationWorkOrder({
-      workOrderId: params.workOrderId,
-      actorId: session.user.id,
-      reason: body.reason ?? '客服审核通过',
-    });
+    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody ?? {});
 
-    return NextResponse.json({
-      ok: true,
-      workOrder: {
-        id: result.workOrder.id,
-        status: result.workOrder.status,
-        closedAt: result.workOrder.approvedAt,
+    return runProtectedMutation(
+      {
+        request,
+        routeKind: 'admin-mutation',
+        operation: 'POST /api/admin/activation-work-orders/[workOrderId]/approve',
+        actorType: 'admin',
+        actorId: session.user.id,
+        rawBody,
+        parsedBody,
       },
-      user: {
-        id: result.user.id,
-        accountState: result.user.accountState,
+      async () => {
+        const result = await approveActivationWorkOrder({
+          workOrderId: params.workOrderId,
+          actorId: session.user.id,
+          reason: body.reason ?? '客服审核通过',
+        });
+
+        return createEncryptedJsonResponse({
+          ok: true,
+          workOrder: {
+            id: result.workOrder.id,
+            status: result.workOrder.status,
+            closedAt: result.workOrder.approvedAt,
+          },
+          user: {
+            id: result.user.id,
+            accountState: result.user.accountState,
+          },
+        });
       },
-    });
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

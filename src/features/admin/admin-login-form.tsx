@@ -3,10 +3,13 @@
 import { ShieldCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { readJsonResponse } from '@/lib/api-response';
+import { adminApiRequest } from '@/lib/admin-api-client';
 
 export function AdminLoginForm() {
   const router = useRouter();
@@ -21,18 +24,19 @@ export function AdminLoginForm() {
     setError(null);
 
     try {
-      const response = await fetch('/api/admin/login', {
+      const response = await adminApiRequest('/api/admin/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readJsonResponse(response);
       if (!response.ok) {
         throw new Error(
           typeof payload?.error?.message === 'string' ? payload.error.message : '登录失败。',
         );
       }
 
+      toast.success('管理端登录成功。');
       router.push('/admin');
       router.refresh();
     } catch (submitError) {

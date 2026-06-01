@@ -4,6 +4,8 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { readJsonResponse } from '@/lib/api-response';
+import { userApiRequest } from '@/lib/user-api-client';
 
 export function ForgotPasswordForm() {
   const [phone, setPhone] = useState('');
@@ -23,12 +25,12 @@ export function ForgotPasswordForm() {
     setSuccessMessage('');
 
     try {
-      const response = await fetch('/api/auth/password-reset-work-orders', {
+      const response = await userApiRequest('/api/auth/password-reset-work-orders', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ phone, reason }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readJsonResponse(response);
       if (!response.ok) {
         throw new Error(
           typeof payload?.error?.message === 'string' ? payload.error.message : '工单提交失败，请重试。',
