@@ -4,7 +4,19 @@ import { ZodError } from 'zod';
 
 import { parseAiModelCreateBody } from './route';
 
-const validBody = {
+type AiModelBody = {
+  providerId: string;
+  code: string;
+  name: string;
+  model: string;
+  status: 'enabled';
+  supportsChat: boolean;
+  supportsImageGeneration: boolean;
+  supportsImageEdit: boolean;
+  supportsImageUpscale: boolean;
+};
+
+const validBody: AiModelBody = {
   providerId: '5b8dc749-b1f8-4a64-9bb9-c8aa4ad1d5f4',
   code: 'doubao-image',
   name: 'Doubao Image',
@@ -14,7 +26,7 @@ const validBody = {
   supportsImageGeneration: true,
   supportsImageEdit: true,
   supportsImageUpscale: false,
-} as const;
+};
 
 test('parseAiModelCreateBody parses image capability flags', async () => {
   const body = await parseAiModelCreateBody({
