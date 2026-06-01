@@ -13,6 +13,10 @@ import {
   type ChatModelOption,
   type ImageModelOption,
 } from './agent-runtime-client';
+import {
+  decryptRequestBody,
+  isEncryptedRequestEnvelope,
+} from '@/lib/request-encryption';
 
 function installFetchMock(payload: unknown) {
   const originalFetch = globalThis.fetch;
@@ -172,17 +176,25 @@ test('createAgentRun throws typed API error codes from JSON responses', async ()
 
 test('createAgentRun returns run and transient artifacts from API payload', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    Response.json({
+  let requestBody: unknown = null;
+
+  globalThis.fetch = async (_input, init) => {
+    const encryptedBody = init?.body ? JSON.parse(String(init.body)) : null;
+    assert.equal(isEncryptedRequestEnvelope(encryptedBody), true);
+    const decryptedBody = isEncryptedRequestEnvelope(encryptedBody)
+      ? await decryptRequestBody(encryptedBody)
+      : null;
+    requestBody = decryptedBody ? JSON.parse(decryptedBody) : null;
+    return Response.json({
       run: {
         id: 'run-1',
         conversationId: 'run-1',
         taskType: 'image',
         status: 'succeeded',
-        prompt: 'stone cat',
+        prompt: 'repair stone cat',
         finalMessage: '图片已生成，请及时下载保存。',
         errorMessage: null,
-        capabilitySummary: { provider: 'pi', model: 'pi-default', capabilities: [] },
+        capabilitySummary: { provider: 'doubao', model: 'doubao-image', capabilities: [] },
         artifacts: [],
         createdAt: '2026-05-31T00:00:00.000Z',
         updatedAt: '2026-05-31T00:00:00.000Z',
@@ -197,10 +209,34 @@ test('createAgentRun returns run and transient artifacts from API payload', asyn
         },
       ],
     });
+  };
 
   try {
-    const result = await createAgentRun({ taskType: 'image', prompt: 'stone cat' });
+    const result = await createAgentRun({
+      taskType: 'image',
+      prompt: 'repair stone cat',
+      modelId: 'model-image-upscale',
+      input: {
+        mode: 'upscale',
+        size: '1:1',
+        scale: '2x',
+        style: 'stone-print',
+        sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+      },
+    });
 
+    assert.deepEqual(requestBody, {
+      taskType: 'image',
+      prompt: 'repair stone cat',
+      modelId: 'model-image-upscale',
+      input: {
+        mode: 'upscale',
+        size: '1:1',
+        scale: '2x',
+        style: 'stone-print',
+        sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+      },
+    });
     assert.equal(result.run.id, 'run-1');
     assert.equal(result.transientArtifacts.length, 1);
     assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,abc');

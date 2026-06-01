@@ -1,23 +1,41 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Wand2, ImageIcon, Sparkles, Layers,
+  Upload, Wand2, ImageIcon, Sparkles, Layers, X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
-import { createAgentRun } from '@/features/public/agent-runtime-client';
-import { hdModels, imageModels, styleOptions, toolSizes } from '@/features/public/tool-data';
+import {
+  AgentRuntimeApiError,
+  createAgentRun,
+  listImageModels,
+  selectImageModelId,
+  type ImageModelMode,
+  type ImageModelOption,
+} from '@/features/public/agent-runtime-client';
+import { styleOptions, toolSizes } from '@/features/public/tool-data';
 
 const TABS = [
   { id: 'generate', name: 'AI生图', icon: Sparkles },
   { id: 'hd-fix', name: '高清修复', icon: Layers },
   { id: 'style-transfer', name: '图片换风格', icon: Wand2 },
-];
+] as const;
+
+type ImageGenTabId = (typeof TABS)[number]['id'];
+
+const tabModeById: Record<ImageGenTabId, ImageModelMode> = {
+  generate: 'generate',
+  'hd-fix': 'upscale',
+  'style-transfer': 'edit',
+};
+
+const acceptedSourceImageTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const maxSourceImageFileBytes = 7 * 1024 * 1024;
 
 type GeneratedImageResult = {
   dataUrl: string;
@@ -27,33 +45,190 @@ type GeneratedImageResult = {
   prompt: string;
 };
 
+type SourceImageState = {
+  dataUrl: string;
+  name: string;
+  type: string;
+  size: number;
+};
+
 export default function ImageGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
-  const [activeTab, setActiveTab] = useState('generate');
+  const [activeTab, setActiveTab] = useState<ImageGenTabId>('generate');
   const [prompt, setPrompt] = useState('');
-  const [selectedModel, setSelectedModel] = useState(imageModels[0].id);
+  const [modelsByMode, setModelsByMode] = useState<Record<ImageModelMode, ImageModelOption[]>>({
+    generate: [],
+    edit: [],
+    upscale: [],
+  });
+  const [selectedModelsByMode, setSelectedModelsByMode] = useState<Record<ImageModelMode, string | null>>({
+    generate: null,
+    edit: null,
+    upscale: null,
+  });
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState('1:1');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<GeneratedImageResult | null>(null);
-  const [hdModel, setHdModel] = useState(hdModels[0].id);
   const [hdScale, setHdScale] = useState('2x');
   const [hdPrompt, setHdPrompt] = useState('高清修复，增强细节，提升画质，保留原始构图');
   const [selectedStyle, setSelectedStyle] = useState('stone-print');
   const [stylePrompt, setStylePrompt] = useState('');
+  const [sourceImages, setSourceImages] = useState<Record<'upscale' | 'edit', SourceImageState | null>>({
+    upscale: null,
+    edit: null,
+  });
+  const hdFileInputRef = useRef<HTMLInputElement>(null);
+  const styleFileInputRef = useRef<HTMLInputElement>(null);
+
+  const activeMode = tabModeById[activeTab];
+  const activeModels = modelsByMode[activeMode];
+  const selectedModelId = selectedModelsByMode[activeMode];
+  const selectedModel = activeModels.find((model) => model.id === selectedModelId) ?? null;
+  const activeSourceImage = activeMode === 'upscale' || activeMode === 'edit' ? sourceImages[activeMode] : null;
+
+  useEffect(() => {
+    setGeneratedImage(null);
+    setGenerationMessage(null);
+    setGenerationError(null);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user)) {
+      setModelsByMode({ generate: [], edit: [], upscale: [] });
+      setSelectedModelsByMode({ generate: null, edit: null, upscale: null });
+      setModelsError(null);
+      setModelsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadModelsForMode() {
+      setModelsLoading(true);
+      setModelsError(null);
+
+      try {
+        const models = await listImageModels(activeMode);
+        if (cancelled) return;
+
+        setModelsByMode((current) => ({
+          ...current,
+          [activeMode]: models,
+        }));
+        setSelectedModelsByMode((current) => ({
+          ...current,
+          [activeMode]: selectImageModelId(models, current[activeMode]),
+        }));
+      } catch (error) {
+        if (cancelled) return;
+        setModelsByMode((current) => ({ ...current, [activeMode]: [] }));
+        setSelectedModelsByMode((current) => ({ ...current, [activeMode]: null }));
+        setModelsError(readRuntimeErrorMessage(error, '图片模型列表加载失败'));
+      } finally {
+        if (!cancelled) {
+          setModelsLoading(false);
+        }
+      }
+    }
+
+    void loadModelsForMode();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMode, isLoggedIn, user]);
+
+  const submitDisabledReason = useMemo(() => {
+    if (!isLoggedIn) return null;
+    if (!user || requiresActivation(user)) return '账号激活后可使用';
+    if (modelsLoading) return '模型列表加载中';
+    if (modelsError) return modelsError;
+    if (!selectedModelId) return '当前模式暂无可用模型';
+    if ((activeMode === 'upscale' || activeMode === 'edit') && !activeSourceImage) {
+      return '请先上传原图';
+    }
+    return null;
+  }, [activeMode, activeSourceImage, isLoggedIn, modelsError, modelsLoading, selectedModelId, user]);
+
+  const handleTabChange = (tabId: ImageGenTabId) => {
+    if (tabId === activeTab) return;
+    setActiveTab(tabId);
+  };
+
+  const handleModelSelect = (modelId: string) => {
+    setSelectedModelsByMode((current) => ({
+      ...current,
+      [activeMode]: modelId,
+    }));
+  };
+
+  const readSourceImage = (mode: Extract<ImageModelMode, 'edit' | 'upscale'>, file: File) => {
+    setGenerationMessage(null);
+    setGenerationError(null);
+
+    if (!acceptedSourceImageTypes.has(file.type)) {
+      setSourceImages((current) => ({ ...current, [mode]: null }));
+      setGenerationError('仅支持 PNG、JPEG 或 WebP 图片。');
+      return;
+    }
+
+    if (file.size > maxSourceImageFileBytes) {
+      setSourceImages((current) => ({ ...current, [mode]: null }));
+      setGenerationError('图片过大，请上传 7 MiB 以内的图片。');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl.startsWith('data:image/')) {
+        setSourceImages((current) => ({ ...current, [mode]: null }));
+        setGenerationError('图片读取失败，请重新选择文件。');
+        return;
+      }
+
+      setSourceImages((current) => ({
+        ...current,
+        [mode]: {
+          dataUrl,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+        },
+      }));
+    };
+    reader.onerror = () => {
+      setSourceImages((current) => ({ ...current, [mode]: null }));
+      setGenerationError('图片读取失败，请重新选择文件。');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSourceImageChange = (
+    mode: Extract<ImageModelMode, 'edit' | 'upscale'>,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    readSourceImage(mode, file);
+  };
+
+  const clearSourceImage = (mode: Extract<ImageModelMode, 'edit' | 'upscale'>) => {
+    setSourceImages((current) => ({ ...current, [mode]: null }));
+    setGenerationMessage(null);
+    setGenerationError(null);
+  };
 
   const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
     if (isGenerating) return;
-    if (activeTab !== 'generate') {
-      setGeneratedImage(null);
-      setGenerationMessage(null);
-      setGenerationError('高清修复和图片换风格需要上传原图，上传处理将在下一步开放。');
-      return;
-    }
 
     const promptByTab = {
       generate: prompt,
@@ -67,6 +242,16 @@ export default function ImageGenPage() {
       setGenerationError('请输入提示词后再开始生成。');
       return;
     }
+    if (!selectedModelId) {
+      setGenerationMessage(null);
+      setGenerationError(modelsLoading ? '模型列表加载中' : '当前模式暂无可用模型');
+      return;
+    }
+    if ((activeMode === 'upscale' || activeMode === 'edit') && !activeSourceImage) {
+      setGenerationMessage(null);
+      setGenerationError('请先上传原图。');
+      return;
+    }
 
     setIsGenerating(true);
     setGenerationError(null);
@@ -77,12 +262,13 @@ export default function ImageGenPage() {
       const { run, transientArtifacts } = await createAgentRun({
         taskType: 'image',
         prompt: runPrompt,
+        modelId: selectedModelId,
         input: {
-          mode: activeTab,
-          model: selectedModel,
+          mode: activeMode,
           size: selectedSize,
-          hdScale,
+          scale: activeMode === 'upscale' ? hdScale : undefined,
           style: selectedStyle,
+          sourceImageDataUrl: activeSourceImage?.dataUrl,
         },
       });
       if (run.status === 'failed') {
@@ -104,7 +290,7 @@ export default function ImageGenPage() {
       });
       setGenerationMessage(run.finalMessage ?? '图片已生成，请及时下载保存。');
     } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : '图片生成请求失败');
+      setGenerationError(readRuntimeErrorMessage(error, '图片生成请求失败'));
     } finally {
       setIsGenerating(false);
     }
@@ -163,7 +349,7 @@ export default function ImageGenPage() {
           {TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-all ${
                 activeTab === tab.id
                   ? 'bg-black/5 text-[#1d1d1f]'
@@ -201,36 +387,13 @@ export default function ImageGenPage() {
                 {/* Model */}
                 <div>
                   <label className="mb-2 block text-sm font-medium">模型选择</label>
-                  <div className="space-y-1.5">
-                    {imageModels.map((model) => (
-                      <button
-                        key={model.id}
-                        onClick={() => setSelectedModel(model.id)}
-                        className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 text-left transition-all ${
-                          selectedModel === model.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{model.name}</span>
-                            {model.badge && <span className="rounded-md bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">{model.badge}</span>}
-                          </div>
-                          <div className="text-xs text-[#444444]">{model.desc}</div>
-                        </div>
-                        <div className="flex h-5 w-5 items-center justify-center">
-                          {selectedModel === model.id ? (
-                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f]">
-                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                                <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            </div>
-                          ) : (
-                            <div className="h-4 w-4 rounded-full border-2 border-black/10" />
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  <ModelOptions
+                    models={activeModels}
+                    selectedModelId={selectedModelId}
+                    loading={modelsLoading}
+                    error={modelsError}
+                    onSelect={handleModelSelect}
+                  />
                 </div>
                 {/* Size */}
                 <div>
@@ -249,9 +412,10 @@ export default function ImageGenPage() {
                     ))}
                   </div>
                 </div>
-                <button onClick={handleGenerate} disabled={isGenerating} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium">
+                <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
                   {isGenerating ? '生成中...' : '开始生成'}
                 </button>
+                {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
               </>
             )}
 
@@ -259,39 +423,22 @@ export default function ImageGenPage() {
               <>
                 <div>
                   <label className="mb-2 block text-sm font-medium">上传图片</label>
-                  <div className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-black/8 py-12 transition-colors hover:border-black/10">
-                    <div className="text-center">
-                      <Upload size={24} className="mx-auto mb-2 text-[#444444]" />
-                      <p className="text-sm text-[#444444]">点击或拖拽上传</p>
-                    </div>
-                  </div>
+                  <input ref={hdFileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => handleSourceImageChange('upscale', event)} />
+                  <SourceImagePicker
+                    sourceImage={sourceImages.upscale}
+                    onPick={() => hdFileInputRef.current?.click()}
+                    onClear={() => clearSourceImage('upscale')}
+                  />
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">修复模型</label>
-                  <div className="space-y-1.5">
-                    {hdModels.map((model) => (
-                      <button
-                        key={model.id}
-                        onClick={() => setHdModel(model.id)}
-                        className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 text-left transition-all ${
-                          hdModel === model.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
-                        }`}
-                      >
-                        <div><div className="text-sm font-medium">{model.name}</div><div className="text-xs text-[#444444]">{model.desc}</div></div>
-                        <div className="flex h-5 w-5 items-center justify-center">
-                          {hdModel === model.id ? (
-                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f]">
-                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                                <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            </div>
-                          ) : (
-                            <div className="h-4 w-4 rounded-full border-2 border-black/10" />
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  <ModelOptions
+                    models={activeModels}
+                    selectedModelId={selectedModelId}
+                    loading={modelsLoading}
+                    error={modelsError}
+                    onSelect={handleModelSelect}
+                  />
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">放大倍数</label>
@@ -305,9 +452,10 @@ export default function ImageGenPage() {
                   <label className="mb-2 block text-sm font-medium">修复提示词</label>
                   <textarea value={hdPrompt} onChange={(e) => setHdPrompt(e.target.value)} rows={2} className="w-full resize-none rounded-xl border border-black/8 bg-white/[0.03] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none focus:border-black/10" />
                 </div>
-                <button onClick={handleGenerate} disabled={isGenerating} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium">
+                <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
                   {isGenerating ? '修复中...' : '开始修复'}
                 </button>
+                {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
               </>
             )}
 
@@ -315,12 +463,22 @@ export default function ImageGenPage() {
               <>
                 <div>
                   <label className="mb-2 block text-sm font-medium">上传图片</label>
-                  <div className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-black/8 py-12 transition-colors hover:border-black/10">
-                    <div className="text-center">
-                      <Upload size={24} className="mx-auto mb-2 text-[#444444]" />
-                      <p className="text-sm text-[#444444]">点击或拖拽上传</p>
-                    </div>
-                  </div>
+                  <input ref={styleFileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => handleSourceImageChange('edit', event)} />
+                  <SourceImagePicker
+                    sourceImage={sourceImages.edit}
+                    onPick={() => styleFileInputRef.current?.click()}
+                    onClear={() => clearSourceImage('edit')}
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium">编辑模型</label>
+                  <ModelOptions
+                    models={activeModels}
+                    selectedModelId={selectedModelId}
+                    loading={modelsLoading}
+                    error={modelsError}
+                    onSelect={handleModelSelect}
+                  />
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">选择风格</label>
@@ -343,9 +501,10 @@ export default function ImageGenPage() {
                   <label className="mb-2 block text-sm font-medium">附加提示词</label>
                   <textarea value={stylePrompt} onChange={(e) => setStylePrompt(e.target.value)} placeholder="可选：添加额外的风格描述..." rows={2} className="w-full resize-none rounded-xl border border-black/8 bg-white/[0.03] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none focus:border-black/10" />
                 </div>
-                <button onClick={handleGenerate} disabled={isGenerating} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium">
+                <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
                   {isGenerating ? '转换中...' : '开始换风格'}
                 </button>
+                {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
               </>
             )}
           </div>
@@ -374,6 +533,7 @@ export default function ImageGenPage() {
                   图片不会保存到服务器，请及时下载。刷新、离开页面或生成下一张后无法恢复。
                 </div>
                 {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
+                {selectedModel ? <p className="text-xs text-[#6e6e73]">模型：{selectedModel.name}</p> : null}
               </div>
             ) : generationError ? (
               <div className="flex flex-col items-center text-center">
@@ -405,4 +565,133 @@ export default function ImageGenPage() {
       </div>
     </div>
   );
+}
+
+function ModelOptions({
+  models,
+  selectedModelId,
+  loading,
+  error,
+  onSelect,
+}: {
+  models: ImageModelOption[];
+  selectedModelId: string | null;
+  loading: boolean;
+  error: string | null;
+  onSelect: (modelId: string) => void;
+}) {
+  if (loading) {
+    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">模型加载中...</div>;
+  }
+
+  if (error) {
+    return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>;
+  }
+
+  if (models.length === 0) {
+    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">当前模式暂无可用模型</div>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {models.map((model) => (
+        <button
+          key={model.id}
+          onClick={() => onSelect(model.id)}
+          className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 text-left transition-all ${
+            selectedModelId === model.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
+          }`}
+        >
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{model.name}</span>
+              {model.isDefault ? <span className="rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] font-medium text-[#444444]">默认</span> : null}
+            </div>
+            <div className="text-xs text-[#444444]">{model.providerName} · {model.entitlementLabel} · {model.pricingSummary}</div>
+          </div>
+          <div className="flex h-5 w-5 items-center justify-center">
+            {selectedModelId === model.id ? (
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f]">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+            ) : (
+              <div className="h-4 w-4 rounded-full border-2 border-black/10" />
+            )}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SourceImagePicker({
+  sourceImage,
+  onPick,
+  onClear,
+}: {
+  sourceImage: SourceImageState | null;
+  onPick: () => void;
+  onClear: () => void;
+}) {
+  if (sourceImage) {
+    return (
+      <div className="rounded-xl border border-black/8 p-3">
+        <div className="mb-3 overflow-hidden rounded-lg bg-[#f5f5f7]">
+          <img src={sourceImage.dataUrl} alt={sourceImage.name} className="max-h-64 w-full object-contain" />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{sourceImage.name}</p>
+            <p className="text-xs text-[#6e6e73]">{formatBytes(sourceImage.size)} · {sourceImage.type}</p>
+          </div>
+          <button type="button" onClick={onClear} className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-black/8 text-[#444444] hover:border-black/15" aria-label="清除图片">
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onPick} className="flex w-full cursor-pointer items-center justify-center rounded-xl border border-dashed border-black/8 py-12 transition-colors hover:border-black/10">
+      <div className="text-center">
+        <Upload size={24} className="mx-auto mb-2 text-[#444444]" />
+        <p className="text-sm text-[#444444]">点击上传 PNG、JPEG 或 WebP</p>
+        <p className="mt-1 text-xs text-[#6e6e73]">最大 7 MiB</p>
+      </div>
+    </button>
+  );
+}
+
+function formatBytes(value: number) {
+  if (value < 1024 * 1024) {
+    return `${Math.max(1, Math.round(value / 1024))} KiB`;
+  }
+
+  return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function readRuntimeErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof AgentRuntimeApiError) {
+    if (error.code === 'insufficient_credits') {
+      return '积分不足，无法使用当前模型';
+    }
+    if (error.code === 'model_entitlement_required') {
+      return '当前账号无权使用所选模型';
+    }
+    if (error.code === 'model_not_available') {
+      return '所选模型不可用，请切换模型后重试';
+    }
+    if (error.code === 'provider_unconfigured') {
+      return '模型服务暂未配置，请稍后再试';
+    }
+    if (error.code === 'provider_error') {
+      return '模型服务请求失败，请稍后再试';
+    }
+    return error.message;
+  }
+
+  return error instanceof Error ? error.message : fallback;
 }
