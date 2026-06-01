@@ -78,8 +78,6 @@ export default function VideoGenPage() {
         typeof (payload.payload as Record<string, unknown>).message === 'string'
           ? ((payload.payload as Record<string, unknown>).message as string)
           : '视频生成请求失败';
-      videoReceivedRunIdRef.current = null;
-      setGeneratedVideo(null);
       setGenerationError(failureMessage);
       setIsGenerating(false);
       eventSource.close();
@@ -150,6 +148,12 @@ export default function VideoGenPage() {
   const handleDownloadVideo = () => {
     if (!generatedVideo) return;
     try {
+      if (generatedVideo.delivery.mode === 'provider_url') {
+        window.open(generatedVideo.delivery.url, '_blank', 'noopener,noreferrer');
+        setGenerationMessage('已打开提供方链接，请在新标签页保存视频。');
+        return;
+      }
+
       const link = document.createElement('a');
       link.href = generatedVideo.delivery.url;
       link.download =
@@ -329,16 +333,16 @@ export default function VideoGenPage() {
             {generatedVideo ? (
               <div className="flex w-full flex-col items-center gap-4 text-center">
                 <div className="aspect-video w-full overflow-hidden rounded-xl border border-black/5 bg-black">
-                  {typeof generatedVideo.metadata.mimeType === 'string' && generatedVideo.metadata.mimeType.startsWith('video/') ? (
-                    <video
-                      src={generatedVideo.delivery.url}
-                      controls
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
+                  {typeof generatedVideo.metadata.mimeType === 'string' && generatedVideo.metadata.mimeType.startsWith('image/') ? (
                     <img
                       src={generatedVideo.delivery.url}
                       alt={generatedVideo.title}
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <video
+                      src={generatedVideo.delivery.url}
+                      controls
                       className="h-full w-full object-contain"
                     />
                   )}
@@ -349,6 +353,11 @@ export default function VideoGenPage() {
                 <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
                   生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。
                 </div>
+                {generationError ? (
+                  <div className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-left text-xs leading-5 text-red-700">
+                    {generationError}
+                  </div>
+                ) : null}
                 {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
               </div>
             ) : isGenerating ? (
