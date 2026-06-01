@@ -122,9 +122,57 @@ async function responseToSummary(response: Response): Promise<IdempotentResponse
 
   return {
     status: response.status,
-    body: contentType.includes('application/json') ? await response.json() : await response.text(),
+    body: contentType.includes('application/json')
+      ? sanitizeIdempotentResponseBody(await response.json())
+      : await response.text(),
     headers,
   };
+}
+
+function sanitizeIdempotentResponseBody(body: unknown): unknown {
+  if (!isPlainObject(body)) {
+    return body;
+  }
+
+  return sanitizeResponseObject(body, false);
+}
+
+function sanitizeResponseValue(value: unknown, withinTransientArtifact: boolean): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeResponseValue(entry, withinTransientArtifact));
+  }
+
+  if (isPlainObject(value)) {
+    return sanitizeResponseObject(value, withinTransientArtifact);
+  }
+
+  return value;
+}
+
+function sanitizeResponseObject(
+  value: Record<string, unknown>,
+  withinTransientArtifact: boolean,
+): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === 'dataUrl' && withinTransientArtifact) {
+      continue;
+    }
+
+    if (key === 'transientArtifacts' && Array.isArray(entry)) {
+      sanitized[key] = entry.map((artifact) => sanitizeResponseValue(artifact, true));
+      continue;
+    }
+
+    sanitized[key] = sanitizeResponseValue(entry, withinTransientArtifact);
+  }
+
+  return sanitized;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function summaryToResponse(summary: IdempotentResponseSummary, replayed: boolean) {
