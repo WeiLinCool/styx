@@ -6,6 +6,7 @@ import {
 } from '@/server/auth/admin-auth';
 import { ADMIN_SESSION_COOKIE } from '@/server/auth/admin-auth-config';
 import { accountErrorToResponse } from '@/server/auth/account-types';
+import { readJsonBody } from '@/server/api-request-guard';
 import { createEncryptedJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
@@ -15,7 +16,8 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const body = bodySchema.parse(await request.json());
+    const { body: parsedBody } = await readJsonBody(request);
+    const body = bodySchema.parse(parsedBody);
     const session = await createAdminSessionFromCredentials({
       username: body.username,
       password: body.password,
@@ -35,6 +37,19 @@ export async function POST(request: Request) {
     });
     return response;
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'validation_error',
+            message: '管理端登录请求无效。',
+            issues: error.issues,
+          },
+        },
+        { status: 400 },
+      );
+    }
+
     const response = accountErrorToResponse(error);
     return NextResponse.json(response.body, { status: response.status });
   }

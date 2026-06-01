@@ -5,6 +5,7 @@ import {
   buildRawRequestBodyHash,
   buildProtectionHeaders,
 } from '@/server/request-security';
+import { createUserApiClient } from '@/lib/user-api-client';
 import { createLoginHandler } from './route';
 
 test('POST accepts inviteCode and forwards it to registerOrLoginUser', async () => {
@@ -56,13 +57,18 @@ test('POST accepts inviteCode and forwards it to registerOrLoginUser', async () 
   headers.set('x-forwarded-for', '127.0.0.1');
   headers.set('x-request-body-hash', buildRawRequestBodyHash(requestBody));
 
-  const response = await POST(
-    new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      headers,
-      body: requestBody,
-    }),
-  );
+  const client = createUserApiClient({
+    fetch: async () =>
+      POST(
+        new Request('http://localhost/api/auth/login', {
+          method: 'POST',
+          headers,
+          body: requestBody,
+        }),
+      ),
+    collectBrowserFingerprint: () => null,
+  });
+  const response = await client.request('/api/auth/login');
 
   const body = await response.json();
 
