@@ -1,4 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
+import * as dotenv from 'dotenv';
 import { eq, sql } from 'drizzle-orm';
 import { Pool } from 'pg';
 import {
@@ -21,6 +22,9 @@ import {
   userIdentities,
   users,
 } from './schema';
+
+dotenv.config({ path: '.env.local' });
+dotenv.config();
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -278,10 +282,8 @@ async function main() {
     throw new Error('Development AI provider seed row was not created.');
   }
 
-  await db
-    .insert(aiModels)
-    .values([
-      {
+  const seedAiModels: (typeof aiModels.$inferInsert)[] = [
+    {
         id: ids.aiModelFree,
         providerId: developmentProvider.id,
         code: 'dev-free-chat',
@@ -369,26 +371,33 @@ async function main() {
         },
         metadata: { seed: true },
       },
-    ])
-    .onConflictDoUpdate({
-      target: aiModels.code,
-      set: {
-        providerId: developmentProvider.id,
-        name: sql.raw(`excluded.name`),
-        model: sql.raw(`excluded.model`),
-        status: 'enabled',
-        supportsChat: sql.raw(`excluded.supports_chat`),
-        supportsImageGeneration: sql.raw(`excluded.supports_image_generation`),
-        supportsImageEdit: sql.raw(`excluded.supports_image_edit`),
-        supportsImageUpscale: sql.raw(`excluded.supports_image_upscale`),
-        isDefaultChat: sql.raw(`excluded.is_default_chat`),
-        isDefaultImage: sql.raw(`excluded.is_default_image`),
-        sortOrder: sql.raw(`excluded.sort_order`),
-        pricing: sql.raw(`excluded.pricing`),
-        metadata: sql.raw(`excluded.metadata`),
-        updatedAt: new Date(),
-      },
-    });
+    ];
+
+  for (const model of seedAiModels) {
+    await db
+      .insert(aiModels)
+      .values(model)
+      .onConflictDoUpdate({
+        target: aiModels.id,
+        set: {
+          providerId: developmentProvider.id,
+          code: model.code,
+          name: model.name,
+          model: model.model,
+          status: model.status,
+          supportsChat: model.supportsChat,
+          supportsImageGeneration: model.supportsImageGeneration,
+          supportsImageEdit: model.supportsImageEdit,
+          supportsImageUpscale: model.supportsImageUpscale,
+          isDefaultChat: model.isDefaultChat,
+          isDefaultImage: model.isDefaultImage,
+          sortOrder: model.sortOrder,
+          pricing: model.pricing,
+          metadata: model.metadata,
+          updatedAt: new Date(),
+        },
+      });
+  }
 
   const seededModels = await db
     .select({ id: aiModels.id, code: aiModels.code })
