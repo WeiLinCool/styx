@@ -3,7 +3,11 @@ import { eq, sql } from 'drizzle-orm';
 
 import type { AiUsage } from '@/server/agent/types';
 import { db, schema } from '@/server/db';
-import type { AiModelPricing, ResolvedChatModel } from '@/server/repositories/ai-models';
+import type {
+  AiModelPricing,
+  ResolvedChatModel,
+  ResolvedImageModel,
+} from '@/server/repositories/ai-models';
 
 export class InsufficientCreditsError extends Error {
   constructor() {
@@ -42,6 +46,10 @@ export function calculateChatCreditCost(input: {
         (input.usage.completionTokens / 1000) * input.pricing.completionCreditsPer1k,
     ),
   );
+}
+
+export function calculateImageCreditCost(input: { pricing: AiModelPricing }) {
+  return input.pricing.minimumCredits;
 }
 
 export function calculateCreditBalance(input: {
@@ -182,6 +190,57 @@ export async function debitForAgentRun(input: {
       reason: 'chat usage',
       metadata: {
         usage: input.usage,
+        pricing: input.pricing,
+        model: input.modelSnapshot,
+      },
+    });
+
+    return { ...result, amount: Math.abs(amount) };
+  });
+}
+
+export async function debitForImageAgentRun(input: {
+  userId: string;
+  runId: string;
+  pricing: AiModelPricing;
+  modelSnapshot: ResolvedImageModel | Record<string, unknown>;
+  metadata: Record<string, unknown>;
+}): Promise<CreditLedgerDebitResult & { amount: number }> {
+  const amount = calculateImageCreditCost({ pricing: input.pricing });
+
+  if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
+    return {
+      entryId: `dev-ledger:${input.runId}:image-usage`,
+      balanceAfter: 0,
+      amount,
+    };
+  }
+
+  const database = requireCreditDatabase();
+  const idempotencyKey = `agent-run:${input.runId}:image-usage`;
+
+  return database.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${schema.users} where id = ${input.userId} for update`);
+
+    const existing = await findLedgerEntryByKey(tx, idempotencyKey);
+    if (existing) {
+      return {
+        entryId: existing.id,
+        balanceAfter:
+          existing.balanceAfter ?? (await getCreditBalanceWithExecutor(tx, input.userId)),
+        amount: Math.abs(existing.amount),
+      };
+    }
+
+    const result = await insertCreditLedgerEntry(tx, {
+      userId: input.userId,
+      runId: input.runId,
+      entryType: 'debit',
+      amount: -amount,
+      idempotencyKey,
+      reason: 'image usage',
+      metadata: {
+        ...input.metadata,
         pricing: input.pricing,
         model: input.modelSnapshot,
       },

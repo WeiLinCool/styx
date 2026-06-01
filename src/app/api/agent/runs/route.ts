@@ -21,6 +21,19 @@ import {
 } from '@/server/repositories/ai-models';
 import type { AgentRunDto, CreateAgentRunResult } from '@/server/agent/types';
 
+const MAX_SOURCE_IMAGE_DATA_URL_BYTES = 10 * 1024 * 1024;
+
+const sourceImageDataUrlSchema = z
+  .string()
+  .regex(
+    /^data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/]+={0,2}$/,
+    'source image must be a supported data URL.',
+  )
+  .refine(
+    (value) => value.length <= MAX_SOURCE_IMAGE_DATA_URL_BYTES,
+    'source image data URL is too large.',
+  );
+
 const createAgentRunBodySchema = z
   .object({
     taskType: z.enum(['chat', 'image', 'video', 'workflow']),
@@ -39,6 +52,49 @@ const createAgentRunBodySchema = z
         path: ['modelId'],
         message: 'modelId is required for chat requests.',
       });
+    }
+
+    if (body.taskType !== 'image') {
+      return;
+    }
+
+    if (!body.modelId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['modelId'],
+        message: 'modelId is required for image requests.',
+      });
+    }
+
+    const mode = body.input.mode;
+    if (mode !== 'generate' && mode !== 'edit' && mode !== 'upscale') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['input', 'mode'],
+        message: 'image input.mode must be generate, edit, or upscale.',
+      });
+      return;
+    }
+
+    const sourceImageDataUrl = body.input.sourceImageDataUrl;
+    if ((mode === 'edit' || mode === 'upscale') && typeof sourceImageDataUrl !== 'string') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['input', 'sourceImageDataUrl'],
+        message: 'source image is required for edit and upscale image requests.',
+      });
+      return;
+    }
+
+    if (typeof sourceImageDataUrl === 'string') {
+      const parsed = sourceImageDataUrlSchema.safeParse(sourceImageDataUrl);
+      if (!parsed.success) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['input', 'sourceImageDataUrl'],
+          message: parsed.error.issues[0]?.message ?? 'source image must be a supported data URL.',
+        });
+      }
     }
   });
 

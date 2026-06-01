@@ -15,6 +15,7 @@ import {
   createAgentRunResponse,
   createDeleteAgentRunResponse,
   parseCreateAgentRunBody,
+  parseCreateAgentRunRawBody,
   parseCreateAgentRunRequestBody,
   serviceErrorToResponse,
 } from './route';
@@ -44,12 +45,12 @@ test('parseCreateAgentRunBody rejects empty prompt', () => {
 
 test('parseCreateAgentRunBody trims prompt and defaults input', () => {
   const parsed = parseCreateAgentRunBody({
-    taskType: 'image',
+    taskType: 'workflow',
     prompt: '  帮我写提示词  ',
   });
 
   assert.deepEqual(parsed, {
-    taskType: 'image',
+    taskType: 'workflow',
     prompt: '帮我写提示词',
     input: {},
   });
@@ -70,6 +71,26 @@ test('parseCreateAgentRunBody accepts chat modelId', () => {
   });
 
   assert.equal(parsed.modelId, 'seed-model-free');
+});
+
+test('parseCreateAgentRunRawBody requires modelId for image requests', () => {
+  assert.throws(
+    () => parseCreateAgentRunRawBody({ taskType: 'image', prompt: '山水', input: { mode: 'generate' } }),
+    /modelId is required/,
+  );
+});
+
+test('parseCreateAgentRunRawBody requires source image for edit mode', () => {
+  assert.throws(
+    () =>
+      parseCreateAgentRunRawBody({
+        taskType: 'image',
+        prompt: '水墨风',
+        modelId: 'model-1',
+        input: { mode: 'edit' },
+      }),
+    /source image is required/,
+  );
 });
 
 test('parseCreateAgentRunBody preserves non-chat requests without modelId', () => {

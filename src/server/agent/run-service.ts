@@ -1,18 +1,28 @@
 import {
   calculateChatCreditCost,
+  calculateImageCreditCost,
   assertCanAffordMinimum as defaultAssertCanAffordMinimum,
   debitForAgentRun as defaultDebitForAgentRun,
+  debitForImageAgentRun as defaultDebitForImageAgentRun,
 } from '@/server/billing/credits';
 import {
   createChatProviderAdapter as defaultCreateChatProviderAdapter,
   type ChatProviderResult,
   type ChatProviderAdapter,
 } from '@/server/ai/provider-adapters';
+import {
+  createDoubaoImageProviderAdapter as defaultCreateImageProviderAdapter,
+  type ImageProviderAdapter,
+  type ImageProviderResult,
+} from '@/server/ai/image-provider-adapters';
 import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
 import type { AgentRunRepository } from '@/server/repositories/agent-runs';
 import {
   resolveChatModelForUser as defaultResolveChatModelForUser,
+  resolveImageModelForUser as defaultResolveImageModelForUser,
+  type ImageModelMode,
   type ResolvedChatModel,
+  type ResolvedImageModel,
 } from '@/server/repositories/ai-models';
 import type {
   AgentCapabilitySnapshot,
@@ -51,6 +61,15 @@ type DebitForAgentRun = (input: {
   amount: number;
 }) => Promise<{ entryId: string; balanceAfter: number }>;
 
+type DebitForImageAgentRun = (input: {
+  userId: string;
+  runId: string;
+  pricing: ResolvedImageModel['pricing'];
+  modelSnapshot: ResolvedImageModel;
+  metadata: Record<string, unknown>;
+  amount: number;
+}) => Promise<{ entryId: string; balanceAfter: number }>;
+
 type ChatMessage = {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -66,6 +85,13 @@ export type CreateAgentRunServiceInput = {
   ) => Promise<void>;
   createChatProviderAdapter?: (model: ResolvedChatModel) => ChatProviderAdapter;
   debitForAgentRun?: DebitForAgentRun;
+  resolveImageModelForUser?: (
+    userId: string,
+    modelId: string,
+    mode: ImageModelMode,
+  ) => Promise<ResolvedImageModel>;
+  createImageProviderAdapter?: (model: ResolvedImageModel) => ImageProviderAdapter;
+  debitForImageAgentRun?: DebitForImageAgentRun;
 };
 
 export type CreateAndRunAgentRunInput = {
@@ -196,7 +222,7 @@ function requireUpdatedRun(run: AgentRunDto | null, action: string): AgentRunDto
   return run;
 }
 
-function toSelectedModelSnapshot(model: ResolvedChatModel) {
+function toSelectedModelSnapshot(model: ResolvedChatModel | ResolvedImageModel) {
   return {
     id: model.id,
     code: model.code,
@@ -204,6 +230,10 @@ function toSelectedModelSnapshot(model: ResolvedChatModel) {
     providerName: model.providerName,
     entitlementLabel: model.entitlement.label,
   };
+}
+
+function toImageMode(value: unknown): ImageModelMode {
+  return value === 'edit' || value === 'upscale' ? value : 'generate';
 }
 
 function toChatCapabilitySnapshot(model: ResolvedChatModel): AgentCapabilitySnapshot & Record<string, unknown> {
@@ -240,6 +270,53 @@ function toChatCapabilitySnapshot(model: ResolvedChatModel): AgentCapabilitySnap
 function toChatRunInput(input: Record<string, unknown>, model: ResolvedChatModel) {
   return {
     ...cloneRecord(input),
+    modelId: model.id,
+    selectedModel: toSelectedModelSnapshot(model),
+  };
+}
+
+function toImageCapabilitySnapshot(
+  model: ResolvedImageModel,
+  mode: ImageModelMode,
+): AgentCapabilitySnapshot & Record<string, unknown> {
+  return {
+    bundleId: `image-model-${model.id}`,
+    bundleCode: `image-${model.code}`,
+    provider: model.providerCode,
+    model: model.model,
+    capabilities: [
+      {
+        id: model.id,
+        kind: 'model',
+        code: model.code,
+        name: model.name,
+        config: {
+          providerId: model.providerId,
+          providerCode: model.providerCode,
+          providerType: model.providerType,
+          model: model.model,
+          mode,
+          supportedModes: [...model.supportedModes],
+        },
+      },
+    ],
+    selectedModel: toSelectedModelSnapshot(model),
+    billing: {
+      status: 'pending',
+      creditCost: null,
+      ledgerEntryId: null,
+    },
+    entitlement: model.entitlement,
+    pricing: model.pricing,
+    supportedModes: [...model.supportedModes],
+  };
+}
+
+function sanitizeImageRunInput(input: Record<string, unknown>, model: ResolvedImageModel, mode: ImageModelMode) {
+  const { sourceImageDataUrl: _sourceImageDataUrl, ...durableInput } = cloneRecord(input);
+  return {
+    ...durableInput,
+    mode,
     modelId: model.id,
     selectedModel: toSelectedModelSnapshot(model),
   };
@@ -282,6 +359,30 @@ function toFailedChatSnapshot(input: {
   } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
 }
 
+function toFailedImageSnapshot(input: {
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  providerResult?: ImageProviderResult;
+  creditCost?: number | null;
+  errorMessage: string;
+}) {
+  return {
+    ...input.capabilitySnapshot,
+    ...(input.providerResult
+      ? {
+          rawMetadata: input.providerResult.rawMetadata,
+        }
+      : {}),
+    billing: {
+      status: 'failed',
+      creditCost: input.creditCost ?? null,
+      ledgerEntryId: null,
+    },
+    failure: {
+      message: input.errorMessage,
+    },
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+}
+
 function providerArtifact(input: {
   model: ResolvedChatModel;
   providerResult: ChatProviderResult;
@@ -307,6 +408,9 @@ export function createAgentRunService({
   assertCanAffordMinimum = defaultAssertCanAffordMinimum,
   createChatProviderAdapter = defaultCreateChatProviderAdapter,
   debitForAgentRun = defaultDebitForAgentRun,
+  resolveImageModelForUser = defaultResolveImageModelForUser,
+  createImageProviderAdapter = () => defaultCreateImageProviderAdapter(),
+  debitForImageAgentRun = defaultDebitForImageAgentRun,
 }: CreateAgentRunServiceInput) {
   return {
     async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<CreateAgentRunResult> {
@@ -318,6 +422,17 @@ export function createAgentRunService({
           assertCanAffordMinimum,
           createChatProviderAdapter,
           debitForAgentRun,
+        });
+      }
+
+      if (input.taskType === 'image' && input.modelId) {
+        return createAndRunImageAgentRun({
+          input,
+          repository,
+          resolveImageModelForUser,
+          assertCanAffordMinimum,
+          createImageProviderAdapter,
+          debitForImageAgentRun,
         });
       }
 
@@ -461,6 +576,198 @@ async function createAndRunChatAgentRun(input: {
   });
 
   return runResult(running);
+}
+
+async function createAndRunImageAgentRun(input: {
+  input: CreateAndRunAgentRunInput;
+  repository: AgentRunRepository;
+  resolveImageModelForUser: (
+    userId: string,
+    modelId: string,
+    mode: ImageModelMode,
+  ) => Promise<ResolvedImageModel>;
+  assertCanAffordMinimum: (
+    userId: string,
+    pricing: ResolvedImageModel['pricing'],
+  ) => Promise<void>;
+  createImageProviderAdapter: (model: ResolvedImageModel) => ImageProviderAdapter;
+  debitForImageAgentRun: DebitForImageAgentRun;
+}): Promise<CreateAgentRunResult> {
+  const { repository, resolveImageModelForUser, assertCanAffordMinimum } = input;
+  const request = input.input;
+  if (!request.modelId) {
+    throw new AgentRunModelRequiredError();
+  }
+
+  const mode = toImageMode(request.input.mode);
+  const sourceImageDataUrl =
+    typeof request.input.sourceImageDataUrl === 'string'
+      ? request.input.sourceImageDataUrl
+      : undefined;
+  const model = await resolveImageModelForUser(request.userId, request.modelId, mode);
+  await assertCanAffordMinimum(request.userId, model.pricing);
+
+  const capabilitySnapshot = toImageCapabilitySnapshot(model, mode);
+  const runInput = sanitizeImageRunInput(request.input, model, mode);
+  const created = await repository.createRun({
+    userId: request.userId,
+    conversationId: request.conversationId,
+    taskType: request.taskType,
+    prompt: request.prompt,
+    provider: capabilitySnapshot.provider,
+    model: capabilitySnapshot.model,
+    capabilitySnapshot,
+    input: runInput,
+  });
+
+  await recordEventIfSupported(repository, created.id, 'queued', 'Agent run queued', {
+    taskType: request.taskType,
+    modelId: model.id,
+    mode,
+  });
+
+  try {
+    const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+    await recordEventIfSupported(repository, running.id, 'running', 'Image provider started', {
+      provider: model.providerCode,
+      model: model.model,
+      mode,
+    });
+
+    const adapter = input.createImageProviderAdapter(model);
+    const providerResult = await adapter.runImage({
+      runId: running.id,
+      userId: request.userId,
+      model,
+      mode,
+      prompt: request.prompt,
+      size: typeof request.input.size === 'string' ? request.input.size : undefined,
+      scale: typeof request.input.scale === 'string' ? request.input.scale : undefined,
+      sourceImageDataUrl,
+    });
+
+    const acceptedArtifacts = providerResult.artifacts.filter((artifact) => artifact.kind === 'image');
+    if (acceptedArtifacts.length === 0) {
+      throw new Error('Provider response did not include image output.');
+    }
+
+    const creditCost = calculateImageCreditCost({ pricing: model.pricing });
+    let debit: { entryId: string; balanceAfter: number };
+    try {
+      debit = await input.debitForImageAgentRun({
+        userId: request.userId,
+        runId: running.id,
+        pricing: model.pricing,
+        modelSnapshot: model,
+        metadata: {
+          mode,
+          rawMetadata: providerResult.rawMetadata,
+        },
+        amount: creditCost,
+      });
+    } catch (error) {
+      const errorMessage = toErrorMessage(error);
+      const failedSnapshot = toFailedImageSnapshot({
+        capabilitySnapshot,
+        providerResult,
+        creditCost,
+        errorMessage,
+      });
+      const { durableArtifacts } = splitTransientArtifacts(acceptedArtifacts);
+      await repository.appendRunEvent(running.id, {
+        eventType: 'run_failed',
+        payload: {
+          message: errorMessage,
+          failedAt: new Date().toISOString(),
+        },
+      });
+      const failed = requireUpdatedRun(
+        await repository.failRun(running.id, {
+          errorMessage,
+          finalMessage: providerResult.finalMessage,
+          artifacts: durableArtifacts,
+          capabilitySnapshot: failedSnapshot,
+          input: {
+            ...runInput,
+            billing: failedSnapshot.billing as Record<string, unknown>,
+          },
+        }),
+        'fail run',
+      );
+      return runResult(failed);
+    }
+
+    await repository.appendRunEvent(running.id, {
+      eventType: 'billing_recorded',
+      payload: {
+        creditCost,
+        ledgerEntryId: debit.entryId,
+        balanceAfter: debit.balanceAfter,
+      },
+    });
+
+    const completedSnapshot = {
+      ...capabilitySnapshot,
+      billing: {
+        status: 'billed',
+        creditCost,
+        ledgerEntryId: debit.entryId,
+      },
+      rawMetadata: providerResult.rawMetadata,
+    } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+    const { durableArtifacts, transientArtifacts } = splitTransientArtifacts(acceptedArtifacts);
+    const completed = requireUpdatedRun(
+      await repository.completeRun(running.id, {
+        finalMessage: providerResult.finalMessage,
+        artifacts: durableArtifacts,
+        capabilitySnapshot: completedSnapshot,
+        input: {
+          ...runInput,
+          billing: completedSnapshot.billing,
+        },
+      }),
+      'complete run',
+    );
+
+    await repository.appendRunEvent(completed.id, {
+      eventType: 'run_completed',
+      payload: {
+        finalMessage: providerResult.finalMessage,
+        completedAt: new Date().toISOString(),
+      },
+    });
+
+    await recordEventIfSupported(repository, completed.id, 'succeeded', 'Agent run succeeded', {
+      artifactCount: acceptedArtifacts.length,
+      creditCost,
+      ledgerEntryId: debit.entryId,
+    });
+
+    return runResult(completed, transientArtifacts);
+  } catch (error) {
+    const errorMessage = toErrorMessage(error);
+    const failedSnapshot = toFailedImageSnapshot({ capabilitySnapshot, errorMessage });
+    await recordEventIfSupported(repository, created.id, 'failed', errorMessage);
+    await repository.appendRunEvent(created.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: errorMessage,
+        failedAt: new Date().toISOString(),
+      },
+    });
+    const failed = requireUpdatedRun(
+      await repository.failRun(created.id, {
+        errorMessage,
+        capabilitySnapshot: failedSnapshot,
+        input: {
+          ...runInput,
+          billing: failedSnapshot.billing as Record<string, unknown>,
+        },
+      }),
+      'fail run',
+    );
+    return runResult(failed);
+  }
 }
 
 async function runChatOrchestration(input: {

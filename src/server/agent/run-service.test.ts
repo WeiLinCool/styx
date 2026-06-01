@@ -6,9 +6,14 @@ import {
   type AgentRunEventInput,
   type AgentRunRepository,
 } from '@/server/repositories/agent-runs';
-import type { ResolvedChatModel } from '@/server/repositories/ai-models';
+import {
+  ModelNotAvailableError,
+  type ResolvedChatModel,
+  type ResolvedImageModel,
+} from '@/server/repositories/ai-models';
 import type { AgentTaskType } from './types';
 import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
+import { calculateImageCreditCost } from '@/server/billing/credits';
 import { createDeterministicPiRuntime } from './pi-runtime';
 import {
   AgentRunModelRequiredError,
@@ -37,6 +42,25 @@ function resolvedChatModel(overrides: Partial<ResolvedChatModel> = {}): Resolved
       minimumCredits: 1,
     },
     entitlement: { allowed: true, basis: 'none', label: 'Free', value: null },
+    ...overrides,
+  };
+}
+
+function resolvedImageModel(overrides: Partial<ResolvedImageModel> = {}): ResolvedImageModel {
+  return {
+    ...resolvedChatModel({
+      id: 'seed-model-free-image',
+      code: 'dev-free-image',
+      name: 'Development Free Image',
+      model: 'development-free-image',
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 1,
+        completionCreditsPer1k: 0,
+        minimumCredits: 1,
+      },
+    }),
+    supportedModes: ['generate', 'edit'],
     ...overrides,
   };
 }
@@ -229,6 +253,201 @@ test('createAndRunAgentRun rejects chat without modelId before creating a run', 
   );
 
   assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('calculateImageCreditCost uses pricing minimum', () => {
+  assert.equal(
+    calculateImageCreditCost({
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 99,
+        completionCreditsPer1k: 99,
+        minimumCredits: 5,
+      },
+    }),
+    5,
+  );
+});
+
+test('image run resolves selected model, returns transient image, persists no media, and bills minimum credits', async () => {
+  const debits: Array<{ amount: number; metadata: Record<string, unknown> }> = [];
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async (_userId, modelId, mode) => {
+      assert.equal(modelId, 'model-1');
+      assert.equal(mode, 'generate');
+      return resolvedImageModel({
+        id: 'model-1',
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 99,
+          completionCreditsPer1k: 99,
+          minimumCredits: 7,
+        },
+      });
+    },
+    assertCanAffordMinimum: async (_userId, pricing) => {
+      assert.equal(pricing.minimumCredits, 7);
+    },
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage(request) {
+        assert.equal(request.model.id, 'model-1');
+        assert.equal(request.mode, 'generate');
+        assert.equal(request.sourceImageDataUrl, undefined);
+        return {
+          finalMessage: '图片已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图',
+              body: 'data:image/png;base64,RESULT',
+              url: null,
+              metadata: { mimeType: 'image/png', filename: 'result.png' },
+            },
+          ],
+          rawMetadata: { provider: 'test' },
+        };
+      },
+    }),
+    debitForImageAgentRun: async (input) => {
+      debits.push({ amount: input.amount, metadata: input.metadata });
+      return { entryId: 'ledger-1', balanceAfter: 100 };
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '山水',
+    modelId: 'model-1',
+    input: { mode: 'generate', size: '1024x1024' },
+  });
+
+  assert.equal(result.run.status, 'succeeded');
+  assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,RESULT');
+  assert.equal(result.run.artifacts[0]?.body, null);
+  assert.equal(result.run.artifacts[0]?.url, null);
+  assert.equal(result.run.selectedModel?.code, 'dev-free-image');
+  assert.equal(result.run.billing?.status, 'billed');
+  assert.equal(result.run.billing?.creditCost, 7);
+  assert.equal(result.run.billing?.ledgerEntryId, 'ledger-1');
+  assert.equal(debits.length, 1);
+  assert.equal(debits[0]?.amount, 7);
+
+  const stored = await repository.getRunForUser(result.run.id, 'user-1');
+  assert.equal(stored?.artifacts[0]?.body, null);
+  assert.equal(stored?.artifacts[0]?.url, null);
+});
+
+test('image run rejects unsupported selected model before creating a run', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async (_userId, modelId, mode) => {
+      assert.equal(modelId, 'model-upscale');
+      assert.equal(mode, 'upscale');
+      throw new ModelNotAvailableError();
+    },
+    assertCanAffordMinimum: async () => {
+      throw new Error('credit preflight should not run');
+    },
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        throw new Error('provider should not run');
+      },
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '放大图片',
+        modelId: 'model-upscale',
+        input: {
+          mode: 'upscale',
+          sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+        },
+      }),
+    ModelNotAvailableError,
+  );
+
+  assert.equal(providerCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('image run strips source image data URL from durable input before provider execution', async () => {
+  const durableInputs: Record<string, unknown>[] = [];
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async createRun(input) {
+      durableInputs.push(structuredClone(input.input));
+      return baseRepository.createRun(input);
+    },
+    async completeRun(runId, input) {
+      if (input.input) {
+        durableInputs.push(structuredClone(input.input));
+      }
+      return baseRepository.completeRun(runId, input);
+    },
+    async failRun(runId, input) {
+      if (typeof input !== 'string' && input.input) {
+        durableInputs.push(structuredClone(input.input));
+      }
+      return baseRepository.failRun(runId, input);
+    },
+  };
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () =>
+      resolvedImageModel({ id: 'model-edit', supportedModes: ['generate', 'edit'] }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage(request) {
+        assert.equal(request.sourceImageDataUrl, 'data:image/png;base64,SOURCE');
+        return {
+          finalMessage: '图片已编辑',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '编辑图',
+              body: 'data:image/png;base64,RESULT',
+              metadata: { mimeType: 'image/png' },
+            },
+          ],
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-1', balanceAfter: 100 }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '水墨风',
+    modelId: 'model-edit',
+    input: {
+      mode: 'edit',
+      size: '1024x1024',
+      sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+    },
+  });
+
+  assert.equal(result.run.status, 'succeeded');
+  assert.equal(JSON.stringify(durableInputs).includes('sourceImageDataUrl'), false);
+  assert.equal(JSON.stringify(durableInputs).includes('data:image/png;base64,SOURCE'), false);
 });
 
 test('createAndRunAgentRun routes chat through selected model adapter and bills usage', async () => {
