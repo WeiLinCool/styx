@@ -184,6 +184,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+const DIRECT_MEDIA_TYPED_METADATA_KEYS = new Set([
+  'mimeType',
+  'filename',
+  'width',
+  'height',
+  'durationSeconds',
+  'providerTaskId',
+  'model',
+  'storageStatus',
+]);
+
+function readMetadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readMetadataNumber(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function sanitizeDirectMediaMetadata(metadata: Record<string, unknown>): DirectMediaResultDto['metadata'] {
+  const unknownMetadata: Record<string, unknown> = {};
+  for (const [key, metadataValue] of Object.entries(metadata)) {
+    if (!DIRECT_MEDIA_TYPED_METADATA_KEYS.has(key)) {
+      unknownMetadata[key] = metadataValue;
+    }
+  }
+
+  const mimeType = readMetadataString(metadata, 'mimeType');
+  const filename = readMetadataString(metadata, 'filename');
+  const width = readMetadataNumber(metadata, 'width');
+  const height = readMetadataNumber(metadata, 'height');
+  const durationSeconds = readMetadataNumber(metadata, 'durationSeconds');
+  const providerTaskId = readMetadataString(metadata, 'providerTaskId');
+  const model = readMetadataString(metadata, 'model');
+
+  return {
+    ...unknownMetadata,
+    storageStatus: 'provider_direct',
+    ...(mimeType !== undefined ? { mimeType } : {}),
+    ...(filename !== undefined ? { filename } : {}),
+    ...(width !== undefined ? { width } : {}),
+    ...(height !== undefined ? { height } : {}),
+    ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+    ...(providerTaskId !== undefined ? { providerTaskId } : {}),
+    ...(model !== undefined ? { model } : {}),
+  };
+}
+
 export function parseStreamEventPayload(event: Pick<MessageEvent, 'data'>): Record<string, unknown> | null {
   if (typeof event.data !== 'string') {
     return null;
@@ -231,9 +281,6 @@ export function parseDirectMediaArtifactPayload(value: unknown): DirectMediaResu
       url: delivery.url,
       expiresAt,
     },
-    metadata: {
-      ...metadata,
-      storageStatus: 'provider_direct',
-    },
+    metadata: sanitizeDirectMediaMetadata(metadata),
   };
 }

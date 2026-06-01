@@ -265,6 +265,39 @@ test('parseDirectMediaArtifactPayload normalizes omitted expiresAt to null', () 
   assert.equal(parsed?.delivery.expiresAt, null);
 });
 
+test('parseDirectMediaArtifactPayload sanitizes typed metadata fields', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    kind: 'image',
+    title: '生成图片',
+    delivery: {
+      mode: 'data_url',
+      url: 'data:image/png;base64,abc',
+    },
+    metadata: {
+      storageStatus: 'provider_direct',
+      width: 'wide',
+      height: 1024,
+      durationSeconds: Number.NaN,
+      mimeType: 123,
+      filename: 'image.png',
+      providerTaskId: false,
+      model: 'pi-default',
+      customTraceId: 'trace-1',
+    },
+  });
+
+  assert.ok(parsed);
+  assert.equal('width' in parsed.metadata, false);
+  assert.equal(parsed.metadata.height, 1024);
+  assert.equal('durationSeconds' in parsed.metadata, false);
+  assert.equal('mimeType' in parsed.metadata, false);
+  assert.equal(parsed.metadata.filename, 'image.png');
+  assert.equal('providerTaskId' in parsed.metadata, false);
+  assert.equal(parsed.metadata.model, 'pi-default');
+  assert.equal(parsed.metadata.customTraceId, 'trace-1');
+  assert.equal(parsed.metadata.storageStatus, 'provider_direct');
+});
+
 test('parseStreamEventPayload returns null for invalid event JSON', () => {
   assert.equal(parseStreamEventPayload({ data: '{' } as MessageEvent), null);
 });
