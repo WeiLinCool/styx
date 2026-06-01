@@ -690,7 +690,11 @@ export const aiModels = pgTable(
     model: text('model').notNull(),
     status: aiModelStatus('status').notNull().default('enabled'),
     supportsChat: boolean('supports_chat').notNull().default(false),
+    supportsImageGeneration: boolean('supports_image_generation').notNull().default(false),
+    supportsImageEdit: boolean('supports_image_edit').notNull().default(false),
+    supportsImageUpscale: boolean('supports_image_upscale').notNull().default(false),
     isDefaultChat: boolean('is_default_chat').notNull().default(false),
+    isDefaultImage: boolean('is_default_image').notNull().default(false),
     sortOrder: integer('sort_order').notNull().default(0),
     pricing: jsonb('pricing').$type<Record<string, unknown>>().notNull().default({}),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
@@ -702,6 +706,9 @@ export const aiModels = pgTable(
     index('ai_models_provider_id_idx').on(table.providerId),
     index('ai_models_status_idx').on(table.status),
     index('ai_models_chat_idx').on(table.supportsChat),
+    index('ai_models_image_generation_idx').on(table.supportsImageGeneration),
+    index('ai_models_image_edit_idx').on(table.supportsImageEdit),
+    index('ai_models_image_upscale_idx').on(table.supportsImageUpscale),
   ],
 );
 

@@ -9,8 +9,10 @@ import {
   createAiProvider,
   getSeedAiModelAdminData,
   getSeedChatModelsForUser,
+  getSeedImageModelsForUser,
   normalizeDefaultChatTarget,
   resolveSeedChatModelForUser,
+  resolveSeedImageModelForUser,
   summarizeAdminAiConfigTestResult,
   summarizeProviderCredentialReference,
   updateAiModel,
@@ -46,6 +48,34 @@ test('resolveSeedChatModelForUser allows premium model with active pro entitleme
   assert.equal(model.code, 'dev-pro-chat');
   assert.equal(model.entitlement.basis, 'membership_plan');
   assert.equal(model.entitlement.value, 'pro-monthly');
+});
+
+test('getSeedImageModelsForUser returns entitled models for the requested image mode', async () => {
+  const freeModels = await getSeedImageModelsForUser('user-free', 'generate', []);
+  assert.equal(freeModels.some((model) => model.code === 'dev-free-image'), true);
+
+  const editModels = await getSeedImageModelsForUser('user-free', 'edit', []);
+  assert.equal(editModels.every((model) => model.supportedModes.includes('edit')), true);
+});
+
+test('resolveSeedImageModelForUser rejects model that does not support requested image mode', async () => {
+  await assert.rejects(
+    () => resolveSeedImageModelForUser('user-free', 'seed-model-free-image', 'upscale', []),
+    /Model is not available/,
+  );
+});
+
+test('resolveSeedImageModelForUser allows premium image model with active pro entitlement', async () => {
+  const model = await resolveSeedImageModelForUser(
+    'user-pro',
+    'seed-model-pro-image',
+    'upscale',
+    [activeProEntitlement],
+  );
+
+  assert.equal(model.code, 'dev-pro-image');
+  assert.equal(model.entitlement.basis, 'membership_plan');
+  assert.equal(model.supportedModes.includes('upscale'), true);
 });
 
 test('buildModelRequirementSeedKey normalizes free requirement null value', () => {

@@ -34,6 +34,12 @@ export type PublicChatModelDto = {
   pricingSummary: string;
 };
 
+export type ImageModelMode = 'generate' | 'edit' | 'upscale';
+
+export type PublicImageModelDto = PublicChatModelDto & {
+  supportedModes: ImageModelMode[];
+};
+
 export type ResolvedChatModel = PublicChatModelDto & {
   providerId: string;
   providerCode: string;
@@ -43,6 +49,10 @@ export type ResolvedChatModel = PublicChatModelDto & {
   model: string;
   pricing: AiModelPricing;
   entitlement: ModelEntitlementResult;
+};
+
+export type ResolvedImageModel = ResolvedChatModel & {
+  supportedModes: ImageModelMode[];
 };
 
 export type AiModelStatus = typeof schema.aiModels.$inferSelect.status;
@@ -190,6 +200,55 @@ const seedModels: ResolvedChatModel[] = [
   },
 ];
 
+const seedImageModels: ResolvedImageModel[] = [
+  {
+    id: 'seed-model-free-image',
+    code: 'dev-free-image',
+    name: 'Development Free Image',
+    providerName: 'Development Provider',
+    isDefault: true,
+    entitlementLabel: 'Free',
+    pricingSummary: '1 credit minimum',
+    providerId: 'seed-provider-development',
+    providerCode: 'development',
+    providerType: 'development',
+    baseUrl: null,
+    credentialEnvKey: null,
+    model: 'development-free-image',
+    pricing: defaultPricing,
+    entitlement: { allowed: true, basis: 'none', label: 'Free', value: null },
+    supportedModes: ['generate', 'edit'],
+  },
+  {
+    id: 'seed-model-pro-image',
+    code: 'dev-pro-image',
+    name: 'Development Pro Image',
+    providerName: 'Development Provider',
+    isDefault: false,
+    entitlementLabel: 'Pro',
+    pricingSummary: '4 credits minimum',
+    providerId: 'seed-provider-development',
+    providerCode: 'development',
+    providerType: 'development',
+    baseUrl: null,
+    credentialEnvKey: null,
+    model: 'development-pro-image',
+    pricing: {
+      unit: 'token',
+      promptCreditsPer1k: 4,
+      completionCreditsPer1k: 0,
+      minimumCredits: 4,
+    },
+    entitlement: {
+      allowed: true,
+      basis: 'membership_plan',
+      label: 'Pro',
+      value: 'pro-monthly',
+    },
+    supportedModes: ['generate', 'edit', 'upscale'],
+  },
+];
+
 const seedProviders = [
   {
     id: 'seed-provider-development',
@@ -218,6 +277,8 @@ type ChatModelRow = {
   requirement: typeof schema.aiModelEntitlementRequirements.$inferSelect | null;
 };
 
+type ImageModelRow = ChatModelRow;
+
 export async function getSeedChatModelsForUser(
   _userId: string,
   entitlements: ActiveUserEntitlement[],
@@ -241,6 +302,46 @@ export async function resolveSeedChatModelForUser(
 ): Promise<ResolvedChatModel> {
   const model = seedModels.find((item) => item.id === modelId);
   if (!model) {
+    throw new ModelNotAvailableError();
+  }
+
+  const entitlement = evaluateModelEntitlement({
+    requirements: seedRequirementForModel(model),
+    entitlements,
+  });
+  if (!entitlement.allowed) {
+    throw new ModelEntitlementRequiredError();
+  }
+
+  return structuredClone({ ...model, entitlement });
+}
+
+export async function getSeedImageModelsForUser(
+  _userId: string,
+  mode: ImageModelMode,
+  entitlements: ActiveUserEntitlement[],
+): Promise<PublicImageModelDto[]> {
+  return seedImageModels
+    .filter((model) => model.supportedModes.includes(mode))
+    .map((model) => ({
+      model,
+      entitlement: evaluateModelEntitlement({
+        requirements: seedRequirementForModel(model),
+        entitlements,
+      }),
+    }))
+    .filter((item) => item.entitlement.allowed)
+    .map((item) => toPublicImageModel({ ...item.model, entitlement: item.entitlement }));
+}
+
+export async function resolveSeedImageModelForUser(
+  _userId: string,
+  modelId: string,
+  mode: ImageModelMode,
+  entitlements: ActiveUserEntitlement[],
+): Promise<ResolvedImageModel> {
+  const model = seedImageModels.find((item) => item.id === modelId);
+  if (!model || !model.supportedModes.includes(mode)) {
     throw new ModelNotAvailableError();
   }
 
@@ -280,6 +381,47 @@ export async function resolveChatModelForUser(
   }
 
   const models = groupResolvedRows(await loadDatabaseChatModelRows(modelId), entitlements);
+  const model = models.find((item) => item.id === modelId);
+  if (!model) {
+    throw new ModelNotAvailableError();
+  }
+  if (!model.entitlement.allowed) {
+    throw new ModelEntitlementRequiredError();
+  }
+
+  return model;
+}
+
+export async function listAvailableImageModelsForUser(
+  userId: string,
+  mode: ImageModelMode,
+): Promise<PublicImageModelDto[]> {
+  const entitlements = await listActiveUserEntitlements(userId);
+
+  if (!db || !process.env.DATABASE_URL) {
+    return getSeedImageModelsForUser(userId, mode, entitlements);
+  }
+
+  return groupResolvedImageRows(await loadDatabaseImageModelRows(mode), entitlements)
+    .filter((model) => model.entitlement.allowed)
+    .map(toPublicImageModel);
+}
+
+export async function resolveImageModelForUser(
+  userId: string,
+  modelId: string,
+  mode: ImageModelMode,
+): Promise<ResolvedImageModel> {
+  const entitlements = await listActiveUserEntitlements(userId);
+
+  if (!db || !process.env.DATABASE_URL) {
+    return resolveSeedImageModelForUser(userId, modelId, mode, entitlements);
+  }
+
+  const models = groupResolvedImageRows(
+    await loadDatabaseImageModelRows(mode, modelId),
+    entitlements,
+  );
   const model = models.find((item) => item.id === modelId);
   if (!model) {
     throw new ModelNotAvailableError();
@@ -1071,6 +1213,13 @@ function toPublicModel(model: ResolvedChatModel): PublicChatModelDto {
   };
 }
 
+function toPublicImageModel(model: ResolvedImageModel): PublicImageModelDto {
+  return {
+    ...toPublicModel(model),
+    supportedModes: model.supportedModes,
+  };
+}
+
 function parsePricing(value: Record<string, unknown>): AiModelPricing {
   const unit = value.unit === 'token' ? value.unit : defaultPricing.unit;
   const promptCreditsPer1k = parseNonNegativeNumber(
@@ -1168,6 +1317,43 @@ function groupResolvedRows(
   });
 }
 
+function supportedImageModesForModel(
+  model: Pick<
+    typeof schema.aiModels.$inferSelect,
+    'supportsImageGeneration' | 'supportsImageEdit' | 'supportsImageUpscale'
+  >,
+): ImageModelMode[] {
+  const modes: ImageModelMode[] = [];
+  if (model.supportsImageGeneration) {
+    modes.push('generate');
+  }
+  if (model.supportsImageEdit) {
+    modes.push('edit');
+  }
+  if (model.supportsImageUpscale) {
+    modes.push('upscale');
+  }
+
+  return modes;
+}
+
+function groupResolvedImageRows(
+  rows: ImageModelRow[],
+  entitlements: ActiveUserEntitlement[],
+): ResolvedImageModel[] {
+  return groupResolvedRows(rows, entitlements).map((model) => ({
+    ...model,
+    isDefault: rows.find((row) => row.model.id === model.id)?.model.isDefaultImage ?? false,
+    supportedModes: supportedImageModesForModel(
+      rows.find((row) => row.model.id === model.id)?.model ?? {
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
+      },
+    ),
+  }));
+}
+
 async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow[]> {
   if (!db || !process.env.DATABASE_URL) {
     return [];
@@ -1183,6 +1369,49 @@ async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow
     : and(
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsChat, true),
+        eq(schema.aiProviders.status, 'enabled'),
+      );
+
+  return db
+    .select({
+      model: schema.aiModels,
+      provider: schema.aiProviders,
+      requirement: schema.aiModelEntitlementRequirements,
+    })
+    .from(schema.aiModels)
+    .innerJoin(schema.aiProviders, eq(schema.aiProviders.id, schema.aiModels.providerId))
+    .leftJoin(
+      schema.aiModelEntitlementRequirements,
+      eq(schema.aiModelEntitlementRequirements.modelId, schema.aiModels.id),
+    )
+    .where(where)
+    .orderBy(asc(schema.aiModels.sortOrder), asc(schema.aiModels.createdAt));
+}
+
+async function loadDatabaseImageModelRows(
+  mode: ImageModelMode,
+  modelId?: string,
+): Promise<ImageModelRow[]> {
+  if (!db || !process.env.DATABASE_URL) {
+    return [];
+  }
+
+  const modeColumn =
+    mode === 'generate'
+      ? schema.aiModels.supportsImageGeneration
+      : mode === 'edit'
+        ? schema.aiModels.supportsImageEdit
+        : schema.aiModels.supportsImageUpscale;
+  const where = modelId
+    ? and(
+        eq(schema.aiModels.id, modelId),
+        eq(schema.aiModels.status, 'enabled'),
+        eq(modeColumn, true),
+        eq(schema.aiProviders.status, 'enabled'),
+      )
+    : and(
+        eq(schema.aiModels.status, 'enabled'),
+        eq(modeColumn, true),
         eq(schema.aiProviders.status, 'enabled'),
       );
 

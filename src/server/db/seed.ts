@@ -51,8 +51,12 @@ const ids = {
   aiProviderDevelopment: '00000000-0000-4000-8000-000000000121',
   aiModelFree: '00000000-0000-4000-8000-000000000122',
   aiModelPro: '00000000-0000-4000-8000-000000000123',
-  aiModelFreeRequirement: '00000000-0000-4000-8000-000000000124',
-  aiModelProRequirement: '00000000-0000-4000-8000-000000000125',
+  aiModelFreeImage: '00000000-0000-4000-8000-000000000124',
+  aiModelProImage: '00000000-0000-4000-8000-000000000125',
+  aiModelFreeRequirement: '00000000-0000-4000-8000-000000000126',
+  aiModelProRequirement: '00000000-0000-4000-8000-000000000127',
+  aiModelFreeImageRequirement: '00000000-0000-4000-8000-000000000128',
+  aiModelProImageRequirement: '00000000-0000-4000-8000-000000000129',
 };
 
 async function main() {
@@ -285,7 +289,11 @@ async function main() {
         model: 'development-free-chat',
         status: 'enabled',
         supportsChat: true,
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
         isDefaultChat: true,
+        isDefaultImage: false,
         sortOrder: 10,
         pricing: {
           unit: 'token',
@@ -303,13 +311,61 @@ async function main() {
         model: 'development-pro-chat',
         status: 'enabled',
         supportsChat: true,
+        supportsImageGeneration: false,
+        supportsImageEdit: false,
+        supportsImageUpscale: false,
         isDefaultChat: false,
+        isDefaultImage: false,
         sortOrder: 20,
         pricing: {
           unit: 'token',
           promptCreditsPer1k: 2,
           completionCreditsPer1k: 4,
           minimumCredits: 2,
+        },
+        metadata: { seed: true },
+      },
+      {
+        id: ids.aiModelFreeImage,
+        providerId: developmentProvider.id,
+        code: 'dev-free-image',
+        name: 'Development Free Image',
+        model: 'development-free-image',
+        status: 'enabled',
+        supportsChat: false,
+        supportsImageGeneration: true,
+        supportsImageEdit: true,
+        supportsImageUpscale: false,
+        isDefaultChat: false,
+        isDefaultImage: true,
+        sortOrder: 30,
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 1,
+          completionCreditsPer1k: 0,
+          minimumCredits: 1,
+        },
+        metadata: { seed: true },
+      },
+      {
+        id: ids.aiModelProImage,
+        providerId: developmentProvider.id,
+        code: 'dev-pro-image',
+        name: 'Development Pro Image',
+        model: 'development-pro-image',
+        status: 'enabled',
+        supportsChat: false,
+        supportsImageGeneration: true,
+        supportsImageEdit: true,
+        supportsImageUpscale: true,
+        isDefaultChat: false,
+        isDefaultImage: false,
+        sortOrder: 40,
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 4,
+          completionCreditsPer1k: 0,
+          minimumCredits: 4,
         },
         metadata: { seed: true },
       },
@@ -321,8 +377,12 @@ async function main() {
         name: sql.raw(`excluded.name`),
         model: sql.raw(`excluded.model`),
         status: 'enabled',
-        supportsChat: true,
+        supportsChat: sql.raw(`excluded.supports_chat`),
+        supportsImageGeneration: sql.raw(`excluded.supports_image_generation`),
+        supportsImageEdit: sql.raw(`excluded.supports_image_edit`),
+        supportsImageUpscale: sql.raw(`excluded.supports_image_upscale`),
         isDefaultChat: sql.raw(`excluded.is_default_chat`),
+        isDefaultImage: sql.raw(`excluded.is_default_image`),
         sortOrder: sql.raw(`excluded.sort_order`),
         pricing: sql.raw(`excluded.pricing`),
         metadata: sql.raw(`excluded.metadata`),
@@ -333,11 +393,13 @@ async function main() {
   const seededModels = await db
     .select({ id: aiModels.id, code: aiModels.code })
     .from(aiModels)
-    .where(sql`${aiModels.code} in ('dev-free-chat', 'dev-pro-chat')`);
+    .where(sql`${aiModels.code} in ('dev-free-chat', 'dev-pro-chat', 'dev-free-image', 'dev-pro-image')`);
   const freeModel = seededModels.find((model) => model.code === 'dev-free-chat');
   const proModel = seededModels.find((model) => model.code === 'dev-pro-chat');
+  const freeImageModel = seededModels.find((model) => model.code === 'dev-free-image');
+  const proImageModel = seededModels.find((model) => model.code === 'dev-pro-image');
 
-  if (!freeModel || !proModel) {
+  if (!freeModel || !proModel || !freeImageModel || !proImageModel) {
     throw new Error('Development AI model seed rows were not created.');
   }
 
@@ -360,6 +422,20 @@ async function main() {
       (
         ${ids.aiModelProRequirement},
         ${proModel.id},
+        'membership_plan',
+        'pro-monthly',
+        'Pro'
+      ),
+      (
+        ${ids.aiModelFreeImageRequirement},
+        ${freeImageModel.id},
+        'none',
+        null,
+        'Free'
+      ),
+      (
+        ${ids.aiModelProImageRequirement},
+        ${proImageModel.id},
         'membership_plan',
         'pro-monthly',
         'Pro'
