@@ -226,6 +226,45 @@ test('parseDirectMediaArtifactPayload reads provider-direct image payload', () =
   assert.equal(parsed?.metadata.storageStatus, 'provider_direct');
 });
 
+test('parseDirectMediaArtifactPayload accepts direct artifact payloads', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    kind: 'video',
+    title: '生成视频',
+    delivery: {
+      mode: 'provider_url',
+      url: 'https://provider.example/video.mp4',
+      expiresAt: '2026-06-01T10:00:00.000Z',
+    },
+    metadata: {
+      storageStatus: 'provider_direct',
+      mimeType: 'video/mp4',
+    },
+  });
+
+  assert.equal(parsed?.kind, 'video');
+  assert.equal(parsed?.delivery.mode, 'provider_url');
+  assert.equal(parsed?.delivery.url, 'https://provider.example/video.mp4');
+});
+
+test('parseDirectMediaArtifactPayload normalizes omitted expiresAt to null', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    artifact: {
+      kind: 'image',
+      title: '生成图片',
+      delivery: {
+        mode: 'data_url',
+        url: 'data:image/png;base64,abc',
+      },
+      metadata: {
+        storageStatus: 'provider_direct',
+        mimeType: 'image/png',
+      },
+    },
+  });
+
+  assert.equal(parsed?.delivery.expiresAt, null);
+});
+
 test('parseStreamEventPayload returns null for invalid event JSON', () => {
   assert.equal(parseStreamEventPayload({ data: '{' } as MessageEvent), null);
 });

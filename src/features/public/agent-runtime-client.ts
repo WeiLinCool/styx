@@ -203,20 +203,20 @@ export function parseDirectMediaArtifactPayload(value: unknown): DirectMediaResu
   }
 
   const payload = isRecord(value.payload) ? value.payload : value;
-  const artifact = isRecord(payload.artifact) ? payload.artifact : null;
+  const artifact = isRecord(payload.artifact) ? payload.artifact : payload;
   if (!artifact) {
     return null;
   }
 
   const delivery = isRecord(artifact.delivery) ? artifact.delivery : null;
   const metadata = isRecord(artifact.metadata) ? artifact.metadata : null;
+  const expiresAt = typeof delivery?.expiresAt === 'string' ? delivery.expiresAt : null;
   if (
     (artifact.kind !== 'image' && artifact.kind !== 'video') ||
     typeof artifact.title !== 'string' ||
     !delivery ||
     (delivery.mode !== 'provider_url' && delivery.mode !== 'data_url') ||
     typeof delivery.url !== 'string' ||
-    (delivery.expiresAt !== null && typeof delivery.expiresAt !== 'string') ||
     !metadata ||
     metadata.storageStatus !== 'provider_direct'
   ) {
@@ -229,7 +229,7 @@ export function parseDirectMediaArtifactPayload(value: unknown): DirectMediaResu
     delivery: {
       mode: delivery.mode,
       url: delivery.url,
-      expiresAt: delivery.expiresAt,
+      expiresAt,
     },
     metadata: {
       ...metadata,
