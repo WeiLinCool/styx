@@ -92,6 +92,13 @@
       "when": 1780302479028,
       "tag": "0012_slippery_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780391009628,
+      "tag": "0013_sudden_karen_page",
+      "breakpoints": true
     }
   ]
 }

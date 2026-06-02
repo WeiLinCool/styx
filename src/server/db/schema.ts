@@ -50,6 +50,18 @@ export const passwordResetWorkOrderStatus = pgEnum('password_reset_work_order_st
   'archived',
 ]);
 
+export const subscriptionWorkOrderStatus = pgEnum('subscription_work_order_status', [
+  'pending',
+  'processing',
+  'closed',
+  'archived',
+]);
+
+export const subscriptionWorkOrderResult = pgEnum('subscription_work_order_result', [
+  'approved',
+  'rejected',
+]);
+
 export const adminRole = pgEnum('admin_role', [
   'owner',
   'admin',
@@ -550,6 +562,48 @@ export const orders = pgTable(
     index('orders_user_id_idx').on(table.userId),
     index('orders_status_idx').on(table.status),
     check('orders_total_non_negative', sql`${table.totalCents} >= 0`),
+  ],
+);
+
+export const subscriptionWorkOrders = pgTable(
+  'subscription_work_orders',
+  {
+    id,
+    code: text('code').notNull(),
+    status: subscriptionWorkOrderStatus('status').notNull().default('pending'),
+    result: subscriptionWorkOrderResult('result'),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'restrict' }),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => membershipPlans.id, { onDelete: 'restrict' }),
+    submittedPaymentMethod: text('submitted_payment_method').notNull(),
+    submittedAmountCents: integer('submitted_amount_cents').notNull(),
+    submittedPaidAt: timestamp('submitted_paid_at', { withTimezone: true }).notNull(),
+    submittedReference: text('submitted_reference').notNull(),
+    submittedNote: text('submitted_note'),
+    processorAdminId: uuid('processor_admin_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    decisionNote: text('decision_note'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('subscription_work_orders_code_unique_idx').on(table.code),
+    index('subscription_work_orders_user_id_idx').on(table.userId),
+    index('subscription_work_orders_order_id_idx').on(table.orderId),
+    index('subscription_work_orders_plan_id_idx').on(table.planId),
+    index('subscription_work_orders_status_idx').on(table.status),
+    check('subscription_work_orders_amount_non_negative', sql`${table.submittedAmountCents} >= 0`),
   ],
 );
 
