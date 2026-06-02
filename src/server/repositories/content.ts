@@ -1,6 +1,15 @@
 import { desc, eq } from 'drizzle-orm';
 
+import { AccountDomainError } from '@/server/auth/account-types';
 import { schema } from '@/server/db';
+import { db } from '@/server/db';
+import {
+  defaultHomepageContent,
+  isHomeContentSlug,
+  mergeHomepageBlocks,
+  parseHomepageBlockMetadata,
+  type HomepageContent,
+} from '@/features/public/home-content';
 import {
   type AdminModuleData,
   ensureAdminReadSource,
@@ -23,12 +32,85 @@ export type AdminContentRow = {
   actions: string[];
 };
 
+export type AdminContentMutationInput = {
+  slug: string;
+  title: string;
+  metadata: unknown;
+  body?: string | null;
+  url?: string | null;
+  actorId: string;
+};
+
+export type ContentStatusAction = 'publish' | 'draft' | 'archive';
+
+function requireDb() {
+  if (!db) {
+    throw new AccountDomainError(
+      'database_unavailable',
+      'Database connection is unavailable.',
+      503,
+    );
+  }
+
+  return db;
+}
+
 function summarizeBody(body: string | null) {
   if (!body) {
     return '未填写正文';
   }
 
   return body.length > 90 ? `${body.slice(0, 90)}...` : body;
+}
+
+export function buildAdminContentMutationValues(input: AdminContentMutationInput) {
+  if (!isHomeContentSlug(input.slug)) {
+    throw new AccountDomainError(
+      'validation_error',
+      `Unsupported homepage content slug: ${input.slug}`,
+      400,
+    );
+  }
+
+  const parsed = parseHomepageBlockMetadata(input.slug, input.metadata);
+  if (!parsed.ok) {
+    throw new AccountDomainError(
+      'validation_error',
+      `Homepage content metadata is invalid: ${parsed.issues.join('; ')}`,
+      400,
+    );
+  }
+
+  return {
+    slug: input.slug,
+    title: input.title.trim(),
+    kind: 'page' as const,
+    status: 'draft' as const,
+    body: input.body?.trim() || null,
+    url: input.url?.trim() || null,
+    metadata: parsed.value,
+    createdByUserId: input.actorId,
+  };
+}
+
+export function resolveContentStatusTransition(action: ContentStatusAction, now = new Date()) {
+  if (action === 'publish') {
+    return { status: 'published' as const, publishedAt: now, updatedAt: now };
+  }
+
+  if (action === 'draft') {
+    return { status: 'draft' as const, updatedAt: now };
+  }
+
+  return { status: 'archived' as const, updatedAt: now };
+}
+
+export function mapPublishedHomepageRows(
+  rows: Array<{ slug: string; status: string; publishedAt: Date | null; metadata: unknown }>,
+) {
+  return rows
+    .filter((row) => row.status === 'published' && row.publishedAt)
+    .map((row) => ({ slug: row.slug, metadata: row.metadata }));
 }
 
 function getSeedContent(): AdminModuleData<AdminContentRow> {
@@ -79,6 +161,80 @@ function getSeedContent(): AdminModuleData<AdminContentRow> {
     ],
     records,
   };
+}
+
+export async function createAdminContent(input: AdminContentMutationInput) {
+  const database = requireDb();
+  const values = buildAdminContentMutationValues(input);
+  const [content] = await database.insert(schema.contentAssets).values(values).returning();
+
+  if (!content) {
+    throw new AccountDomainError('content_write_failed', 'Content could not be created.', 500);
+  }
+
+  return content;
+}
+
+export async function updateAdminContent(input: AdminContentMutationInput & { contentId: string }) {
+  const database = requireDb();
+  const values = buildAdminContentMutationValues(input);
+  const [content] = await database
+    .update(schema.contentAssets)
+    .set({
+      slug: values.slug,
+      title: values.title,
+      body: values.body,
+      url: values.url,
+      metadata: values.metadata,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.contentAssets.id, input.contentId))
+    .returning();
+
+  if (!content) {
+    throw new AccountDomainError('content_not_found', 'Content not found.', 404);
+  }
+
+  return content;
+}
+
+export async function updateAdminContentStatus(input: {
+  contentId: string;
+  action: ContentStatusAction;
+}) {
+  const database = requireDb();
+  const next = resolveContentStatusTransition(input.action);
+  const [content] = await database
+    .update(schema.contentAssets)
+    .set(next)
+    .where(eq(schema.contentAssets.id, input.contentId))
+    .returning();
+
+  if (!content) {
+    throw new AccountDomainError('content_not_found', 'Content not found.', 404);
+  }
+
+  return content;
+}
+
+export async function getPublicHomepageContent(): Promise<HomepageContent> {
+  const database = db;
+
+  if (!database) {
+    return defaultHomepageContent;
+  }
+
+  const rows = await database
+    .select({
+      slug: schema.contentAssets.slug,
+      status: schema.contentAssets.status,
+      publishedAt: schema.contentAssets.publishedAt,
+      metadata: schema.contentAssets.metadata,
+    })
+    .from(schema.contentAssets)
+    .where(eq(schema.contentAssets.kind, 'page'));
+
+  return mergeHomepageBlocks(defaultHomepageContent, mapPublishedHomepageRows(rows));
 }
 
 export async function getAdminContent(): Promise<AdminModuleData<AdminContentRow>> {
