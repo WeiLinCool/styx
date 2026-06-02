@@ -233,16 +233,22 @@ export const defaultHomepageContent: HomepageContent = {
 };
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; issues: string[] };
-type HomepageBlockValue = HomepageContent[keyof HomepageContent];
+type HomepageBlockValueBySlug = {
+  'home.hero': HomepageContent['hero'];
+  'home.nav': HomepageContent['nav'];
+  'home.stone_intro': HomepageContent['stoneIntro'];
+  'home.join_us': HomepageContent['joinUs'];
+  'home.ai_tools': HomepageContent['aiTools'];
+};
 
 export function isHomeContentSlug(value: string): value is HomeContentSlug {
   return (HOME_CONTENT_SLUGS as readonly string[]).includes(value);
 }
 
-export function parseHomepageBlockMetadata(
-  slug: HomeContentSlug,
+export function parseHomepageBlockMetadata<TSlug extends HomeContentSlug>(
+  slug: TSlug,
   metadata: unknown,
-): ParseResult<HomepageBlockValue> {
+): ParseResult<HomepageBlockValueBySlug[TSlug]> {
   const result = blockSchemas[slug].safeParse(metadata);
   if (!result.success) {
     return {
@@ -251,7 +257,7 @@ export function parseHomepageBlockMetadata(
     };
   }
 
-  return { ok: true, value: result.data as HomepageBlockValue };
+  return { ok: true, value: result.data as HomepageBlockValueBySlug[TSlug] };
 }
 
 export function mergeHomepageBlocks(
@@ -265,25 +271,31 @@ export function mergeHomepageBlocks(
       continue;
     }
 
-    const parsed = parseHomepageBlockMetadata(block.slug, block.metadata);
-    if (!parsed.ok) {
-      continue;
-    }
-
     if (block.slug === 'home.hero') {
-      next.hero = parsed.value;
-    }
-    if (block.slug === 'home.nav') {
-      next.nav = parsed.value;
-    }
-    if (block.slug === 'home.stone_intro') {
-      next.stoneIntro = parsed.value;
-    }
-    if (block.slug === 'home.join_us') {
-      next.joinUs = parsed.value;
-    }
-    if (block.slug === 'home.ai_tools') {
-      next.aiTools = parsed.value;
+      const parsed = parseHomepageBlockMetadata('home.hero', block.metadata);
+      if (parsed.ok) {
+        next.hero = parsed.value;
+      }
+    } else if (block.slug === 'home.nav') {
+      const parsed = parseHomepageBlockMetadata('home.nav', block.metadata);
+      if (parsed.ok) {
+        next.nav = parsed.value;
+      }
+    } else if (block.slug === 'home.stone_intro') {
+      const parsed = parseHomepageBlockMetadata('home.stone_intro', block.metadata);
+      if (parsed.ok) {
+        next.stoneIntro = parsed.value;
+      }
+    } else if (block.slug === 'home.join_us') {
+      const parsed = parseHomepageBlockMetadata('home.join_us', block.metadata);
+      if (parsed.ok) {
+        next.joinUs = parsed.value;
+      }
+    } else if (block.slug === 'home.ai_tools') {
+      const parsed = parseHomepageBlockMetadata('home.ai_tools', block.metadata);
+      if (parsed.ok) {
+        next.aiTools = parsed.value;
+      }
     }
   }
 

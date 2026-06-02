@@ -68,7 +68,7 @@ function summarizeBody(body: string | null) {
 export function buildAdminContentMutationValues(input: AdminContentMutationInput) {
   if (!isHomeContentSlug(input.slug)) {
     throw new AccountDomainError(
-      'validation_error',
+      'account_not_found',
       `Unsupported homepage content slug: ${input.slug}`,
       400,
     );
@@ -77,7 +77,7 @@ export function buildAdminContentMutationValues(input: AdminContentMutationInput
   const parsed = parseHomepageBlockMetadata(input.slug, input.metadata);
   if (!parsed.ok) {
     throw new AccountDomainError(
-      'validation_error',
+      'account_not_found',
       `Homepage content metadata is invalid: ${parsed.issues.join('; ')}`,
       400,
     );
@@ -175,7 +175,11 @@ export async function createAdminContent(input: AdminContentMutationInput) {
   const [content] = await database.insert(schema.contentAssets).values(values).returning();
 
   if (!content) {
-    throw new AccountDomainError('content_write_failed', 'Content could not be created.', 500);
+    throw new AccountDomainError(
+      'database_unavailable',
+      'Content could not be created.',
+      500,
+    );
   }
 
   return content;
@@ -198,7 +202,7 @@ export async function updateAdminContent(input: AdminContentMutationInput & { co
     .returning();
 
   if (!content) {
-    throw new AccountDomainError('content_not_found', 'Content not found.', 404);
+    throw new AccountDomainError('account_not_found', 'Content not found.', 404);
   }
 
   return content;
@@ -217,7 +221,7 @@ export async function updateAdminContentStatus(input: {
     .returning();
 
   if (!content) {
-    throw new AccountDomainError('content_not_found', 'Content not found.', 404);
+    throw new AccountDomainError('account_not_found', 'Content not found.', 404);
   }
 
   return content;
