@@ -10,13 +10,17 @@ import {
   getSeedAiModelAdminData,
   getSeedChatModelsForUser,
   getSeedImageModelsForUser,
+  getSeedVideoModelsForUser,
   listDatabaseChatModelsForUserFromRows,
   listDatabaseImageModelsForUserFromRows,
+  listDatabaseVideoModelsForUserFromRows,
   normalizeDefaultChatTarget,
   resolveDatabaseChatModelForUserFromRows,
   resolveDatabaseImageModelForUserFromRows,
+  resolveDatabaseVideoModelForUserFromRows,
   resolveSeedChatModelForUser,
   resolveSeedImageModelForUser,
+  resolveSeedVideoModelForUser,
   summarizeAdminAiConfigTestResult,
   summarizeProviderCredentialReference,
   updateAiModel,
@@ -24,6 +28,7 @@ import {
   validateProviderTestConfiguration,
   type DatabaseChatModelRow,
   type DatabaseImageModelRow,
+  type DatabaseVideoModelRow,
 } from './ai-models';
 
 const activeProEntitlement: ActiveUserEntitlement = {
@@ -102,13 +107,60 @@ function buildDatabaseChatModelRow(input: {
       supportsImageGeneration: input.supportsImageGeneration ?? false,
       supportsImageEdit: input.supportsImageEdit ?? false,
       supportsImageUpscale: input.supportsImageUpscale ?? false,
+      supportsVideoGeneration: false,
       isDefaultChat: input.isDefaultChat ?? false,
       isDefaultImage: false,
+      isDefaultVideo: false,
       pricing: {
         unit: 'token',
         promptCreditsPer1k: 1,
         completionCreditsPer1k: 0,
         minimumCredits: 1,
+      },
+    },
+    provider: {
+      id: `provider-${input.id}`,
+      code: 'development',
+      name: 'Development Provider',
+      providerType: 'development',
+      status: input.providerStatus ?? 'enabled',
+      baseUrl: null,
+      credentialEnvKey: null,
+    },
+    requirement: input.requirement ?? null,
+  };
+}
+
+function buildDatabaseVideoModelRow(input: {
+  id: string;
+  code: string;
+  status?: 'enabled' | 'disabled' | 'archived';
+  providerStatus?: 'enabled' | 'disabled' | 'archived';
+  supportsVideoGeneration?: boolean;
+  isDefaultVideo?: boolean;
+  requirement?: DatabaseVideoModelRow['requirement'];
+}): DatabaseVideoModelRow {
+  return {
+    model: {
+      id: input.id,
+      providerId: `provider-${input.id}`,
+      code: input.code,
+      name: input.code,
+      model: input.code,
+      status: input.status ?? 'enabled',
+      supportsChat: false,
+      supportsImageGeneration: false,
+      supportsImageEdit: false,
+      supportsImageUpscale: false,
+      supportsVideoGeneration: input.supportsVideoGeneration ?? false,
+      isDefaultChat: false,
+      isDefaultImage: false,
+      isDefaultVideo: input.isDefaultVideo ?? false,
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 0,
+        completionCreditsPer1k: 1,
+        minimumCredits: 3,
       },
     },
     provider: {
@@ -216,6 +268,87 @@ test('resolveSeedImageModelForUser allows premium image model with active pro en
   assert.equal(model.code, 'dev-pro-image');
   assert.equal(model.entitlement.basis, 'membership_plan');
   assert.equal(model.supportedModes.includes('upscale'), true);
+});
+
+test('getSeedVideoModelsForUser returns entitled default video model', async () => {
+  const models = await getSeedVideoModelsForUser('user-free', []);
+
+  assert.equal(models.length > 0, true);
+  assert.equal(models.some((model) => model.isDefault), true);
+  assert.equal(models.every((model) => typeof model.pricingSummary === 'string'), true);
+});
+
+test('resolveSeedVideoModelForUser rejects non-video model ids', async () => {
+  await assert.rejects(
+    () => resolveSeedVideoModelForUser('user-free', 'seed-model-free-image', []),
+    /Model is not available/,
+  );
+});
+
+test('listDatabaseVideoModelsForUserFromRows filters status, support and entitlement', () => {
+  const rows: DatabaseVideoModelRow[] = [
+    buildDatabaseVideoModelRow({
+      id: 'model-free-video',
+      code: 'db-free-video',
+      supportsVideoGeneration: true,
+      isDefaultVideo: true,
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+    buildDatabaseVideoModelRow({
+      id: 'model-pro-video',
+      code: 'db-pro-video',
+      supportsVideoGeneration: true,
+      requirement: {
+        requirementType: 'membership_plan',
+        requirementValue: 'pro-monthly',
+        label: 'Pro',
+      },
+    }),
+    buildDatabaseVideoModelRow({
+      id: 'model-disabled',
+      code: 'db-disabled',
+      status: 'disabled',
+      supportsVideoGeneration: true,
+    }),
+    buildDatabaseVideoModelRow({
+      id: 'model-chat-only',
+      code: 'db-chat-only',
+      supportsVideoGeneration: false,
+    }),
+  ];
+
+  const models = listDatabaseVideoModelsForUserFromRows(rows, []);
+
+  assert.deepEqual(models.map((model) => model.code), ['db-free-video']);
+  assert.equal(models[0]?.isDefault, true);
+});
+
+test('resolveDatabaseVideoModelForUserFromRows allows entitled premium video model', () => {
+  const rows: DatabaseVideoModelRow[] = [
+    buildDatabaseVideoModelRow({
+      id: 'model-pro-video',
+      code: 'db-pro-video',
+      supportsVideoGeneration: true,
+      requirement: {
+        requirementType: 'membership_plan',
+        requirementValue: 'pro-monthly',
+        label: 'Pro',
+      },
+    }),
+  ];
+
+  const model = resolveDatabaseVideoModelForUserFromRows(
+    rows,
+    'model-pro-video',
+    [activeProEntitlement],
+  );
+
+  assert.equal(model.code, 'db-pro-video');
+  assert.equal(model.entitlement.basis, 'membership_plan');
 });
 
 test('listDatabaseImageModelsForUserFromRows filters provider status, model status, mode support and entitlement', () => {

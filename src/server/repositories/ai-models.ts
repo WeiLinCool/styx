@@ -45,6 +45,8 @@ export type PublicImageModelDto = PublicChatModelDto & {
   supportedModes: ImageModelMode[];
 };
 
+export type PublicVideoModelDto = PublicChatModelDto;
+
 export type ResolvedChatModel = PublicChatModelDto & {
   providerId: string;
   providerCode: string;
@@ -58,6 +60,10 @@ export type ResolvedChatModel = PublicChatModelDto & {
 
 export type ResolvedImageModel = ResolvedChatModel & {
   supportedModes: ImageModelMode[];
+};
+
+export type ResolvedVideoModel = ResolvedChatModel & {
+  supportsVideoGeneration: true;
 };
 
 export type AiModelStatus = typeof schema.aiModels.$inferSelect.status;
@@ -88,7 +94,9 @@ export type AdminAiModelRow = {
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
   supportsImageUpscale: boolean;
+  supportsVideoGeneration: boolean;
   isDefaultImage: boolean;
+  isDefaultVideo: boolean;
   entitlementSummary: string;
   pricingSummary: string;
   credential: CredentialReferenceSummary;
@@ -105,6 +113,7 @@ export type AdminAiProviderRow = {
   modelCount: number;
   enabledModelCount: number;
   chatModelCount: number;
+  videoModelCount: number;
 };
 
 export type AdminAiModelData = AdminModuleData<AdminAiModelRow> & {
@@ -283,6 +292,62 @@ const seedImageModels: ResolvedImageModel[] = [
   },
 ];
 
+const videoSeedPricing: AiModelPricing = {
+  unit: 'token',
+  promptCreditsPer1k: 0,
+  completionCreditsPer1k: 1,
+  minimumCredits: 3,
+};
+
+const seedVideoModels: ResolvedVideoModel[] = [
+  {
+    id: 'seed-model-free-video',
+    code: 'dev-free-video',
+    name: 'Development Free Video',
+    providerName: 'Development Provider',
+    isDefault: true,
+    entitlementLabel: 'Free',
+    pricingSummary: '3 credits minimum',
+    providerId: 'seed-provider-development',
+    providerCode: 'development',
+    providerType: 'development',
+    baseUrl: null,
+    credentialEnvKey: null,
+    model: 'development-free-video',
+    pricing: videoSeedPricing,
+    entitlement: { allowed: true, basis: 'none', label: 'Free', value: null },
+    supportsVideoGeneration: true,
+  },
+  {
+    id: 'seed-model-pro-video',
+    code: 'dev-pro-video',
+    name: 'Development Pro Video',
+    providerName: 'Development Provider',
+    isDefault: false,
+    entitlementLabel: 'Pro',
+    pricingSummary: '8 credits minimum',
+    providerId: 'seed-provider-development',
+    providerCode: 'development',
+    providerType: 'development',
+    baseUrl: null,
+    credentialEnvKey: null,
+    model: 'development-pro-video',
+    pricing: {
+      unit: 'token',
+      promptCreditsPer1k: 0,
+      completionCreditsPer1k: 2,
+      minimumCredits: 8,
+    },
+    entitlement: {
+      allowed: true,
+      basis: 'membership_plan',
+      label: 'Pro',
+      value: 'pro-monthly',
+    },
+    supportsVideoGeneration: true,
+  },
+];
+
 const seedProviders = [
   {
     id: 'seed-provider-development',
@@ -318,8 +383,10 @@ export type DatabaseChatModelRow = {
     | 'supportsImageGeneration'
     | 'supportsImageEdit'
     | 'supportsImageUpscale'
+    | 'supportsVideoGeneration'
     | 'isDefaultChat'
     | 'isDefaultImage'
+    | 'isDefaultVideo'
     | 'pricing'
   >;
   provider: Pick<
@@ -335,6 +402,7 @@ export type DatabaseChatModelRow = {
 type ChatModelRow = DatabaseChatModelRow;
 
 type ImageModelRow = ChatModelRow;
+type VideoModelRow = ChatModelRow;
 
 export type DatabaseImageModelRow = {
   model: Pick<
@@ -362,6 +430,8 @@ export type DatabaseImageModelRow = {
     'requirementType' | 'requirementValue' | 'label'
   > | null;
 };
+
+export type DatabaseVideoModelRow = DatabaseChatModelRow;
 
 export async function getSeedChatModelsForUser(
   _userId: string,
@@ -426,6 +496,43 @@ export async function resolveSeedImageModelForUser(
 ): Promise<ResolvedImageModel> {
   const model = seedImageModels.find((item) => item.id === modelId);
   if (!model || !model.supportedModes.includes(mode)) {
+    throw new ModelNotAvailableError();
+  }
+
+  const entitlement = evaluateModelEntitlement({
+    requirements: seedRequirementForModel(model),
+    entitlements,
+  });
+  if (!entitlement.allowed) {
+    throw new ModelEntitlementRequiredError();
+  }
+
+  return structuredClone({ ...model, entitlement });
+}
+
+export async function getSeedVideoModelsForUser(
+  _userId: string,
+  entitlements: ActiveUserEntitlement[],
+): Promise<PublicVideoModelDto[]> {
+  return seedVideoModels
+    .map((model) => ({
+      model,
+      entitlement: evaluateModelEntitlement({
+        requirements: seedRequirementForModel(model),
+        entitlements,
+      }),
+    }))
+    .filter((item) => item.entitlement.allowed)
+    .map((item) => toPublicModel({ ...item.model, entitlement: item.entitlement }));
+}
+
+export async function resolveSeedVideoModelForUser(
+  _userId: string,
+  modelId: string,
+  entitlements: ActiveUserEntitlement[],
+): Promise<ResolvedVideoModel> {
+  const model = seedVideoModels.find((item) => item.id === modelId);
+  if (!model) {
     throw new ModelNotAvailableError();
   }
 
@@ -505,6 +612,38 @@ export async function resolveImageModelForUser(
   );
 }
 
+export async function listAvailableVideoModelsForUser(
+  userId: string,
+): Promise<PublicVideoModelDto[]> {
+  const entitlements = await listActiveUserEntitlements(userId);
+
+  if (!db || !process.env.DATABASE_URL) {
+    return getSeedVideoModelsForUser(userId, entitlements);
+  }
+
+  return listDatabaseVideoModelsForUserFromRows(
+    await loadDatabaseVideoModelRows(),
+    entitlements,
+  );
+}
+
+export async function resolveVideoModelForUser(
+  userId: string,
+  modelId: string,
+): Promise<ResolvedVideoModel> {
+  const entitlements = await listActiveUserEntitlements(userId);
+
+  if (!db || !process.env.DATABASE_URL) {
+    return resolveSeedVideoModelForUser(userId, modelId, entitlements);
+  }
+
+  return resolveDatabaseVideoModelForUserFromRows(
+    await loadDatabaseVideoModelRows(modelId),
+    modelId,
+    entitlements,
+  );
+}
+
 export function listDatabaseImageModelsForUserFromRows(
   rows: DatabaseImageModelRow[],
   mode: ImageModelMode,
@@ -520,6 +659,15 @@ export function listDatabaseChatModelsForUserFromRows(
   entitlements: ActiveUserEntitlement[],
 ): PublicChatModelDto[] {
   return groupResolvedDatabaseChatRows(rows, entitlements)
+    .filter((model) => model.entitlement.allowed)
+    .map(toPublicModel);
+}
+
+export function listDatabaseVideoModelsForUserFromRows(
+  rows: DatabaseVideoModelRow[],
+  entitlements: ActiveUserEntitlement[],
+): PublicVideoModelDto[] {
+  return groupResolvedDatabaseVideoRows(rows, entitlements)
     .filter((model) => model.entitlement.allowed)
     .map(toPublicModel);
 }
@@ -548,6 +696,23 @@ export function resolveDatabaseImageModelForUserFromRows(
   entitlements: ActiveUserEntitlement[],
 ): ResolvedImageModel {
   const models = groupResolvedDatabaseImageRows(rows, mode, entitlements, modelId);
+  const model = models.find((item) => item.id === modelId);
+  if (!model) {
+    throw new ModelNotAvailableError();
+  }
+  if (!model.entitlement.allowed) {
+    throw new ModelEntitlementRequiredError();
+  }
+
+  return model;
+}
+
+export function resolveDatabaseVideoModelForUserFromRows(
+  rows: DatabaseVideoModelRow[],
+  modelId: string,
+  entitlements: ActiveUserEntitlement[],
+): ResolvedVideoModel {
+  const models = groupResolvedDatabaseVideoRows(rows, entitlements, modelId);
   const model = models.find((item) => item.id === modelId);
   if (!model) {
     throw new ModelNotAvailableError();
@@ -713,7 +878,9 @@ export async function updateAiModelStatus(input: {
         supportsImageGeneration: false,
         supportsImageEdit: false,
         supportsImageUpscale: false,
+        supportsVideoGeneration: false,
         isDefaultImage: false,
+        isDefaultVideo: false,
         pricing: seed.pricing,
       },
       provider: seedProviders[0],
@@ -775,7 +942,9 @@ export async function setDefaultAiChatModel(input: {
         supportsImageGeneration: false,
         supportsImageEdit: false,
         supportsImageUpscale: false,
+        supportsVideoGeneration: false,
         isDefaultImage: false,
+        isDefaultVideo: false,
         pricing: seed.pricing,
       },
       provider: seedProviders[0],
@@ -1025,7 +1194,9 @@ export async function createAiModel(input: {
         supportsImageGeneration: input.supportsImageGeneration,
         supportsImageEdit: input.supportsImageEdit,
         supportsImageUpscale: input.supportsImageUpscale,
+        supportsVideoGeneration: false,
         isDefaultImage: false,
+        isDefaultVideo: false,
         pricing: defaultPricing,
       },
       provider,
@@ -1047,7 +1218,9 @@ export async function createAiModel(input: {
       supportsImageGeneration: input.supportsImageGeneration,
       supportsImageEdit: input.supportsImageEdit,
       supportsImageUpscale: input.supportsImageUpscale,
+      supportsVideoGeneration: false,
       isDefaultImage: false,
+      isDefaultVideo: false,
       sortOrder: 0,
       pricing: defaultPricing,
       metadata: {},
@@ -1096,7 +1269,9 @@ export async function updateAiModel(input: {
         supportsImageGeneration: input.supportsImageGeneration,
         supportsImageEdit: input.supportsImageEdit,
         supportsImageUpscale: input.supportsImageUpscale,
+        supportsVideoGeneration: false,
         isDefaultImage: false,
+        isDefaultVideo: false,
         pricing: defaultPricing,
       },
       provider,
@@ -1332,7 +1507,9 @@ export function getSeedAiModelAdminData(): AdminAiModelData {
         supportsImageGeneration: false,
         supportsImageEdit: false,
         supportsImageUpscale: false,
+        supportsVideoGeneration: false,
         isDefaultImage: false,
+        isDefaultVideo: false,
         pricing: model.pricing,
       },
       provider: seedProviders[0],
@@ -1353,7 +1530,9 @@ export function getSeedAiModelAdminData(): AdminAiModelData {
         supportsImageGeneration: model.supportedModes.includes('generate'),
         supportsImageEdit: model.supportedModes.includes('edit'),
         supportsImageUpscale: model.supportedModes.includes('upscale'),
+        supportsVideoGeneration: false,
         isDefaultImage: model.isDefault,
+        isDefaultVideo: false,
         pricing: model.pricing,
       },
       provider: seedProviders[0],
@@ -1572,6 +1751,17 @@ function groupResolvedImageRows(
   }));
 }
 
+function groupResolvedVideoRows(
+  rows: VideoModelRow[],
+  entitlements: ActiveUserEntitlement[],
+): ResolvedVideoModel[] {
+  return groupResolvedRows(rows, entitlements).map((model) => ({
+    ...model,
+    isDefault: rows.find((row) => row.model.id === model.id)?.model.isDefaultVideo ?? false,
+    supportsVideoGeneration: true,
+  }));
+}
+
 function groupResolvedDatabaseChatRows(
   rows: DatabaseChatModelRow[],
   entitlements: ActiveUserEntitlement[],
@@ -1583,6 +1773,7 @@ function groupResolvedDatabaseChatRows(
       row.model.status === 'enabled' &&
       row.model.supportsChat &&
       !modelSupportsAnyImageMode(row.model) &&
+      !row.model.supportsVideoGeneration &&
       row.provider.status === 'enabled',
   );
 
@@ -1606,6 +1797,22 @@ function groupResolvedDatabaseImageRows(
   return groupResolvedImageRows(availableRows as ImageModelRow[], entitlements);
 }
 
+function groupResolvedDatabaseVideoRows(
+  rows: DatabaseVideoModelRow[],
+  entitlements: ActiveUserEntitlement[],
+  modelId?: string,
+): ResolvedVideoModel[] {
+  const availableRows = rows.filter(
+    (row) =>
+      (!modelId || row.model.id === modelId) &&
+      row.model.status === 'enabled' &&
+      row.provider.status === 'enabled' &&
+      row.model.supportsVideoGeneration,
+  );
+
+  return groupResolvedVideoRows(availableRows as VideoModelRow[], entitlements);
+}
+
 async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow[]> {
   if (!db || !process.env.DATABASE_URL) {
     return [];
@@ -1619,6 +1826,7 @@ async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow
         eq(schema.aiModels.supportsImageGeneration, false),
         eq(schema.aiModels.supportsImageEdit, false),
         eq(schema.aiModels.supportsImageUpscale, false),
+        eq(schema.aiModels.supportsVideoGeneration, false),
         eq(schema.aiProviders.status, 'enabled'),
       )
     : and(
@@ -1627,6 +1835,7 @@ async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow
         eq(schema.aiModels.supportsImageGeneration, false),
         eq(schema.aiModels.supportsImageEdit, false),
         eq(schema.aiModels.supportsImageUpscale, false),
+        eq(schema.aiModels.supportsVideoGeneration, false),
         eq(schema.aiProviders.status, 'enabled'),
       );
 
@@ -1689,6 +1898,40 @@ async function loadDatabaseImageModelRows(
     .orderBy(asc(schema.aiModels.sortOrder), asc(schema.aiModels.createdAt));
 }
 
+async function loadDatabaseVideoModelRows(modelId?: string): Promise<VideoModelRow[]> {
+  if (!db || !process.env.DATABASE_URL) {
+    return [];
+  }
+
+  const where = modelId
+    ? and(
+        eq(schema.aiModels.id, modelId),
+        eq(schema.aiModels.status, 'enabled'),
+        eq(schema.aiModels.supportsVideoGeneration, true),
+        eq(schema.aiProviders.status, 'enabled'),
+      )
+    : and(
+        eq(schema.aiModels.status, 'enabled'),
+        eq(schema.aiModels.supportsVideoGeneration, true),
+        eq(schema.aiProviders.status, 'enabled'),
+      );
+
+  return db
+    .select({
+      model: schema.aiModels,
+      provider: schema.aiProviders,
+      requirement: schema.aiModelEntitlementRequirements,
+    })
+    .from(schema.aiModels)
+    .innerJoin(schema.aiProviders, eq(schema.aiProviders.id, schema.aiModels.providerId))
+    .leftJoin(
+      schema.aiModelEntitlementRequirements,
+      eq(schema.aiModelEntitlementRequirements.modelId, schema.aiModels.id),
+    )
+    .where(where)
+    .orderBy(asc(schema.aiModels.sortOrder), asc(schema.aiModels.createdAt));
+}
+
 type AdminAiModelGroup = {
   model: Pick<
     typeof schema.aiModels.$inferSelect,
@@ -1703,7 +1946,9 @@ type AdminAiModelGroup = {
     | 'supportsImageGeneration'
     | 'supportsImageEdit'
     | 'supportsImageUpscale'
+    | 'supportsVideoGeneration'
     | 'isDefaultImage'
+    | 'isDefaultVideo'
     | 'pricing'
   >;
   provider: Pick<
@@ -1770,7 +2015,9 @@ function toAdminAiModelRow(group: AdminAiModelGroup): AdminAiModelRow {
     supportsImageGeneration: group.model.supportsImageGeneration,
     supportsImageEdit: group.model.supportsImageEdit,
     supportsImageUpscale: group.model.supportsImageUpscale,
+    supportsVideoGeneration: group.model.supportsVideoGeneration,
     isDefaultImage: group.model.isDefaultImage,
+    isDefaultVideo: group.model.isDefaultVideo,
     entitlementSummary: summarizeRequirements(group.requirements),
     pricingSummary: pricingSummary(pricing),
     credential: summarizeProviderCredentialReference({
@@ -1800,6 +2047,7 @@ function toAdminAiProviderRow(input: {
     modelCount: input.models.length,
     enabledModelCount: input.models.filter((model) => model.status === 'enabled').length,
     chatModelCount: input.models.filter((model) => model.supportsChat).length,
+    videoModelCount: input.models.filter((model) => model.supportsVideoGeneration).length,
   };
 }
 
@@ -1954,7 +2202,9 @@ async function loadAdminAiModelRows(modelId?: string): Promise<AdminAiModelRowSo
         supportsImageGeneration: schema.aiModels.supportsImageGeneration,
         supportsImageEdit: schema.aiModels.supportsImageEdit,
         supportsImageUpscale: schema.aiModels.supportsImageUpscale,
+        supportsVideoGeneration: schema.aiModels.supportsVideoGeneration,
         isDefaultImage: schema.aiModels.isDefaultImage,
+        isDefaultVideo: schema.aiModels.isDefaultVideo,
         pricing: schema.aiModels.pricing,
       },
       provider: {

@@ -747,8 +747,10 @@ export const aiModels = pgTable(
     supportsImageGeneration: boolean('supports_image_generation').notNull().default(false),
     supportsImageEdit: boolean('supports_image_edit').notNull().default(false),
     supportsImageUpscale: boolean('supports_image_upscale').notNull().default(false),
+    supportsVideoGeneration: boolean('supports_video_generation').notNull().default(false),
     isDefaultChat: boolean('is_default_chat').notNull().default(false),
     isDefaultImage: boolean('is_default_image').notNull().default(false),
+    isDefaultVideo: boolean('is_default_video').notNull().default(false),
     sortOrder: integer('sort_order').notNull().default(0),
     pricing: jsonb('pricing').$type<Record<string, unknown>>().notNull().default({}),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
@@ -763,6 +765,7 @@ export const aiModels = pgTable(
     index('ai_models_image_generation_idx').on(table.supportsImageGeneration),
     index('ai_models_image_edit_idx').on(table.supportsImageEdit),
     index('ai_models_image_upscale_idx').on(table.supportsImageUpscale),
+    index('ai_models_video_generation_idx').on(table.supportsVideoGeneration),
   ],
 );
 
