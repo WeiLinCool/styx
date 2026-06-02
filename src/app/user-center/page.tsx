@@ -22,6 +22,25 @@ interface CartItem {
   size: string;
 }
 
+type SubscriptionWorkOrderSummary = {
+  id: string;
+  code: string;
+  status: 'pending' | 'processing' | 'closed' | 'archived';
+  result: 'approved' | 'rejected' | null;
+  planName: string;
+  planCode: string;
+  orderNumber: string;
+  orderStatus: string;
+  orderTotalCents: number;
+  submittedAmountCents: number;
+  submittedPaymentMethod: string;
+  submittedPaidAt: string;
+  submittedReference: string;
+  decisionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const LEVEL_MAP: Record<string, { label: string; color: string }> = {
   free: { label: '普通用户', color: '#86868b' },
   vip: { label: 'VIP会员', color: '#1d1d1f' },
@@ -42,6 +61,8 @@ export default function UserCenterPage() {
   const [inviteSummary, setInviteSummary] = useState(user?.inviteSummary ?? null);
   const [recentPointActivities, setRecentPointActivities] = useState(user?.recentPointActivities ?? []);
   const [checkinStatus, setCheckinStatus] = useState(user?.checkinStatus ?? null);
+  const [subscriptionWorkOrder, setSubscriptionWorkOrder] =
+    useState<SubscriptionWorkOrderSummary | null>(null);
   const [checkinPending, setCheckinPending] = useState(false);
   const [checkinVerificationOpen, setCheckinVerificationOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -70,6 +91,28 @@ export default function UserCenterPage() {
     void refreshUser();
   }, [isLoggedIn, refreshUser, user]);
 
+  useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user)) {
+      setSubscriptionWorkOrder(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const response = await userApiRequest('/api/membership/subscription-work-orders/current', {
+        cache: 'no-store',
+      });
+      const payload = await readJsonResponse(response);
+      if (!cancelled && response.ok) {
+        setSubscriptionWorkOrder(payload.subscriptionWorkOrder ?? null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user]);
+
   if (!isLoggedIn || !user) {
     return null;
   }
@@ -94,6 +137,15 @@ export default function UserCenterPage() {
   const totalCartPrice = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const maskedPhone = user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
   const membershipLabel = user.membershipLevel === 'free' ? '免费' : user.membershipLevel === 'monthly' ? '月度' : '年度';
+  const subscriptionWorkOrderLabel = subscriptionWorkOrder?.result === 'approved'
+    ? '已通过'
+    : subscriptionWorkOrder?.result === 'rejected'
+      ? '已拒绝'
+      : subscriptionWorkOrder?.status === 'processing'
+        ? '处理中'
+        : subscriptionWorkOrder?.status === 'archived'
+          ? '已归档'
+          : '待处理';
 
   const handleSave = (field: string) => {
     if (!editValue.trim()) { setEditingField(null); return; }
@@ -452,6 +504,27 @@ export default function UserCenterPage() {
                   升级
                 </button>
               </div>
+
+              {subscriptionWorkOrder ? (
+                <div className="rounded-xl border border-black/[0.06] bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-[#1d1d1f]">会员订阅工单</p>
+                      <p className="mt-1 text-xs text-[#86868b]">
+                        {subscriptionWorkOrder.planName} · {subscriptionWorkOrder.orderNumber}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-[#f5f5f7] px-2.5 py-1 text-xs text-[#1d1d1f]">
+                      {subscriptionWorkOrderLabel}
+                    </span>
+                  </div>
+                  {subscriptionWorkOrder.decisionNote ? (
+                    <p className="mt-3 text-xs text-[#555555]">
+                      {subscriptionWorkOrder.decisionNote}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div
                 onClick={() => setActiveTab('profile')}
