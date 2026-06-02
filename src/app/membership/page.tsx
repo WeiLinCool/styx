@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { readJsonResponse } from '@/lib/api-response';
+import { userApiRequest } from '@/lib/user-api-client';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
@@ -14,7 +16,49 @@ import {
   Check,
   Gift,
   ChevronDown,
+  X,
 } from 'lucide-react';
+
+type SubscriptionWorkOrderSummary = {
+  id: string;
+  code: string;
+  status: 'pending' | 'processing' | 'closed' | 'archived';
+  result: 'approved' | 'rejected' | null;
+  planName: string;
+  planCode: string;
+  orderNumber: string;
+  orderStatus: string;
+  orderTotalCents: number;
+  submittedAmountCents: number;
+  submittedPaymentMethod: string;
+  submittedPaidAt: string;
+  submittedReference: string;
+  decisionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const planCodeByUiId: Record<string, string | null> = {
+  free: null,
+  monthly: 'pro-monthly',
+  yearly: 'team-yearly',
+};
+
+function formatCny(cents: number) {
+  return new Intl.NumberFormat('zh-CN', {
+    style: 'currency',
+    currency: 'CNY',
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+
+function workOrderStatusLabel(workOrder: SubscriptionWorkOrderSummary) {
+  if (workOrder.result === 'approved') return '已通过';
+  if (workOrder.result === 'rejected') return '已拒绝';
+  if (workOrder.status === 'processing') return '处理中';
+  if (workOrder.status === 'archived') return '已归档';
+  return '待处理';
+}
 
 function MembershipNav() {
   const router = useRouter();
@@ -54,21 +98,100 @@ function MembershipNav() {
 
 export default function MembershipPage() {
   const router = useRouter();
-  const { user, isLoggedIn, updateUser, openLoginModal } = useAuth();
+  const { user, isLoggedIn, openLoginModal } = useAuth();
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [subscriptionWorkOrder, setSubscriptionWorkOrder] =
+    useState<SubscriptionWorkOrderSummary | null>(null);
+  const [selectedPlanCode, setSelectedPlanCode] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paidAmount, setPaidAmount] = useState('');
+  const [paidAt, setPaidAt] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
+  const [submitPending, setSubmitPending] = useState(false);
+  const [subscriptionMessage, setSubscriptionMessage] = useState<string | null>(null);
   const activationRequired = isLoggedIn && user ? requiresActivation(user) : false;
+
+  useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user)) {
+      setSubscriptionWorkOrder(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const response = await userApiRequest('/api/membership/subscription-work-orders/current', {
+        cache: 'no-store',
+      });
+      const payload = await readJsonResponse(response);
+      if (!cancelled && response.ok) {
+        setSubscriptionWorkOrder(payload.subscriptionWorkOrder ?? null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user]);
 
   const handleSubscribe = (planId: string) => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
-    const level = planId === 'yearly' ? 'yearly' : planId === 'monthly' ? 'monthly' : 'free';
-    const expiry = level === 'yearly'
-      ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-      : level === 'monthly'
-        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        : null;
-    updateUser({ membershipLevel: level, membershipExpiry: expiry });
+    const planCode = planCodeByUiId[planId];
+    if (!planCode) return;
+    setSelectedPlanCode(planCode);
+    setSubscriptionMessage(null);
   };
+
+  const handleSubmitSubscriptionWorkOrder = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedPlanCode || submitPending) return;
+
+    const amount = Number(paidAmount);
+    if (!Number.isFinite(amount) || amount < 0 || !paidAt) {
+      setSubscriptionMessage('请填写有效的付款金额和付款时间。');
+      return;
+    }
+
+    setSubmitPending(true);
+    setSubscriptionMessage(null);
+    try {
+      const response = await userApiRequest('/api/membership/subscription-work-orders', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          planCode: selectedPlanCode,
+          paymentMethod,
+          amountCents: Math.round(amount * 100),
+          paidAt: new Date(paidAt).toISOString(),
+          reference: paymentReference,
+          note: paymentNote,
+        }),
+      });
+      const payload = await readJsonResponse(response);
+      if (!response.ok) {
+        setSubscriptionMessage(
+          typeof payload?.error?.message === 'string'
+            ? payload.error.message
+            : '订阅工单提交失败，请重试。',
+        );
+        return;
+      }
+
+      setSubscriptionWorkOrder(payload.subscriptionWorkOrder);
+      setSelectedPlanCode(null);
+      setPaymentMethod('');
+      setPaidAmount('');
+      setPaidAt('');
+      setPaymentReference('');
+      setPaymentNote('');
+      setSubscriptionMessage('订阅工单已提交，请等待客服核销。');
+    } finally {
+      setSubmitPending(false);
+    }
+  };
+
+  const selectedPlan = membershipPlans.find((plan) => planCodeByUiId[plan.id] === selectedPlanCode);
 
   return (
     <div className="min-h-screen bg-white text-[#1d1d1f]">
@@ -121,6 +244,38 @@ export default function MembershipPage() {
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {subscriptionWorkOrder && (
+          <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
+            <div className="rounded-xl border border-black/[0.06] bg-white p-4 text-sm shadow-sm">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                <div>
+                  <div className="font-semibold text-[#1d1d1f]">
+                    订阅工单 {subscriptionWorkOrder.code}
+                  </div>
+                  <div className="mt-1 text-[#555555]">
+                    {subscriptionWorkOrder.planName} · {subscriptionWorkOrder.orderNumber} ·{' '}
+                    {formatCny(subscriptionWorkOrder.orderTotalCents)}
+                  </div>
+                </div>
+                <span className="w-fit rounded-full bg-[#f5f5f7] px-3 py-1 text-xs font-medium text-[#1d1d1f]">
+                  {workOrderStatusLabel(subscriptionWorkOrder)}
+                </span>
+              </div>
+              {subscriptionWorkOrder.decisionNote ? (
+                <p className="mt-3 text-xs text-[#555555]">{subscriptionWorkOrder.decisionNote}</p>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {subscriptionMessage && (
+          <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
+            <div className="rounded-xl border border-black/[0.06] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f]">
+              {subscriptionMessage}
             </div>
           </div>
         )}
@@ -199,6 +354,7 @@ export default function MembershipPage() {
 
                 <button
                   onClick={() => handleSubscribe(plan.id)}
+                  disabled={activationRequired || (isLoggedIn && user?.membershipLevel === plan.id)}
                   className={`w-full cursor-pointer rounded-xl py-3.5 text-sm font-semibold transition-all ${
                     activationRequired
                       ? 'bg-[#f5f5f7] text-[#86868b]'
@@ -207,12 +363,109 @@ export default function MembershipPage() {
                       : 'bg-[#1d1d1f] text-white hover:bg-[#333] active:scale-[0.98]'
                   }`}
                 >
-                  {activationRequired ? '请先激活' : isLoggedIn && user?.membershipLevel === plan.id ? '当前方案' : plan.price === 0 ? '免费使用' : '立即订阅'}
+                  {activationRequired
+                    ? '请先激活'
+                    : isLoggedIn && user?.membershipLevel === plan.id
+                      ? '当前方案'
+                      : subscriptionWorkOrder?.planCode === planCodeByUiId[plan.id] &&
+                          (subscriptionWorkOrder.status === 'pending' ||
+                            subscriptionWorkOrder.status === 'processing')
+                        ? '查看申请状态'
+                        : plan.price === 0
+                          ? '免费使用'
+                          : '提交订阅工单'}
                 </button>
               </div>
             ))}
           </div>
         </div>
+
+        {selectedPlanCode && selectedPlan ? (
+          <div className="fixed inset-0 z-50 flex items-end bg-black/30 px-4 py-4 sm:items-center sm:justify-center">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl shadow-black/20">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-semibold text-[#1d1d1f]">提交订阅工单</h2>
+                  <p className="mt-1 text-sm text-[#555555]">
+                    {selectedPlan.name} · 应收 {formatCny(selectedPlan.price * 100)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlanCode(null)}
+                  className="rounded-full p-1.5 text-[#555555] hover:bg-[#f5f5f7]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form className="mt-5 space-y-3" onSubmit={handleSubmitSubscriptionWorkOrder}>
+                <label className="block text-sm">
+                  <span className="font-medium text-[#1d1d1f]">支付方式</span>
+                  <input
+                    required
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value)}
+                    placeholder="微信转账 / 支付宝 / 银行转账"
+                    className="mt-1 h-11 w-full rounded-xl border border-black/[0.08] px-3 text-sm outline-none focus:border-[#1d1d1f]"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-[#1d1d1f]">付款金额</span>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paidAmount}
+                    onChange={(event) => setPaidAmount(event.target.value)}
+                    placeholder="399"
+                    className="mt-1 h-11 w-full rounded-xl border border-black/[0.08] px-3 text-sm outline-none focus:border-[#1d1d1f]"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-[#1d1d1f]">付款时间</span>
+                  <input
+                    required
+                    type="datetime-local"
+                    value={paidAt}
+                    onChange={(event) => setPaidAt(event.target.value)}
+                    className="mt-1 h-11 w-full rounded-xl border border-black/[0.08] px-3 text-sm outline-none focus:border-[#1d1d1f]"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-[#1d1d1f]">交易流水号/备注</span>
+                  <input
+                    required
+                    value={paymentReference}
+                    onChange={(event) => setPaymentReference(event.target.value)}
+                    placeholder="填写转账流水号或可核对的备注"
+                    className="mt-1 h-11 w-full rounded-xl border border-black/[0.08] px-3 text-sm outline-none focus:border-[#1d1d1f]"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-[#1d1d1f]">补充说明</span>
+                  <textarea
+                    value={paymentNote}
+                    onChange={(event) => setPaymentNote(event.target.value)}
+                    rows={3}
+                    className="mt-1 w-full resize-none rounded-xl border border-black/[0.08] px-3 py-2 text-sm outline-none focus:border-[#1d1d1f]"
+                  />
+                </label>
+                {subscriptionMessage ? (
+                  <p className="text-sm text-[#555555]">{subscriptionMessage}</p>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={submitPending}
+                  className="h-11 w-full rounded-xl bg-[#1d1d1f] text-sm font-semibold text-white transition-colors hover:bg-[#333] disabled:cursor-not-allowed disabled:bg-[#86868b]"
+                >
+                  {submitPending ? '提交中...' : '提交工单'}
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : null}
 
         {/* 功能对比 */}
         <div className="bg-[#f5f5f7] py-16">
