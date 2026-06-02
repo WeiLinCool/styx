@@ -1,8 +1,8 @@
 'use client';
 
-import { FormEvent, ReactNode, useState, useTransition } from 'react';
+import { FormEvent, ReactNode, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -16,17 +16,34 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  contentSlugOptions,
+  getContentSchema,
+  getDefaultContentBody,
+  getDefaultContentMetadata,
+  getDefaultContentTitle,
+  type ContentField,
+} from '@/features/admin/admin-content-schema';
 import { adminApiRequest } from '@/lib/admin-api-client';
 import { readJsonResponse } from '@/lib/api-response';
 import type { AdminContentRow } from '@/server/repositories/content';
+
+type MetadataValue = Record<string, unknown>;
 
 type FormState = {
   slug: string;
   title: string;
   body: string;
   url: string;
-  metadata: string;
+  metadata: MetadataValue;
 };
 
 async function postJson(url: string, body: Record<string, unknown>) {
@@ -47,13 +64,224 @@ async function postJson(url: string, body: Record<string, unknown>) {
 }
 
 function buildInitialState(content?: AdminContentRow): FormState {
+  const slug = content?.slug ?? 'home.hero';
   return {
-    slug: content?.slug ?? 'home.hero',
-    title: content?.title ?? '',
-    body: content?.body ?? '',
+    slug,
+    title: content?.title ?? getDefaultContentTitle(slug),
+    body: content?.body ?? getDefaultContentBody(slug),
     url: content?.mediaReference !== 'none' ? (content?.mediaReference ?? '') : '',
-    metadata: JSON.stringify(content?.metadata ?? {}, null, 2),
+    metadata: content?.metadata ?? getDefaultContentMetadata(slug),
   };
+}
+
+function pathParts(path: string) {
+  return path ? path.split('.') : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readValue(source: unknown, path: string): unknown {
+  if (!path) {
+    return source;
+  }
+
+  let current = source;
+  for (const part of pathParts(path)) {
+    if (!isRecord(current)) {
+      return undefined;
+    }
+    current = current[part];
+  }
+  return current;
+}
+
+function writeValue(source: unknown, path: string, value: unknown): unknown {
+  if (!path) {
+    return value;
+  }
+
+  const clone = isRecord(source) ? { ...source } : {};
+  let current: Record<string, unknown> = clone;
+  const parts = pathParts(path);
+
+  for (const part of parts.slice(0, -1)) {
+    const next = current[part];
+    current[part] = isRecord(next) ? { ...next } : {};
+    current = current[part] as Record<string, unknown>;
+  }
+
+  current[parts[parts.length - 1]] = value;
+  return clone;
+}
+
+function readString(source: unknown, path: string) {
+  const value = readValue(source, path);
+  return typeof value === 'string' ? value : '';
+}
+
+function defaultListItem(fields: ContentField[]) {
+  if (fields.length === 1 && fields[0].path === '') {
+    return '';
+  }
+
+  return fields.reduce<Record<string, unknown>>((item, field) => {
+    item[field.path] =
+      field.kind === 'object'
+        ? defaultListItem(field.fields)
+        : field.kind === 'list'
+          ? []
+          : field.kind === 'color'
+            ? '#000000'
+            : '';
+    return item;
+  }, {});
+}
+
+function FieldHelp({ children }: { children?: string }) {
+  if (!children) {
+    return null;
+  }
+
+  return <p className="text-xs leading-5 text-neutral-500">{children}</p>;
+}
+
+function VisualField({
+  field,
+  value,
+  onChange,
+}: {
+  field: ContentField;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  if (field.kind === 'object') {
+    return (
+      <fieldset className="rounded-lg border border-neutral-200 p-3">
+        <legend className="px-1 text-sm font-medium text-neutral-950">{field.label}</legend>
+        <FieldHelp>{field.help}</FieldHelp>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {field.fields.map((child) => (
+            <VisualField
+              key={child.path}
+              field={child}
+              value={readValue(value, child.path)}
+              onChange={(nextValue) => onChange(writeValue(value, child.path, nextValue))}
+            />
+          ))}
+        </div>
+      </fieldset>
+    );
+  }
+
+  if (field.kind === 'list') {
+    const items = Array.isArray(value) ? value : [];
+    const canRemove = items.length > (field.minItems ?? 0);
+    const canAdd = typeof field.maxItems !== 'number' || items.length < field.maxItems;
+
+    return (
+      <fieldset className="rounded-lg border border-neutral-200 p-3">
+        <legend className="px-1 text-sm font-medium text-neutral-950">{field.label}</legend>
+        <FieldHelp>{field.help}</FieldHelp>
+        <div className="mt-3 space-y-3">
+          {items.map((item, index) => (
+            <div key={index} className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-neutral-600">
+                  {field.itemLabel} {index + 1}
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 rounded-md px-2 text-xs"
+                  disabled={!canRemove}
+                  onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  删除
+                </Button>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {field.fields.map((child) => (
+                  <VisualField
+                    key={child.path}
+                    field={child}
+                    value={readValue(item, child.path)}
+                    onChange={(nextValue) =>
+                      onChange(
+                        items.map((currentItem, itemIndex) =>
+                          itemIndex === index ? writeValue(currentItem, child.path, nextValue) : currentItem,
+                        ),
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 rounded-md text-xs"
+            disabled={!canAdd}
+            onClick={() => onChange([...items, defaultListItem(field.fields)])}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            添加{field.itemLabel}
+          </Button>
+        </div>
+      </fieldset>
+    );
+  }
+
+  const id = `content-field-${field.path || field.label}`;
+  const stringValue = typeof value === 'string' ? value : '';
+
+  if (field.kind === 'textarea') {
+    return (
+      <div className="space-y-2 md:col-span-2">
+        <Label htmlFor={id}>{field.label}</Label>
+        <Textarea id={id} value={stringValue} onChange={(event) => onChange(event.target.value)} />
+        <FieldHelp>{field.help}</FieldHelp>
+      </div>
+    );
+  }
+
+  if (field.kind === 'select') {
+    return (
+      <div className="space-y-2">
+        <Label>{field.label}</Label>
+        <Select value={stringValue} onValueChange={onChange}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {field.options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <FieldHelp>{field.help}</FieldHelp>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{field.label}</Label>
+      <Input
+        id={id}
+        type={field.kind === 'color' ? 'color' : 'text'}
+        value={stringValue}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <FieldHelp>{field.help}</FieldHelp>
+    </div>
+  );
 }
 
 function ContentDialog({
@@ -67,8 +295,27 @@ function ContentDialog({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [showJson, setShowJson] = useState(false);
   const [formState, setFormState] = useState<FormState>(() => buildInitialState(content));
   const [, startTransition] = useTransition();
+  const schema = useMemo(() => getContentSchema(formState.slug), [formState.slug]);
+  const metadataJson = useMemo(() => JSON.stringify(formState.metadata, null, 2), [formState.metadata]);
+
+  function updateSlug(slug: string) {
+    setFormState((current) => ({
+      ...current,
+      slug,
+      title:
+        !content && current.title === getDefaultContentTitle(current.slug)
+          ? getDefaultContentTitle(slug)
+          : current.title,
+      body:
+        !content && current.body === getDefaultContentBody(current.slug)
+          ? getDefaultContentBody(slug)
+          : current.body,
+      metadata: getDefaultContentMetadata(slug),
+    }));
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -76,13 +323,12 @@ function ContentDialog({
     setMessage(null);
 
     try {
-      const metadata = JSON.parse(formState.metadata);
       await postJson(content ? `/api/admin/content/${content.id}` : '/api/admin/content', {
         slug: formState.slug,
         title: formState.title,
         body: formState.body || null,
         url: formState.url || null,
-        metadata,
+        metadata: formState.metadata,
       });
       setOpen(false);
       startTransition(() => router.refresh());
@@ -96,28 +342,33 @@ function ContentDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{content ? '编辑首页内容' : '新增首页内容'}</DialogTitle>
           <DialogDescription>
-            metadata 使用结构化 JSON，发布前会在服务端校验。
+            选择内容区块后填写结构化表单，系统会按前台 schema 生成 metadata。
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={(event) => void submit(event)}>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor={`content-slug-${content?.id ?? 'new'}`}>Slug</Label>
-              <Input
-                id={`content-slug-${content?.id ?? 'new'}`}
-                value={formState.slug}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, slug: event.target.value }))
-                }
-                disabled={pending}
-              />
+              <Label>内容区块</Label>
+              <Select value={formState.slug} onValueChange={updateSlug} disabled={pending}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {contentSlugOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs leading-5 text-neutral-500">{schema.description}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`content-title-${content?.id ?? 'new'}`}>标题</Label>
+              <Label htmlFor={`content-title-${content?.id ?? 'new'}`}>后台标题</Label>
               <Input
                 id={`content-title-${content?.id ?? 'new'}`}
                 value={formState.title}
@@ -137,10 +388,11 @@ function ContentDialog({
                 setFormState((current) => ({ ...current, url: event.target.value }))
               }
               disabled={pending}
+              placeholder="可选：/images/example.png"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`content-body-${content?.id ?? 'new'}`}>正文摘要</Label>
+            <Label htmlFor={`content-body-${content?.id ?? 'new'}`}>后台摘要</Label>
             <Textarea
               id={`content-body-${content?.id ?? 'new'}`}
               value={formState.body}
@@ -150,18 +402,47 @@ function ContentDialog({
               disabled={pending}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor={`content-metadata-${content?.id ?? 'new'}`}>Metadata JSON</Label>
-            <Textarea
-              id={`content-metadata-${content?.id ?? 'new'}`}
-              className="min-h-64 font-mono text-xs"
-              value={formState.metadata}
-              onChange={(event) =>
-                setFormState((current) => ({ ...current, metadata: event.target.value }))
-              }
-              disabled={pending}
-            />
+
+          <div className="rounded-lg border border-neutral-200 p-3">
+            <div className="mb-3">
+              <p className="text-sm font-medium text-neutral-950">{schema.label}字段</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                这里填写的内容会生成 metadata，并由用户端 /home 动态渲染。
+              </p>
+            </div>
+            <div className="space-y-3">
+              {schema.fields.map((field) => (
+                <VisualField
+                  key={field.path}
+                  field={field}
+                  value={readValue(formState.metadata, field.path)}
+                  onChange={(value) =>
+                    setFormState((current) => ({
+                      ...current,
+                      metadata: writeValue(current.metadata, field.path, value) as MetadataValue,
+                    }))
+                  }
+                />
+              ))}
+            </div>
           </div>
+
+          <div className="rounded-lg border border-neutral-200">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-neutral-950"
+              onClick={() => setShowJson((current) => !current)}
+            >
+              高级 JSON 预览
+              {showJson ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {showJson ? (
+              <pre className="max-h-72 overflow-auto border-t border-neutral-200 bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">
+                {metadataJson}
+              </pre>
+            ) : null}
+          </div>
+
           {message ? <p className="text-sm text-red-700">{message}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>

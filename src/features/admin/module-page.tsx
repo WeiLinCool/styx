@@ -49,6 +49,7 @@ type AdminModulePageProps<TRecord extends { id: string }> = {
   columns: AdminColumn<TRecord>[];
   searchPlaceholder: string;
   emptyLabel?: string;
+  guide?: ReactNode;
 };
 
 export function AdminActionBar({ actions }: { actions: string[] }) {
@@ -95,6 +96,7 @@ export function AdminModulePage<TRecord extends { id: string }>({
   columns,
   searchPlaceholder,
   emptyLabel = '暂无记录',
+  guide,
 }: AdminModulePageProps<TRecord>) {
   return (
     <div className="space-y-4">
@@ -108,6 +110,8 @@ export function AdminModulePage<TRecord extends { id: string }>({
           tone={source === 'database' ? 'success' : 'warning'}
         />
       </div>
+
+      {guide}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (

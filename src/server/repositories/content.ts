@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { asc, desc, eq } from 'drizzle-orm';
 
 import { AccountDomainError } from '@/server/auth/account-types';
 import { schema } from '@/server/db';
@@ -108,11 +108,27 @@ export function resolveContentStatusTransition(action: ContentStatusAction, now 
 }
 
 export function mapPublishedHomepageRows(
-  rows: Array<{ slug: string; status: string; publishedAt: Date | null; metadata: unknown }>,
+  rows: Array<{
+    slug: string;
+    status: string;
+    publishedAt: Date | null;
+    updatedAt?: Date | null;
+    metadata: unknown;
+  }>,
 ) {
-  return rows
+  const latestBySlug = new Map<string, { slug: string; metadata: unknown }>();
+
+  for (const row of rows
     .filter((row) => row.status === 'published' && row.publishedAt)
-    .map((row) => ({ slug: row.slug, metadata: row.metadata }));
+    .sort((left, right) => {
+      const leftTime = left.updatedAt?.getTime() ?? left.publishedAt?.getTime() ?? 0;
+      const rightTime = right.updatedAt?.getTime() ?? right.publishedAt?.getTime() ?? 0;
+      return leftTime - rightTime;
+    })) {
+    latestBySlug.set(row.slug, { slug: row.slug, metadata: row.metadata });
+  }
+
+  return [...latestBySlug.values()];
 }
 
 function getSeedContent(): AdminModuleData<AdminContentRow> {
@@ -239,10 +255,12 @@ export async function getPublicHomepageContent(): Promise<HomepageContent> {
       slug: schema.contentAssets.slug,
       status: schema.contentAssets.status,
       publishedAt: schema.contentAssets.publishedAt,
+      updatedAt: schema.contentAssets.updatedAt,
       metadata: schema.contentAssets.metadata,
     })
     .from(schema.contentAssets)
-    .where(eq(schema.contentAssets.kind, 'page'));
+    .where(eq(schema.contentAssets.kind, 'page'))
+    .orderBy(asc(schema.contentAssets.updatedAt));
 
   return mergeHomepageBlocks(defaultHomepageContent, mapPublishedHomepageRows(rows));
 }

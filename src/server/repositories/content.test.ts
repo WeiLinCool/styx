@@ -90,3 +90,39 @@ test('mapPublishedHomepageRows ignores draft and unpublished rows', () => {
 
   assert.equal(rows.length, 0);
 });
+
+test('mapPublishedHomepageRows keeps the latest published row per slug', () => {
+  const rows = mapPublishedHomepageRows([
+    {
+      slug: 'home.hero',
+      status: 'published',
+      publishedAt: new Date('2026-06-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+      metadata: {
+        eyebrow: 'old',
+        headline: 'old',
+        subheadline: 'old',
+        body: 'old',
+        primaryCta: { label: '开始', href: '/image-gen' },
+        secondaryCta: { label: '商城', href: '/shop' },
+      },
+    },
+    {
+      slug: 'home.hero',
+      status: 'published',
+      publishedAt: new Date('2026-06-02T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-02T00:00:00.000Z'),
+      metadata: {
+        eyebrow: 'new',
+        headline: 'new',
+        subheadline: 'new',
+        body: 'new',
+        primaryCta: { label: '开始', href: '/image-gen' },
+        secondaryCta: { label: '商城', href: '/shop' },
+      },
+    },
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.equal((rows[0]?.metadata as { headline?: string }).headline, 'new');
+});

@@ -45,3 +45,4 @@ pids/
 .preview
 .superpowers/
 .worktrees/
+deploy-artifacts
