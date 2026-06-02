@@ -6,6 +6,7 @@ import {
   buildProtectionHeaders,
 } from '@/server/request-security';
 import { createUserApiClient } from '@/lib/user-api-client';
+import { AccountDomainError } from '@/server/auth/account-types';
 import { createLoginHandler } from './route';
 
 test('POST accepts inviteCode and forwards it to registerOrLoginUser', async () => {
@@ -77,4 +78,37 @@ test('POST accepts inviteCode and forwards it to registerOrLoginUser', async () 
   assert.equal(receivedInputs[0]?.inviteCode, 'INVITE123');
   assert.equal(receivedInputs[0]?.userAgent, 'route-test');
   assert.equal(receivedInputs[0]?.ipAddress, '127.0.0.1');
+});
+
+test('POST returns account domain errors raised inside protected login operation', async () => {
+  const POST = createLoginHandler(async () => {
+    throw new AccountDomainError(
+      'password_setup_required',
+      '当前账号尚未设置密码，请先设置密码后再登录。',
+      403,
+    );
+  });
+
+  const requestBody = JSON.stringify({
+    phone: '13800000000',
+    password: 'secret123',
+  });
+  const headers = buildProtectionHeaders({
+    body: null,
+    fingerprint: 'route-test-fingerprint',
+  });
+  headers.set('content-type', 'application/json');
+  headers.set('x-request-body-hash', buildRawRequestBodyHash(requestBody));
+
+  const response = await POST(
+    new Request('http://localhost/api/auth/login', {
+      method: 'POST',
+      headers,
+      body: requestBody,
+    }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error?.code, 'password_setup_required');
 });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildFnv1aRequestBodyHash,
   buildProtectionHeaders,
   evaluateRequestProtection,
   parseRequestFingerprint,
@@ -117,6 +118,63 @@ test('body hash mismatch rejects mutation requests', () => {
   if (!result.allowed) {
     assert.equal(result.code, 'request_body_hash_mismatch');
   }
+});
+
+test('insecure mode accepts fallback fnv1a body hashes from HTTP browsers without Web Crypto', () => {
+  const body = { phone: '18120810787', password: 'ZHong141211..' };
+  const headers = buildProtectionHeaders({
+    now: Date.now(),
+    body,
+    fingerprint: 'fnv1a:1d8c39ee',
+  });
+  headers.set('x-request-body-hash', buildFnv1aRequestBodyHash(JSON.stringify(body)));
+
+  const result = evaluateRequestProtection({
+    routeKind: 'sensitive-user-mutation',
+    method: 'POST',
+    pathname: '/api/auth/login',
+    transportMode: 'insecure',
+    requestUrl: 'http://example.com/api/auth/login',
+    headers,
+    body,
+    rawBody: JSON.stringify(body),
+  });
+
+  assert.equal(result.allowed, true);
+});
+
+test('insecure mode accepts fallback fnv1a hashes for decrypted stable JSON bodies', () => {
+  const body = { phone: '18120810787', password: 'ZHong141211..' };
+  const decryptedRawBody = JSON.stringify(body);
+  const headers = buildProtectionHeaders({
+    now: Date.now(),
+    body,
+    fingerprint: 'fnv1a:1d8c39ee',
+  });
+  headers.set(
+    'x-request-body-hash',
+    buildFnv1aRequestBodyHash('{"password":"ZHong141211..","phone":"18120810787"}'),
+  );
+
+  const result = evaluateRequestProtection({
+    routeKind: 'sensitive-user-mutation',
+    method: 'POST',
+    pathname: '/api/auth/login',
+    transportMode: 'insecure',
+    requestUrl: 'http://example.com/api/auth/login',
+    headers,
+    body,
+    rawBody: JSON.stringify({
+      encrypted: true,
+      v: 2,
+      alg: 'x25519-xsalsa20poly1305-sealedbox',
+      kid: 'default',
+      ciphertext: 'sealed',
+    }),
+    decryptedRawBody,
+  });
+
+  assert.equal(result.allowed, true);
 });
 
 test('expired client timestamp rejects protected mutations', () => {

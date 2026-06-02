@@ -49,6 +49,26 @@ STYX_TRANSPORT_SECURITY_MODE=compatible
 STYX_OPENAI_COMPAT_PROXY_URL=http://proxy:10808
 ```
 
+如果需要在 HTTP 部署下减少敏感请求被动抓包风险，生成并配置请求加密密钥：
+
+```bash
+node scripts/generate-request-encryption-keypair.mjs
+```
+
+把输出加入 `.env.production`：
+
+```env
+STYX_REQUEST_ENCRYPTION_PRIVATE_KEY_B64URL=<server-private-key>
+NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_PUBLIC_KEY_B64URL=<client-public-key>
+NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_KEY_ID=default
+```
+
+说明：
+
+- `STYX_REQUEST_ENCRYPTION_PRIVATE_KEY_B64URL` 只允许存在于服务端环境。
+- `NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_PUBLIC_KEY_B64URL` 会暴露给 Web 客户端，也可以内置到 App/Desktop 客户端。
+- 该应用层加密用于降低被动抓包风险；HTTP Web 页面仍不能防主动中间人替换前端代码。
+
 说明：
 
 - `DATABASE_URL` 在 Compose 网络里应指向数据库服务名 `postgres`。

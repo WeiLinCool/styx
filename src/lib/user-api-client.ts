@@ -3,6 +3,7 @@ import {
   decryptResponseBody,
   encryptRequestBody,
   isEncryptedResponseEnvelope,
+  type RequestEncryptionKeyConfig,
 } from '@/lib/request-encryption';
 
 type ApiFetch = typeof fetch;
@@ -32,6 +33,13 @@ function defaultCollectBrowserFingerprint() {
   }
 
   return collectBrowserFingerprint();
+}
+
+function readRequestEncryptionKeyConfig(): RequestEncryptionKeyConfig {
+  return {
+    keyId: process.env.NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_KEY_ID ?? 'default',
+    publicKeyB64Url: process.env.NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_PUBLIC_KEY_B64URL,
+  };
 }
 
 function resolveMethod(init?: RequestInit) {
@@ -154,7 +162,7 @@ async function withRequestMetadata(
 
   let nextBody = init?.body;
   if (isMutationMethod(method) && typeof init?.body === 'string') {
-    nextBody = await encryptRequestBody(init.body);
+    nextBody = await encryptRequestBody(init.body, readRequestEncryptionKeyConfig());
   }
 
   return {

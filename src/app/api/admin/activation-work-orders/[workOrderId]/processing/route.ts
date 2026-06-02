@@ -5,7 +5,7 @@ import { startProcessingActivationWorkOrder } from '@/server/auth/activation-wor
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 const paramsSchema = z.object({
   workOrderId: z.uuid(),
@@ -35,7 +35,7 @@ export async function POST(
           actorId: session.user.id,
         });
 
-        return createEncryptedJsonResponse({
+        return createJsonResponse({
           ok: true,
           workOrder: {
             id: workOrder.id,

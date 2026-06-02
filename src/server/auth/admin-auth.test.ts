@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { AccountDomainError } from './account-types';
 import {
   createAdminSessionToken,
   getAdminWhitelistConfig,
@@ -32,6 +33,30 @@ test('verifyAdminPassword matches hashed password inputs', () => {
 
   assert.equal(verifyAdminPassword('secret-123', passwordHash), true);
   assert.equal(verifyAdminPassword('wrong', passwordHash), false);
+});
+
+test('verifyAdminPassword rejects invalid configured hashes without throwing', () => {
+  assert.equal(verifyAdminPassword('secret-123', '<sha256-password-hash>'), false);
+});
+
+test('parseAdminAccountsConfig rejects invalid password hash formats', () => {
+  assert.throws(
+    () =>
+      parseAdminAccountsConfig(
+        JSON.stringify([
+          {
+            userId: '00000000-0000-4000-8000-000000000001',
+            username: 'root',
+            passwordHash: '<sha256-password-hash>',
+            phone: '13800000000',
+          },
+        ]),
+      ),
+    (error) =>
+      error instanceof AccountDomainError &&
+      error.code === 'admin_required' &&
+      error.status === 503,
+  );
 });
 
 test('admin session token round-trips with signing secret', () => {

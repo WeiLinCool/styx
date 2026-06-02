@@ -73,6 +73,11 @@ export function AdminAuthActions({ authenticated }: AdminAuthActionsProps) {
       const payload = await readJsonResponse(response);
 
       if (!response.ok) {
+        if (payload?.error?.code === 'password_setup_required') {
+          router.push(`/auth/set-password?phone=${encodeURIComponent(phone.trim())}`);
+          return;
+        }
+
         throw new Error(
           typeof payload?.error?.message === 'string' ? payload.error.message : '进入后台失败。',
         );

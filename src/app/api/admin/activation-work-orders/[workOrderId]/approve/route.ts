@@ -5,7 +5,7 @@ import { approveActivationWorkOrder } from '@/server/auth/activation-work-orders
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 const paramsSchema = z.object({
   workOrderId: z.uuid(),
@@ -42,7 +42,7 @@ export async function POST(
           reason: body.reason ?? '客服审核通过',
         });
 
-        return createEncryptedJsonResponse({
+        return createJsonResponse({
           ok: true,
           workOrder: {
             id: result.workOrder.id,

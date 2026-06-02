@@ -4,7 +4,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { archivePasswordResetWorkOrder } from '@/server/auth/password-reset-work-orders';
 import { requireAdmin } from '@/server/auth/guards';
 import { runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 export async function POST(
   request: Request,
@@ -28,7 +28,7 @@ export async function POST(
           workOrderId,
           actorId: session.user.id,
         });
-        return createEncryptedJsonResponse({ ok: true, workOrder });
+        return createJsonResponse({ ok: true, workOrder });
       },
     );
   } catch (error) {

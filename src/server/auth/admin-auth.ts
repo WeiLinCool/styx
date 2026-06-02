@@ -21,12 +21,21 @@ export type AdminAccountConfig = {
   allowWhitelistBypass?: boolean;
 };
 
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/i;
+
 export function hashAdminPassword(password: string) {
   return createHash('sha256').update(password).digest('hex');
 }
 
 export function verifyAdminPassword(password: string, passwordHash: string) {
-  return timingSafeEqual(Buffer.from(hashAdminPassword(password)), Buffer.from(passwordHash));
+  if (!SHA256_HEX_PATTERN.test(passwordHash)) {
+    return false;
+  }
+
+  return timingSafeEqual(
+    Buffer.from(hashAdminPassword(password), 'hex'),
+    Buffer.from(passwordHash, 'hex'),
+  );
 }
 
 export function parseAdminAccountsConfig(rawConfig: string | undefined) {
@@ -45,11 +54,19 @@ export function parseAdminAccountsConfig(rawConfig: string | undefined) {
     throw new AccountDomainError('admin_required', '管理端账号配置无效。', 503);
   }
 
-  return parsed.map((account) => ({
-    ...account,
-    username: account.username.trim(),
-    phone: account.phone?.trim() ?? null,
-  }));
+  return parsed.map((account) => {
+    const passwordHash = account.passwordHash?.trim();
+    if (!SHA256_HEX_PATTERN.test(passwordHash)) {
+      throw new AccountDomainError('admin_required', '管理端账号配置无效。', 503);
+    }
+
+    return {
+      ...account,
+      passwordHash,
+      username: account.username.trim(),
+      phone: account.phone?.trim() ?? null,
+    };
+  });
 }
 
 export function getAdminWhitelistConfig(accounts: AdminAccountConfig[]) {

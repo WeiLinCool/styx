@@ -48,6 +48,7 @@ export type RequestProtectionEvaluationInput = {
   headers: Headers;
   body?: unknown;
   rawBody?: string | null;
+  decryptedRawBody?: string | null;
   now?: number;
   timestampToleranceMs?: number;
 };
@@ -105,6 +106,14 @@ export function resolveRequestTransport(
 
 export function buildStableRequestBodyHash(body: unknown): string {
   return `sha256:${createHash('sha256').update(stableJsonStringify(body)).digest('hex')}`;
+}
+
+export function buildRequestBodyHashCandidates(body: unknown): Set<string> {
+  const stableBody = stableJsonStringify(body);
+  return new Set([
+    `sha256:${createHash('sha256').update(stableBody).digest('hex')}`,
+    buildFnv1aRequestBodyHash(stableBody),
+  ]);
 }
 
 export function parseRequestFingerprint(headers: Headers): string | null {
@@ -169,12 +178,16 @@ export function evaluateRequestProtection(
 
   const expectedBodyHash = firstHeader(input.headers, ['x-request-body-hash']);
   if (MUTATION_METHODS.has(method) && expectedBodyHash) {
-    const actualHashes = new Set([
-      buildStableRequestBodyHash(input.body ?? null),
-      ...(input.rawBody !== undefined && input.rawBody !== null
-        ? [buildRawRequestBodyHash(input.rawBody)]
-        : []),
-    ]);
+    const actualHashes = buildRequestBodyHashCandidates(input.body ?? null);
+    if (input.rawBody !== undefined && input.rawBody !== null) {
+      actualHashes.add(buildRawRequestBodyHash(input.rawBody));
+      actualHashes.add(buildFnv1aRequestBodyHash(input.rawBody));
+    }
+    if (input.decryptedRawBody !== undefined && input.decryptedRawBody !== null) {
+      actualHashes.add(buildRawRequestBodyHash(input.decryptedRawBody));
+      actualHashes.add(buildFnv1aRequestBodyHash(input.decryptedRawBody));
+    }
+
     if (!actualHashes.has(expectedBodyHash)) {
       return deny('request_body_hash_mismatch', 400, transport);
     }
@@ -231,6 +244,16 @@ export function buildProtectionHeaders(input: {
 
 export function buildRawRequestBodyHash(body: string) {
   return `sha256:${createHash('sha256').update(body).digest('hex')}`;
+}
+
+export function buildFnv1aRequestBodyHash(body: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < body.length; index += 1) {
+    hash ^= body.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 function allow(

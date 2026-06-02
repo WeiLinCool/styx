@@ -5,7 +5,7 @@ import { accountErrorToResponse, AccountDomainError } from '@/server/auth/accoun
 import { hashUserPassword } from '@/server/auth/public-auth';
 import { getUserByPhone, updateUserMetadata } from '@/server/repositories/users';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   phone: z.string().min(6).max(32),
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
           mustResetPassword: false,
         });
 
-        return createEncryptedJsonResponse({ ok: true });
+        return createJsonResponse({ ok: true });
       },
     );
   } catch (error) {

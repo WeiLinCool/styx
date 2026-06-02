@@ -4,7 +4,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { startPasswordResetWorkOrderProcessing } from '@/server/auth/password-reset-work-orders';
 import { requireAdmin } from '@/server/auth/guards';
 import { runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 export async function POST(
   request: Request,
@@ -25,7 +25,7 @@ export async function POST(
       },
       async () => {
         const workOrder = await startPasswordResetWorkOrderProcessing(workOrderId);
-        return createEncryptedJsonResponse({ ok: true, workOrder });
+        return createJsonResponse({ ok: true, workOrder });
       },
     );
   } catch (error) {

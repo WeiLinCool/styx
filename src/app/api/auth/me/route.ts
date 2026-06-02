@@ -4,7 +4,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { getCreditBalance } from '@/server/billing/credits';
 import { buildInviteUrl, formatBusinessDateInShanghai } from '@/server/points/service';
 import { resolveSession } from '@/server/auth/session';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 import {
   getInviteSummary,
   getTodayDailyCheckin,
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     const session = await resolveSession();
 
     if (!session.authenticated) {
-      return createEncryptedJsonResponse({
+      return createJsonResponse({
         authenticated: false,
         user: null,
       });
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
       new URL(request.url).origin,
     );
 
-    return createEncryptedJsonResponse({
+    return createJsonResponse({
       authenticated: true,
       user: {
         id: session.user.id,

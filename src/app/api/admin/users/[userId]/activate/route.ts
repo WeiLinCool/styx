@@ -5,7 +5,7 @@ import { activateAccountByAdmin } from '@/server/auth/account-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   reason: z.string().trim().max(500).optional(),
@@ -42,7 +42,7 @@ export async function POST(
           reason: body.reason,
         });
 
-        return createEncryptedJsonResponse({
+        return createJsonResponse({
           ok: true,
           user: {
             id: user.id,

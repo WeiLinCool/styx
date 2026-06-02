@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { createPasswordResetWorkOrder } from '@/server/auth/password-reset-work-orders';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   phone: z.string().min(6).max(32),
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
           reason: body.reason,
         });
 
-        return createEncryptedJsonResponse({
+        return createJsonResponse({
           ok: true,
           workOrderId: workOrder.id,
         });

@@ -5,7 +5,7 @@ import { reissueActivation } from '@/server/auth/account-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   purpose: z.enum(['account_activation', 'identity_binding']).optional(),
@@ -42,7 +42,7 @@ export async function POST(
           purpose: body.purpose,
         });
 
-        return createEncryptedJsonResponse({
+        return createJsonResponse({
           ok: true,
           activation: {
             tokenId: activation.tokenId,

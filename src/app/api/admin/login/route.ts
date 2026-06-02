@@ -5,9 +5,9 @@ import {
   createAdminSessionFromCredentials,
 } from '@/server/auth/admin-auth';
 import { ADMIN_SESSION_COOKIE } from '@/server/auth/admin-auth-config';
-import { accountErrorToResponse } from '@/server/auth/account-types';
+import { AccountDomainError, accountErrorToResponse } from '@/server/auth/account-types';
 import { readJsonBody } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
   username: z.string().min(1).max(64),
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       ipAddress: request.headers.get('x-forwarded-for'),
     });
 
-    const response = await createEncryptedJsonResponse({
+    const response = await createJsonResponse({
       ok: true,
       expiresAt: session.expiresAt,
     });
@@ -48,6 +48,10 @@ export async function POST(request: Request) {
         },
         { status: 400 },
       );
+    }
+
+    if (!(error instanceof AccountDomainError)) {
+      console.error('[admin-login] unexpected error', error);
     }
 
     const response = accountErrorToResponse(error);

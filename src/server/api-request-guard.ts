@@ -22,6 +22,7 @@ export type ProtectedRequestContext = {
   actorType: RequestIdempotencyActorType;
   actorId: string | null;
   rawBody?: string | null;
+  decryptedRawBody?: string | null;
   parsedBody?: unknown;
 };
 
@@ -38,6 +39,7 @@ export async function runProtectedMutation(
     requestUrl: context.request.url,
     headers: context.request.headers,
     rawBody,
+    decryptedRawBody: context.decryptedRawBody ?? null,
     body: context.parsedBody,
   });
 
@@ -98,16 +100,26 @@ export async function readJsonBody(request: Request) {
   const rawBody = await request.text();
   const parsedRawBody = rawBody ? JSON.parse(rawBody) : null;
   if (isEncryptedRequestEnvelope(parsedRawBody)) {
-    const decrypted = await decryptRequestBody(parsedRawBody);
+    const decrypted = await decryptRequestBody(parsedRawBody, readRequestEncryptionKeyConfig());
     return {
       rawBody,
+      decryptedRawBody: decrypted,
       body: decrypted ? JSON.parse(decrypted) : null,
     };
   }
 
   return {
     rawBody,
+    decryptedRawBody: null,
     body: parsedRawBody,
+  };
+}
+
+function readRequestEncryptionKeyConfig() {
+  return {
+    keyId: process.env.NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_KEY_ID ?? 'default',
+    publicKeyB64Url: process.env.NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_PUBLIC_KEY_B64URL,
+    privateKeyB64Url: process.env.STYX_REQUEST_ENCRYPTION_PRIVATE_KEY_B64URL,
   };
 }
 

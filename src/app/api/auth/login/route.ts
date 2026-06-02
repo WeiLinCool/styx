@@ -5,7 +5,7 @@ import { registerOrLoginUser } from '@/server/auth/account-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { DEV_AUTH_BYPASS_COOKIE } from '@/server/auth/session';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
-import { createEncryptedJsonResponse } from '@/server/encrypted-response';
+import { createJsonResponse } from '@/server/encrypted-response';
 
 type RegisterOrLoginUserInput = Parameters<typeof registerOrLoginUser>[0];
 type RegisterOrLoginUserResult = Awaited<ReturnType<typeof registerOrLoginUser>>;
@@ -30,7 +30,7 @@ export function createLoginHandler(
       const { rawBody, body: parsedBody } = await readJsonBody(request);
       const body = parseLoginBody(parsedBody);
 
-      return runProtectedMutation(
+      return await runProtectedMutation(
         {
           request,
           routeKind: 'sensitive-user-mutation',
@@ -51,7 +51,7 @@ export function createLoginHandler(
             ipAddress: request.headers.get('x-forwarded-for'),
           });
 
-          const response = await createEncryptedJsonResponse({
+          const response = await createJsonResponse({
             ok: true,
             user: {
               id: result.user.id,
