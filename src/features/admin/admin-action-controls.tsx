@@ -379,6 +379,53 @@ export function AdminPasswordResetWorkOrderActions({
   return <ActionButtons actions={actions} />;
 }
 
+export function AdminSubscriptionWorkOrderActions({
+  workOrderId,
+  queueStatus,
+}: {
+  workOrderId: string;
+  queueStatus: 'pending' | 'processing' | 'closed' | 'archived';
+}) {
+  const actions =
+    queueStatus === 'pending'
+      ? [
+          {
+            label: '开始核销',
+            url: `/api/admin/subscription-work-orders/${workOrderId}/processing`,
+            body: {},
+            successMessage: '会员订阅工单已进入处理中。',
+          },
+        ]
+      : queueStatus === 'processing'
+        ? [
+            {
+              label: '通过并开通',
+              url: `/api/admin/subscription-work-orders/${workOrderId}/approve`,
+              body: { decisionNote: '付款信息核销通过。' },
+              successMessage: '会员订阅工单已通过，会员权益已开通或顺延。',
+            },
+            {
+              label: '拒绝并取消订单',
+              url: `/api/admin/subscription-work-orders/${workOrderId}/reject`,
+              body: { decisionNote: '付款信息未通过核销。' },
+              successMessage: '会员订阅工单已拒绝，订单已取消。',
+              variant: 'destructive' as const,
+            },
+          ]
+        : queueStatus === 'closed'
+          ? [
+              {
+                label: '归档',
+                url: `/api/admin/subscription-work-orders/${workOrderId}/archive`,
+                body: {},
+                successMessage: '会员订阅工单已归档。',
+              },
+            ]
+          : [];
+
+  return actions.length > 0 ? <ActionButtons actions={actions} /> : null;
+}
+
 export function AdminOrderActions({ orderId }: { orderId: string }) {
   return (
     <ActionButtons
