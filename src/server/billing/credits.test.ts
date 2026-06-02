@@ -11,6 +11,11 @@ import {
   validateAdjustCreditsInput,
   validateGrantCreditsInput,
 } from './credits';
+import {
+  calculateProviderCreditCost,
+  normalizeProviderUsage,
+  parseProviderBillingRules,
+} from './provider-rules';
 
 test('calculateChatCreditCost rounds up and respects minimum', () => {
   assert.equal(
@@ -38,6 +43,53 @@ test('calculateChatCreditCost rounds up and respects minimum', () => {
     }),
     4,
   );
+});
+
+test('provider billing calculates DeepSeek cache-aware chat cost', () => {
+  const rules = parseProviderBillingRules({
+    chat: {
+      mode: 'token_breakdown',
+      inputCreditsPer1k: 2,
+      cachedInputCreditsPer1k: 0.5,
+      cacheMissInputCreditsPer1k: 2,
+      outputCreditsPer1k: 8,
+      minimumCredits: 1,
+    },
+  });
+
+  const usage = normalizeProviderUsage({
+    providerType: 'openai_compatible',
+    taskType: 'chat',
+    rawUsage: {
+      prompt_tokens: 1000,
+      prompt_cache_hit_tokens: 400,
+      prompt_cache_miss_tokens: 600,
+      completion_tokens: 250,
+      total_tokens: 1250,
+    },
+    runInput: {},
+  });
+
+  assert.equal(calculateProviderCreditCost({ taskType: 'chat', usage, rules }), 4);
+});
+
+test('provider billing calculates Seedance video token usage with minimum', () => {
+  const rules = parseProviderBillingRules({
+    video: {
+      mode: 'provider_usage_tokens',
+      tokenCreditsPer1k: 1,
+      minimumCredits: 3,
+    },
+  });
+
+  const usage = normalizeProviderUsage({
+    providerType: 'openai_compatible',
+    taskType: 'video',
+    rawUsage: { total_tokens: 1200, completion_tokens: 1200 },
+    runInput: { durationSeconds: 5, resolution: '720p', ratio: '16:9' },
+  });
+
+  assert.equal(calculateProviderCreditCost({ taskType: 'video', usage, rules }), 3);
 });
 
 test('memory ledger debit is idempotent by key', async () => {
