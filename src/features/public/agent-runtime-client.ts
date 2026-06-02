@@ -23,6 +23,8 @@ export type ImageModelOption = ChatModelOption & {
   supportedModes: ImageModelMode[];
 };
 
+export type VideoModelOption = ChatModelOption;
+
 export type AgentRuntimeApiErrorCode =
   | 'invalid_request'
   | 'model_required'
@@ -126,6 +128,10 @@ export function parseImageModel(value: unknown): ImageModelOption | null {
   };
 }
 
+export function parseVideoModel(value: unknown): VideoModelOption | null {
+  return parseChatModel(value);
+}
+
 export function selectChatModelId(models: ChatModelOption[], priorModelId?: string | null): string | null {
   if (priorModelId && models.some((model) => model.id === priorModelId)) {
     return priorModelId;
@@ -177,6 +183,22 @@ export async function listImageModels(mode: ImageModelMode): Promise<ImageModelO
       : [];
 
   return rawModels.map(parseImageModel).filter((model): model is ImageModelOption => model !== null);
+}
+
+export async function listVideoModels(): Promise<VideoModelOption[]> {
+  const response = await userApiRequest('/api/agent/video-models', { cache: 'no-store' });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '视频模型列表加载失败');
+  }
+
+  const rawModels =
+    payload && typeof payload === 'object' && Array.isArray((payload as { models?: unknown }).models)
+      ? (payload as { models: unknown[] }).models
+      : [];
+
+  return rawModels.map(parseVideoModel).filter((model): model is VideoModelOption => model !== null);
 }
 
 export async function createAgentRun(input: CreateAgentRunRequest): Promise<CreateAgentRunResult> {

@@ -8,8 +8,10 @@ import {
   getAgentRunDetail,
   listImageModels,
   listChatModels,
+  listVideoModels,
   parseDirectMediaArtifactPayload,
   parseImageModel,
+  parseVideoModel,
   parseStreamEventPayload,
   selectImageModelId,
   selectChatModelId,
@@ -130,6 +132,43 @@ test('parseImageModel rejects malformed supported modes', () => {
   assert.equal(parseImageModel({ ...validModel, supportedModes: [] }), null);
   assert.equal(parseImageModel({ ...validModel, supportedModes: ['generate', 'video'] }), null);
   assert.equal(parseImageModel({ ...validModel, supportedModes: 'generate' }), null);
+});
+
+test('parseVideoModel accepts chat model shape', () => {
+  const model = parseVideoModel({
+    id: 'video-model',
+    code: 'seedance',
+    name: 'Seedance',
+    providerName: 'Doubao',
+    isDefault: true,
+    entitlementLabel: '会员',
+    pricingSummary: '3 credits minimum',
+  });
+
+  assert.equal(model?.id, 'video-model');
+});
+
+test('listVideoModels returns parsed video model options', async () => {
+  const restore = installFetchMock({
+    models: [
+      {
+        id: 'model-video',
+        code: 'doubao-seedance',
+        name: 'Doubao Seedance',
+        providerName: 'Doubao',
+        isDefault: true,
+        entitlementLabel: 'Free',
+        pricingSummary: '3 credits minimum',
+      },
+    ],
+  });
+
+  try {
+    const models = await listVideoModels();
+    assert.equal(models[0]?.id, 'model-video');
+  } finally {
+    restore();
+  }
 });
 
 test('listImageModels drops malformed image model options', async () => {
