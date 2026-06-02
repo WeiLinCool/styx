@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import { db, schema } from '@/server/db';
@@ -6,7 +6,6 @@ import { qualifyReferralReward } from '@/server/repositories/admin-mutations';
 import {
   buildSubscriptionOrderNumber,
   formatSubscriptionWorkOrderCode,
-  getActiveSubscriptionWorkOrder,
   getCurrentSubscriptionWorkOrderSummary,
   getMembershipPlanByCode,
   requireSubscriptionDb,
@@ -103,12 +102,14 @@ async function getWorkOrderForMutation(workOrderId: string) {
   return row;
 }
 
-async function getCurrentPlanExpiry(input: {
-  userId: string;
-  planId: string;
-}) {
-  const database = assertWritableDatabase();
-  const [row] = await database
+async function getCurrentPlanExpiryWithExecutor(
+  executor: Pick<NonNullable<typeof db>, 'select'>,
+  input: {
+    userId: string;
+    planId: string;
+  },
+) {
+  const [row] = await executor
     .select({ expiresAt: schema.userEntitlements.expiresAt })
     .from(schema.userEntitlements)
     .where(
@@ -148,21 +149,31 @@ export async function createSubscriptionWorkOrder(input: {
     );
   }
 
-  const existing = await getActiveSubscriptionWorkOrder({
-    userId: input.userId,
-    planId: plan.id,
-  });
-
-  if (existing) {
-    return getCurrentSubscriptionWorkOrderSummary(input.userId);
-  }
-
   const now = new Date();
   const entropy = crypto.randomUUID().replace(/-/g, '');
   const orderNumber = buildSubscriptionOrderNumber(now, entropy);
   const code = formatSubscriptionWorkOrderCode(now, entropy.slice(8));
 
   const created = await database.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${schema.users} where id = ${input.userId} for update`);
+
+    const [existing] = await tx
+      .select()
+      .from(schema.subscriptionWorkOrders)
+      .where(
+        and(
+          eq(schema.subscriptionWorkOrders.userId, input.userId),
+          eq(schema.subscriptionWorkOrders.planId, plan.id),
+          inArray(schema.subscriptionWorkOrders.status, ['pending', 'processing']),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionWorkOrders.createdAt))
+      .limit(1);
+
+    if (existing) {
+      return existing;
+    }
+
     const [order] = await tx
       .insert(schema.orders)
       .values({
@@ -223,6 +234,11 @@ export async function createSubscriptionWorkOrder(input: {
 
     return workOrder;
   });
+
+  const summary = await getCurrentSubscriptionWorkOrderSummary(input.userId);
+  if (summary?.id === created.id) {
+    return summary;
+  }
 
   return {
     id: created.id,
@@ -309,16 +325,6 @@ export async function approveSubscriptionWorkOrder(input: {
   assertSubscriptionWorkOrderTransition(current.workOrder.status, 'closed');
 
   const approvalTime = new Date();
-  const currentExpiresAt = await getCurrentPlanExpiry({
-    userId: current.workOrder.userId,
-    planId: current.workOrder.planId,
-  });
-  const entitlementWindow = getEntitlementWindow({
-    approvalTime,
-    billingPeriod: current.plan.billingPeriod,
-    currentExpiresAt,
-  });
-
   const updated = await database.transaction(async (tx) => {
     await tx.execute(sql`select id from ${schema.users} where id = ${current.workOrder.userId} for update`);
 
@@ -347,6 +353,16 @@ export async function approveSubscriptionWorkOrder(input: {
         409,
       );
     }
+
+    const currentExpiresAt = await getCurrentPlanExpiryWithExecutor(tx, {
+      userId: latest.userId,
+      planId: latest.planId,
+    });
+    const entitlementWindow = getEntitlementWindow({
+      approvalTime,
+      billingPeriod: current.plan.billingPeriod,
+      currentExpiresAt,
+    });
 
     const [order] = await tx
       .update(schema.orders)

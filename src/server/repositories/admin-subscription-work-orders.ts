@@ -37,7 +37,7 @@ export type AdminSubscriptionWorkOrderRow = {
 function getSeedSubscriptionWorkOrders(): AdminModuleData<AdminSubscriptionWorkOrderRow> {
   const records: AdminSubscriptionWorkOrderRow[] = [
     {
-      id: 'seed-subscription-work-order-1',
+      id: '00000000-0000-4000-8000-000000000091',
       code: 'MSWO-20260602-SEED0001',
       queueStatus: 'pending',
       result: null,
