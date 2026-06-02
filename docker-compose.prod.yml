@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: styx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-styx}
+      POSTGRES_USER: ${POSTGRES_USER:-styx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - styx-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-styx} -d ${POSTGRES_DB:-styx}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: styx-webui:latest
+    container_name: styx-app
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      HOSTNAME: 0.0.0.0
+      PORT: 5000
+      NODE_ENV: production
+      COZE_PROJECT_ENV: PROD
+      STYX_REDIS_HOST: ${STYX_REDIS_HOST}
+      STYX_REDIS_PORT: ${STYX_REDIS_PORT:-6379}
+      STYX_REDIS_PASSWORD: ${STYX_REDIS_PASSWORD}
+      STYX_REDIS_DB: ${STYX_REDIS_DB:-0}
+      STYX_REDIS_TIMEOUT_MS: ${STYX_REDIS_TIMEOUT_MS:-3000}
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  styx-postgres-data:

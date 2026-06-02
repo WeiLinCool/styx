@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge';
+import { formatAccountStateLabel } from '@/features/account/account-state';
 import { cn } from '@/lib/utils';
 import type { DashboardTone } from '@/server/repositories/admin-dashboard';
 
@@ -39,13 +40,14 @@ type StatusBadgeProps = {
 
 export function StatusBadge({ value, tone, className }: StatusBadgeProps) {
   const resolvedTone = tone ?? statusTone[value] ?? 'default';
+  const label = value in statusTone ? formatAccountStateLabel(value) : value;
 
   return (
     <Badge
       variant="outline"
       className={cn('rounded-md border px-1.5 py-0 text-[11px]', toneClassName[resolvedTone], className)}
     >
-      {value}
+      {label === '未知状态' ? value : label}
     </Badge>
   );
 }

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { setDefaultAiChatModel } from '@/server/repositories/ai-models';
-import { runProtectedMutation } from '@/server/api-request-guard';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 
 const paramsSchema = z.object({
   modelId: z.uuid(),
@@ -23,6 +23,7 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const params = await parseAiModelDefaultParams(context.params);
+    const parsed = await readJsonBody(request);
     return runProtectedMutation(
       {
         request,
@@ -30,8 +31,9 @@ export async function POST(
         operation: 'POST /api/admin/ai-models/[modelId]/default',
         actorType: 'admin',
         actorId: session.user.id,
-        rawBody: '',
-        parsedBody: null,
+        rawBody: parsed.rawBody,
+        decryptedRawBody: parsed.decryptedRawBody,
+        parsedBody: parsed.body,
       },
       async () => {
         const model = await setDefaultAiChatModel({

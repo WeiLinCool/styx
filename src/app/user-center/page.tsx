@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { readJsonResponse } from '@/lib/api-response';
 import UserAvatar from '@/components/user-avatar';
+import { HumanVerificationDialog } from '@/components/human-verification-dialog';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 import { userCenterCartFixtures, userCenterPurchaseHistory } from '@/features/public/user-center-data';
+import { shouldRefreshAuthUserSnapshot } from '@/lib/auth-user';
 import { userApiRequest } from '@/lib/user-api-client';
 import { ArrowLeft, ShoppingBag, Clock, Star, Crown, Camera, Edit3, Check, X, ChevronRight, Trash2, Minus, Plus, Gift, Copy, CalendarCheck } from 'lucide-react';
 
@@ -41,9 +43,11 @@ export default function UserCenterPage() {
   const [recentPointActivities, setRecentPointActivities] = useState(user?.recentPointActivities ?? []);
   const [checkinStatus, setCheckinStatus] = useState(user?.checkinStatus ?? null);
   const [checkinPending, setCheckinPending] = useState(false);
+  const [checkinVerificationOpen, setCheckinVerificationOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const entryRefreshRef = useRef(false);
 
   useEffect(() => {
     setInviteSummary(user?.inviteSummary ?? null);
@@ -56,6 +60,15 @@ export default function UserCenterPage() {
       router.replace('/home');
     }
   }, [isLoggedIn, router, user]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user || entryRefreshRef.current || !shouldRefreshAuthUserSnapshot(user)) {
+      return;
+    }
+
+    entryRefreshRef.current = true;
+    void refreshUser();
+  }, [isLoggedIn, refreshUser, user]);
 
   if (!isLoggedIn || !user) {
     return null;
@@ -144,20 +157,42 @@ export default function UserCenterPage() {
     }
   };
 
-  const handleDailyCheckin = async () => {
+  const handleStartDailyCheckin = async () => {
     if (checkinPending || checkinStatus?.checkedIn) {
       return;
     }
 
+    setActionMessage(null);
+    setCheckinVerificationOpen(true);
+  };
+
+  const handleCheckinVerification = async () => {
     setCheckinPending(true);
     setActionMessage(null);
     try {
-      const response = await userApiRequest('/api/user/points/checkin', { method: 'POST' });
+      const verifyResponse = await userApiRequest('/api/user/points/checkin/challenge', {
+        method: 'PUT',
+      });
+      const verifyPayload = await readJsonResponse(verifyResponse);
+      if (!verifyResponse.ok || !verifyPayload.verificationToken) {
+        setActionMessage(
+          typeof verifyPayload?.error?.message === 'string' ? verifyPayload.error.message : '签到验证失败，请重新验证。',
+        );
+        setCheckinVerificationOpen(false);
+        return;
+      }
+
+      const response = await userApiRequest('/api/user/points/checkin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ verificationToken: verifyPayload.verificationToken }),
+      });
       const payload = await readJsonResponse(response);
       if (!response.ok || !payload.checkin) {
         setActionMessage(
           typeof payload?.error?.message === 'string' ? payload.error.message : '签到失败，请稍后重试。',
         );
+        setCheckinVerificationOpen(false);
         return;
       }
 
@@ -166,7 +201,9 @@ export default function UserCenterPage() {
       if (refreshedUser) {
         setInviteSummary(refreshedUser.inviteSummary ?? null);
         setRecentPointActivities(refreshedUser.recentPointActivities ?? []);
+        setCheckinStatus(refreshedUser.checkinStatus ?? payload.checkin);
       }
+      setCheckinVerificationOpen(false);
       setActionMessage(
         payload.alreadyCheckedIn
           ? '今天已经签到过了。'
@@ -356,7 +393,7 @@ export default function UserCenterPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => void handleDailyCheckin()}
+                    onClick={() => void handleStartDailyCheckin()}
                     disabled={checkinPending || checkinStatus?.checkedIn}
                     className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-medium text-white ${
                       checkinPending || checkinStatus?.checkedIn ? 'bg-[#c7c7cc]' : 'bg-[#1d1d1f]'
@@ -606,6 +643,18 @@ export default function UserCenterPage() {
           )}
         </div>
       </div>
+      <HumanVerificationDialog
+        open={checkinVerificationOpen}
+        title="签到验证"
+        description="输入图中验证码后继续签到。"
+        busy={checkinPending}
+        onCancel={() => {
+          if (!checkinPending) {
+            setCheckinVerificationOpen(false);
+          }
+        }}
+        onVerified={handleCheckinVerification}
+      />
     </div>
   );
 }

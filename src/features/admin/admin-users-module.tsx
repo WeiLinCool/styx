@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { formatAccountStateLabel } from '@/features/account/account-state';
 import {
   Table,
   TableBody,
@@ -145,6 +146,7 @@ export function AdminUsersModule({
         record.displayName,
         record.primaryContact,
         record.accountState,
+        formatAccountStateLabel(record.accountState),
         record.bindingState,
         record.membership,
         record.activity,

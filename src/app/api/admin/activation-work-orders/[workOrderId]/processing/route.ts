@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { startProcessingActivationWorkOrder } from '@/server/auth/activation-work-orders';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
-import { runProtectedMutation } from '@/server/api-request-guard';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { createJsonResponse } from '@/server/encrypted-response';
 
 const paramsSchema = z.object({
@@ -18,6 +18,7 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
+    const parsed = await readJsonBody(request);
 
     return runProtectedMutation(
       {
@@ -26,8 +27,9 @@ export async function POST(
         operation: 'POST /api/admin/activation-work-orders/[workOrderId]/processing',
         actorType: 'admin',
         actorId: session.user.id,
-        rawBody: '',
-        parsedBody: null,
+        rawBody: parsed.rawBody,
+        decryptedRawBody: parsed.decryptedRawBody,
+        parsedBody: parsed.body,
       },
       async () => {
         const workOrder = await startProcessingActivationWorkOrder({

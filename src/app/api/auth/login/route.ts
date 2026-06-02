@@ -6,6 +6,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { DEV_AUTH_BYPASS_COOKIE } from '@/server/auth/session';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { createJsonResponse } from '@/server/encrypted-response';
+import { consumeCheckinVerificationToken } from '@/server/points/checkin-challenge';
 
 type RegisterOrLoginUserInput = Parameters<typeof registerOrLoginUser>[0];
 type RegisterOrLoginUserResult = Awaited<ReturnType<typeof registerOrLoginUser>>;
@@ -16,6 +17,7 @@ const bodySchema = z.object({
   nickname: z.string().min(2).max(120).optional(),
   email: z.string().email().optional(),
   inviteCode: z.string().trim().min(1).max(64).optional(),
+  verificationToken: z.string().min(1).optional(),
 });
 
 export function parseLoginBody(input: unknown) {
@@ -27,7 +29,7 @@ export function createLoginHandler(
 ) {
   return async function POST(request: Request) {
     try {
-      const { rawBody, body: parsedBody } = await readJsonBody(request);
+      const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
       const body = parseLoginBody(parsedBody);
 
       return await runProtectedMutation(
@@ -38,9 +40,38 @@ export function createLoginHandler(
           actorType: 'anonymous',
           actorId: body.phone,
           rawBody,
+        decryptedRawBody,
           parsedBody,
         },
         async () => {
+          if (!body.verificationToken) {
+            return NextResponse.json(
+              {
+                error: {
+                  code: 'human_verification_required',
+                  message: '请先完成验证码验证。',
+                },
+              },
+              { status: 400 },
+            );
+          }
+
+          const verified = await consumeCheckinVerificationToken({
+            userId: body.phone,
+            token: body.verificationToken,
+          });
+          if (!verified) {
+            return NextResponse.json(
+              {
+                error: {
+                  code: 'human_verification_invalid',
+                  message: '验证码已失效，请重新验证。',
+                },
+              },
+              { status: 400 },
+            );
+          }
+
           const result = await implementation({
             phone: body.phone,
             password: body.password,

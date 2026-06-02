@@ -13,7 +13,7 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
     const body = bodySchema.parse(parsedBody);
 
     return runProtectedMutation(
@@ -24,6 +24,7 @@ export async function POST(request: Request) {
         actorType: 'anonymous',
         actorId: body.phone,
         rawBody,
+        decryptedRawBody,
         parsedBody,
       },
       async () => {

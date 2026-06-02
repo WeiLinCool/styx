@@ -33,7 +33,7 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
-    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
     const body = bodySchema.parse(parsedBody);
 
     return runProtectedMutation(
@@ -44,6 +44,7 @@ export async function POST(
         actorType: 'admin',
         actorId: session.user.id,
         rawBody,
+        decryptedRawBody,
         parsedBody,
       },
       async () => {

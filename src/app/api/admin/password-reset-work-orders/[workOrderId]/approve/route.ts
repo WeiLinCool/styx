@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { approvePasswordResetWorkOrder } from '@/server/auth/password-reset-work-orders';
 import { requireAdmin } from '@/server/auth/guards';
-import { runProtectedMutation } from '@/server/api-request-guard';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { createJsonResponse } from '@/server/encrypted-response';
 
 export async function POST(
@@ -13,6 +13,7 @@ export async function POST(
   try {
     const session = await requireAdmin();
     const { workOrderId } = await context.params;
+    const parsed = await readJsonBody(request);
     return runProtectedMutation(
       {
         request,
@@ -20,8 +21,9 @@ export async function POST(
         operation: 'POST /api/admin/password-reset-work-orders/[workOrderId]/approve',
         actorType: 'admin',
         actorId: session.user.id,
-        rawBody: '',
-        parsedBody: null,
+        rawBody: parsed.rawBody,
+        decryptedRawBody: parsed.decryptedRawBody,
+        parsedBody: parsed.body,
       },
       async () => {
         const workOrder = await approvePasswordResetWorkOrder({

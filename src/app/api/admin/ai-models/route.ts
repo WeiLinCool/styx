@@ -26,7 +26,7 @@ export async function parseAiModelCreateBody(request: Pick<Request, 'json'>) {
 export async function POST(request: Request) {
   try {
     const session = await requireAdmin();
-    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
     const body = bodySchema.parse(parsedBody);
 
     return runProtectedMutation(
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
         actorType: 'admin',
         actorId: session.user.id,
         rawBody,
+        decryptedRawBody,
         parsedBody,
       },
       async () => {

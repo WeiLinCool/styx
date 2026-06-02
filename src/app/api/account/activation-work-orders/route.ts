@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       throw new AccountDomainError('session_required', '请先登录后再生成激活工单。', 401);
     }
 
-    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
     const body = bodySchema.parse(parsedBody);
 
     return runProtectedMutation(
@@ -44,6 +44,7 @@ export async function POST(request: Request) {
         actorType: 'user',
         actorId: session.user.id,
         rawBody,
+        decryptedRawBody,
         parsedBody,
       },
       async () => {

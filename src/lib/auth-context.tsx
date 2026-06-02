@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { readJsonResponse } from '@/lib/api-response';
 import { getUserFromCookie, saveUserToCookie, removeUserFromCookie, type UserInfo } from '@/lib/cookie';
-import { shouldReplaceAuthUser } from '@/lib/auth-user';
+import { canSubmitPasswordRegistration, shouldRefreshAuthUserSnapshot, shouldReplaceAuthUser } from '@/lib/auth-user';
 import { userApiRequest } from '@/lib/user-api-client';
+import { HumanVerificationDialog } from '@/components/human-verification-dialog';
 import { X, Phone, Lock, User, Camera, Upload, Check, Ticket } from 'lucide-react';
 
 export type UserPointActivity = {
@@ -59,23 +60,17 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [avatarSeed, setAvatarSeed] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingAuthAction, setPendingAuthAction] = useState<'login' | 'register' | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [countdown]);
 
   useEffect(() => {
     const invite = searchParams.get('invite');
@@ -87,20 +82,20 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
     setInviteCode((current) => current || invite.slice(0, 20));
   }, [searchParams]);
 
-  const sendCode = () => {
-    if (!phone || phone.length < 11) return;
-    setCountdown(60);
+  const handleLogin = () => {
+    if (!phone || !password) return;
+    setErrorMessage('');
+    setPendingAuthAction('login');
   };
 
-  const handleLogin = async () => {
-    if (!phone || !password) return;
+  const performLogin = async (verificationToken: string) => {
     setSubmitting(true);
     setErrorMessage('');
     try {
       const response = await userApiRequest('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone, password }),
+        body: JSON.stringify({ phone, password, verificationToken }),
       });
       const payload = await readJsonResponse(response);
       if (!response.ok || !payload.user) {
@@ -115,18 +110,30 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
       onLogin(payload.user);
     } finally {
       setSubmitting(false);
+      setPendingAuthAction(null);
     }
   };
 
-  const handleRegister = async () => {
-    if (!nickname || nickname.length < 2 || !phone || !code || !password || !agreed) return;
+  const handleRegister = () => {
+    if (!canSubmitPasswordRegistration({ nickname, phone, password, confirmPassword, agreed })) return;
+    setErrorMessage('');
+    setPendingAuthAction('register');
+  };
+
+  const performRegister = async (verificationToken: string) => {
     setSubmitting(true);
     setErrorMessage('');
     try {
       const response = await userApiRequest('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone, nickname, password, inviteCode: inviteCode || undefined }),
+        body: JSON.stringify({
+          phone,
+          nickname,
+          password,
+          inviteCode: inviteCode || undefined,
+          verificationToken,
+        }),
       });
       const payload = await readJsonResponse(response);
       if (!response.ok || !payload.user) {
@@ -141,6 +148,32 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
       });
     } finally {
       setSubmitting(false);
+      setPendingAuthAction(null);
+    }
+  };
+
+  const handleAuthVerification = async () => {
+    const response = await userApiRequest('/api/auth/human-verification', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    const payload = await readJsonResponse(response);
+    if (!response.ok || !payload.verificationToken) {
+      setErrorMessage(
+        typeof payload?.error?.message === 'string' ? payload.error.message : '验证码验证失败，请重试。',
+      );
+      setPendingAuthAction(null);
+      return;
+    }
+
+    if (pendingAuthAction === 'login') {
+      await performLogin(payload.verificationToken);
+      return;
+    }
+
+    if (pendingAuthAction === 'register') {
+      await performRegister(payload.verificationToken);
     }
   };
 
@@ -211,7 +244,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
                 />
               </div>
               <button
-                onClick={() => void handleLogin()}
+                onClick={handleLogin}
                 disabled={submitting}
                 className="w-full h-12 rounded-xl bg-[#1d1d1f] text-white font-medium text-[15px] hover:bg-[#333] active:scale-[0.98] transition-all"
               >
@@ -353,28 +386,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
                 />
               </div>
 
-              {/* 5. Verification Code */}
-              <div className="flex gap-3">
-                <div className="relative flex-1">
-                  <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]" />
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="验证码"
-                    className="w-full h-12 pl-12 pr-4 rounded-xl bg-[#f5f5f7] border border-transparent text-[#1d1d1f] placeholder:text-[#c7c7cc] focus:outline-none focus:border-[#1d1d1f] focus:bg-white transition-all text-[15px]"
-                  />
-                </div>
-                <button
-                  onClick={sendCode}
-                  disabled={countdown > 0 || phone.length < 11}
-                  className="h-12 px-5 rounded-xl bg-[#f5f5f7] text-[#1d1d1f] font-medium text-sm whitespace-nowrap disabled:opacity-40 hover:bg-[#e8e8ed] transition-colors"
-                >
-                  {countdown > 0 ? `${countdown}s` : '获取验证码'}
-                </button>
-              </div>
-
-              {/* 6. Password */}
+              {/* 5. Password */}
               <div className="relative">
                 <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]" />
                 <input
@@ -385,6 +397,21 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
                   className="w-full h-12 pl-12 pr-4 rounded-xl bg-[#f5f5f7] border border-transparent text-[#1d1d1f] placeholder:text-[#c7c7cc] focus:outline-none focus:border-[#1d1d1f] focus:bg-white transition-all text-[15px]"
                 />
               </div>
+
+              {/* 6. Confirm Password */}
+              <div className="relative">
+                <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]" />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="确认密码"
+                  className="w-full h-12 pl-12 pr-4 rounded-xl bg-[#f5f5f7] border border-transparent text-[#1d1d1f] placeholder:text-[#c7c7cc] focus:outline-none focus:border-[#1d1d1f] focus:bg-white transition-all text-[15px]"
+                />
+              </div>
+              {confirmPassword && password !== confirmPassword ? (
+                <p className="-mt-2 text-xs text-[#b91c1c]">两次输入的密码不一致。</p>
+              ) : null}
 
               {/* 7. Agreement */}
               <label className="flex items-start gap-2.5 cursor-pointer">
@@ -401,8 +428,8 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
 
               {/* 8. Register Button */}
               <button
-                onClick={() => void handleRegister()}
-                disabled={!agreed || !nickname || nickname.length < 2 || !phone || !code || !password}
+                onClick={handleRegister}
+                disabled={!canSubmitPasswordRegistration({ nickname, phone, password, confirmPassword, agreed })}
                 className="w-full h-12 rounded-xl bg-[#1d1d1f] text-white font-medium text-[15px] hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-40"
               >
                 注册
@@ -418,6 +445,18 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
           )}
         </div>
       </div>
+      <HumanVerificationDialog
+        open={pendingAuthAction !== null}
+        title={pendingAuthAction === 'register' ? '注册验证' : '登录验证'}
+        description="输入图中验证码后继续。"
+        busy={submitting}
+        onCancel={() => {
+          if (!submitting) {
+            setPendingAuthAction(null);
+          }
+        }}
+        onVerified={handleAuthVerification}
+      />
     </div>
   );
 }
@@ -467,6 +506,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (savedUser) {
         setUser(savedUser);
         setMounted(true);
+        if (shouldRefreshAuthUserSnapshot(savedUser)) {
+          void refreshUser();
+        }
         return;
       }
 
@@ -489,8 +531,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.push(`/auth/reset-password?phone=${encodeURIComponent(userData.phone)}`);
       return;
     }
+    void refreshUser();
     router.refresh();
-  }, [router]);
+  }, [refreshUser, router]);
 
   const logout = useCallback(() => {
     void userApiRequest('/api/auth/logout', { method: 'POST' }).catch(() => undefined);

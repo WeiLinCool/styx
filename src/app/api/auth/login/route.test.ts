@@ -7,6 +7,7 @@ import {
 } from '@/server/request-security';
 import { createUserApiClient } from '@/lib/user-api-client';
 import { AccountDomainError } from '@/server/auth/account-types';
+import { createHumanVerificationToken } from '@/server/points/checkin-challenge';
 import { createLoginHandler } from './route';
 
 test('POST accepts inviteCode and forwards it to registerOrLoginUser', async () => {
@@ -44,10 +45,16 @@ test('POST accepts inviteCode and forwards it to registerOrLoginUser', async () 
     };
   });
 
+  const verificationToken = await createHumanVerificationToken({
+    userId: '13800000000',
+    createId: () => 'login-token-1',
+  });
+
   const requestBody = JSON.stringify({
     phone: '13800000000',
     password: 'secret123',
     inviteCode: 'INVITE123',
+    verificationToken,
   });
   const headers = buildProtectionHeaders({
     body: null,
@@ -89,9 +96,15 @@ test('POST returns account domain errors raised inside protected login operation
     );
   });
 
+  const verificationToken = await createHumanVerificationToken({
+    userId: '13800000000',
+    createId: () => 'login-token-2',
+  });
+
   const requestBody = JSON.stringify({
     phone: '13800000000',
     password: 'secret123',
+    verificationToken,
   });
   const headers = buildProtectionHeaders({
     body: null,

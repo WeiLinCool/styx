@@ -16,7 +16,7 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
     const body = bodySchema.parse(parsedBody);
     if (body.password !== body.confirmPassword) {
       throw new AccountDomainError('session_required', '两次输入的密码不一致。', 400);
@@ -46,6 +46,7 @@ export async function POST(request: Request) {
         actorType: 'anonymous',
         actorId: body.phone,
         rawBody,
+        decryptedRawBody,
         parsedBody,
       },
       async () => {

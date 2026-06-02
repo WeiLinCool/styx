@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth-context';
 import { readJsonResponse } from '@/lib/api-response';
 import { userApiRequest } from '@/lib/user-api-client';
+import { formatAccountStateLabel } from './account-state';
 import { collectBrowserFingerprint } from './browser-fingerprint';
 
 type ActivationPanelProps = {
@@ -151,7 +152,7 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-neutral-950">账号激活</h2>
           <p className="mt-1 text-sm leading-6 text-neutral-600">
-            当前状态为 {accountState}。请从当前浏览器提交激活申请，后台审核通过后账号会自动激活。
+            当前状态为 {formatAccountStateLabel(accountState)}。请从当前浏览器提交激活申请，后台审核通过后账号会自动激活。
           </p>
         </div>
       </div>

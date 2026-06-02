@@ -32,7 +32,7 @@ const bindSchema = z.discriminatedUnion('provider', [
 export async function POST(request: Request) {
   try {
     const session = await requireActiveAccount();
-    const { rawBody, body: parsedBody } = await readJsonBody(request);
+    const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
     const body = bindSchema.parse(parsedBody);
 
     return runProtectedMutation(
@@ -43,6 +43,7 @@ export async function POST(request: Request) {
         actorType: 'user',
         actorId: session.user.id,
         rawBody,
+        decryptedRawBody,
         parsedBody,
       },
       async () => {

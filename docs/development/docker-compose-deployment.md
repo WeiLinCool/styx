@@ -41,6 +41,12 @@ COZE_PROJECT_ENV=PROD
 STYX_ADMIN_AUTH_SECRET=replace-with-a-long-random-secret
 STYX_ADMIN_ACCOUNTS_JSON=[{"userId":"00000000-0000-4000-8000-000000000001","username":"admin","passwordHash":"<sha256-password-hash>","phone":"13800000000","allowWhitelistBypass":true}]
 STYX_TRANSPORT_SECURITY_MODE=compatible
+
+STYX_REDIS_HOST=<redis-host>
+STYX_REDIS_PORT=6379
+STYX_REDIS_PASSWORD=<redis-password>
+STYX_REDIS_DB=0
+STYX_REDIS_TIMEOUT_MS=3000
 ```
 
 可选变量：
@@ -75,6 +81,7 @@ NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_KEY_ID=default
 - `STYX_ADMIN_AUTH_SECRET` 必须使用足够长的随机字符串。
 - `STYX_ADMIN_ACCOUNTS_JSON` 配置管理端账号白名单。
 - `STYX_TRANSPORT_SECURITY_MODE` 可选值为 `strict`、`compatible`、`insecure`。如果没有 HTTPS，建议先使用 `compatible`，避免业务不可用。
+- `STYX_REDIS_*` 用于服务端签到验证 challenge、一次性验证 token、短锁和积分概览缓存。生产环境不要把 Redis 密码写入镜像或仓库，放入 `.env.production` 或部署平台 secret。
 - 生产环境不要开启 `STYX_ENABLE_DEV_AUTH`。
 
 生成管理端密码 hash：
@@ -83,9 +90,9 @@ NEXT_PUBLIC_STYX_REQUEST_ENCRYPTION_KEY_ID=default
 node -e "console.log(require('crypto').createHash('sha256').update('你的管理端密码').digest('hex'))"
 ```
 
-## 3. Dockerfile 示例
+## 3. Dockerfile
 
-当前仓库没有内置 Dockerfile。可以在项目根目录新增：
+当前仓库已内置 `Dockerfile`。如需核对构建内容，核心结构如下：
 
 ```Dockerfile
 FROM node:22-alpine AS deps
@@ -158,6 +165,11 @@ services:
       PORT: 5000
       NODE_ENV: production
       COZE_PROJECT_ENV: PROD
+      STYX_REDIS_HOST: ${STYX_REDIS_HOST}
+      STYX_REDIS_PORT: ${STYX_REDIS_PORT:-6379}
+      STYX_REDIS_PASSWORD: ${STYX_REDIS_PASSWORD}
+      STYX_REDIS_DB: ${STYX_REDIS_DB:-0}
+      STYX_REDIS_TIMEOUT_MS: ${STYX_REDIS_TIMEOUT_MS:-3000}
     ports:
       - "5000:5000"
     depends_on:
