@@ -3,6 +3,7 @@ import type {
   AgentRunDto,
   AgentTaskType,
   CreateAgentRunResult,
+  DirectMediaResultDto,
 } from '@/server/agent/types';
 import { userApiRequest } from '@/lib/user-api-client';
 
@@ -238,4 +239,109 @@ export async function deleteAgentRun(runId: string): Promise<AgentRunDto> {
 
 export function createAgentRunEventsUrl(runId: string) {
   return `/api/agent/runs/${runId}/events`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+const DIRECT_MEDIA_TYPED_METADATA_KEYS = new Set([
+  'mimeType',
+  'filename',
+  'width',
+  'height',
+  'durationSeconds',
+  'providerTaskId',
+  'model',
+  'storageStatus',
+]);
+
+function readMetadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readMetadataNumber(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function sanitizeDirectMediaMetadata(metadata: Record<string, unknown>): DirectMediaResultDto['metadata'] {
+  const unknownMetadata: Record<string, unknown> = {};
+  for (const [key, metadataValue] of Object.entries(metadata)) {
+    if (!DIRECT_MEDIA_TYPED_METADATA_KEYS.has(key)) {
+      unknownMetadata[key] = metadataValue;
+    }
+  }
+
+  const mimeType = readMetadataString(metadata, 'mimeType');
+  const filename = readMetadataString(metadata, 'filename');
+  const width = readMetadataNumber(metadata, 'width');
+  const height = readMetadataNumber(metadata, 'height');
+  const durationSeconds = readMetadataNumber(metadata, 'durationSeconds');
+  const providerTaskId = readMetadataString(metadata, 'providerTaskId');
+  const model = readMetadataString(metadata, 'model');
+
+  return {
+    ...unknownMetadata,
+    storageStatus: 'provider_direct',
+    ...(mimeType !== undefined ? { mimeType } : {}),
+    ...(filename !== undefined ? { filename } : {}),
+    ...(width !== undefined ? { width } : {}),
+    ...(height !== undefined ? { height } : {}),
+    ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+    ...(providerTaskId !== undefined ? { providerTaskId } : {}),
+    ...(model !== undefined ? { model } : {}),
+  };
+}
+
+export function parseStreamEventPayload(event: Pick<MessageEvent, 'data'>): Record<string, unknown> | null {
+  if (typeof event.data !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(event.data);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseDirectMediaArtifactPayload(value: unknown): DirectMediaResultDto | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const payload = isRecord(value.payload) ? value.payload : value;
+  const artifact = isRecord(payload.artifact) ? payload.artifact : payload;
+  if (!artifact) {
+    return null;
+  }
+
+  const delivery = isRecord(artifact.delivery) ? artifact.delivery : null;
+  const metadata = isRecord(artifact.metadata) ? artifact.metadata : null;
+  const expiresAt = typeof delivery?.expiresAt === 'string' ? delivery.expiresAt : null;
+  if (
+    (artifact.kind !== 'image' && artifact.kind !== 'video') ||
+    typeof artifact.title !== 'string' ||
+    !delivery ||
+    (delivery.mode !== 'provider_url' && delivery.mode !== 'data_url') ||
+    typeof delivery.url !== 'string' ||
+    !metadata ||
+    metadata.storageStatus !== 'provider_direct'
+  ) {
+    return null;
+  }
+
+  return {
+    kind: artifact.kind,
+    title: artifact.title,
+    delivery: {
+      mode: delivery.mode,
+      url: delivery.url,
+      expiresAt,
+    },
+    metadata: sanitizeDirectMediaMetadata(metadata),
+  };
 }

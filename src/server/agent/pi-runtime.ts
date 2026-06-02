@@ -50,6 +50,34 @@ export function createDeterministicPiRuntime(): PiAgentRuntime {
         };
       }
 
+      if (request.taskType === 'video') {
+        const safePrompt = request.prompt.replace(/[<>&"]/g, '');
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><rect width="1280" height="720" fill="#101418"/><text x="640" y="330" text-anchor="middle" font-family="Arial" font-size="48" fill="#ffffff">AI Video Preview</text><text x="640" y="390" text-anchor="middle" font-family="Arial" font-size="28" fill="#b8c0cc">${safePrompt}</text></svg>`;
+        const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+
+        return {
+          finalMessage: '视频已生成，请及时下载保存。',
+          artifacts: [
+            {
+              kind: 'video',
+              title: '生成视频',
+              url: dataUrl,
+              metadata: {
+                transient: true,
+                mimeType: 'image/svg+xml',
+                filename: `styx-ai-video-${request.runId}.svg`,
+                width: 1280,
+                height: 720,
+                durationSeconds: 5,
+                provider: request.provider,
+                model: request.model,
+                taskType: request.taskType,
+              },
+            },
+          ],
+        };
+      }
+
       const finalMessage = `已通过 ${request.provider}/${request.model} 处理：${request.prompt}`;
 
       return {

@@ -13,12 +13,16 @@ import { ProtectedAccountPanel } from '@/features/account/protected-account-pane
 import {
   AgentRuntimeApiError,
   createAgentRun,
+  createAgentRunEventsUrl,
   listImageModels,
+  parseDirectMediaArtifactPayload,
+  parseStreamEventPayload,
   selectImageModelId,
   type ImageModelMode,
   type ImageModelOption,
 } from '@/features/public/agent-runtime-client';
 import { styleOptions, toolSizes } from '@/features/public/tool-data';
+import type { DirectMediaResultDto } from '@/server/agent/types';
 
 const TABS = [
   { id: 'generate', name: 'AI生图', icon: Sparkles },
@@ -38,10 +42,7 @@ const acceptedSourceImageTypes = new Set(['image/png', 'image/jpeg', 'image/webp
 const maxSourceImageFileBytes = 7 * 1024 * 1024;
 
 type GeneratedImageResult = {
-  dataUrl: string;
-  title: string;
-  mimeType: string;
-  filename: string;
+  artifact: DirectMediaResultDto;
   prompt: string;
 };
 
@@ -85,6 +86,9 @@ export default function ImageGenPage() {
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<GeneratedImageResult | null>(null);
+  const [streamRunId, setStreamRunId] = useState<string | null>(null);
+  const [submittedPrompt, setSubmittedPrompt] = useState('');
+  const imageReceivedRunIdRef = useRef<string | null>(null);
   const [hdScale, setHdScale] = useState('2x');
   const [hdPrompt, setHdPrompt] = useState('高清修复，增强细节，提升画质，保留原始构图');
   const [selectedStyle, setSelectedStyle] = useState('stone-print');
@@ -241,6 +245,56 @@ export default function ImageGenPage() {
     setGenerationError(null);
   };
 
+  useEffect(() => {
+    if (!streamRunId) {
+      return;
+    }
+
+    const eventSource = new EventSource(createAgentRunEventsUrl(streamRunId));
+    eventSource.addEventListener('artifact_completed', (event) => {
+      const payload = parseStreamEventPayload(event);
+      const artifact = parseDirectMediaArtifactPayload(payload);
+      if (!artifact || artifact.kind !== 'image') {
+        return;
+      }
+
+      imageReceivedRunIdRef.current = streamRunId;
+      setGeneratedImage({ artifact, prompt: submittedPrompt });
+      setGenerationError(null);
+      setGenerationMessage('图片已生成，请及时下载。');
+    });
+    eventSource.addEventListener('run_completed', () => {
+      eventSource.close();
+      setIsGenerating(false);
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+    });
+    eventSource.addEventListener('run_failed', (event) => {
+      const payload = parseStreamEventPayload(event);
+      const failureMessage =
+        payload?.payload &&
+        typeof payload.payload === 'object' &&
+        typeof (payload.payload as Record<string, unknown>).message === 'string'
+          ? ((payload.payload as Record<string, unknown>).message as string)
+          : '图片生成请求失败';
+      setGenerationError(failureMessage);
+      setIsGenerating(false);
+      eventSource.close();
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+    });
+    eventSource.onerror = () => {
+      eventSource.close();
+      setIsGenerating(false);
+      setStreamRunId((current) => (current === streamRunId ? null : current));
+      if (imageReceivedRunIdRef.current !== streamRunId) {
+        setGenerationError('图片生成连接中断，请重试。');
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [streamRunId, submittedPrompt]);
+
   const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
@@ -273,9 +327,11 @@ export default function ImageGenPage() {
     setGenerationError(null);
     setGenerationMessage(null);
     setGeneratedImage(null);
+    setSubmittedPrompt(runPrompt);
+    imageReceivedRunIdRef.current = null;
 
     try {
-      const { run, transientArtifacts } = await createAgentRun({
+      const { run } = await createAgentRun({
         taskType: 'image',
         prompt: runPrompt,
         modelId: selectedModelId,
@@ -289,25 +345,20 @@ export default function ImageGenPage() {
       });
       if (run.status === 'failed') {
         setGenerationError(run.errorMessage ?? '图片生成请求失败');
-        return;
-      }
-      const imageArtifact = transientArtifacts.find((artifact) => artifact.kind === 'image' && artifact.dataUrl);
-      if (!imageArtifact?.dataUrl) {
-        setGenerationMessage(run.finalMessage ?? '任务完成，但没有返回可展示图片。请重试或联系管理员。');
+        setIsGenerating(false);
         return;
       }
 
-      setGeneratedImage({
-        dataUrl: imageArtifact.dataUrl,
-        title: imageArtifact.title,
-        mimeType: imageArtifact.mimeType,
-        filename: imageArtifact.filename ?? `styx-ai-image-${run.id}.png`,
-        prompt: runPrompt,
-      });
-      setGenerationMessage(run.finalMessage ?? '图片已生成，请及时下载保存。');
+      if (run.status !== 'running') {
+        setGenerationError(run.errorMessage ?? '图片生成请求未进入运行状态，请重试。');
+        setIsGenerating(false);
+        return;
+      }
+
+      setStreamRunId(run.id);
+      setGenerationMessage('任务已提交，正在等待模型返回结果。');
     } catch (error) {
       setGenerationError(readRuntimeErrorMessage(error, '图片生成请求失败'));
-    } finally {
       setIsGenerating(false);
     }
   };
@@ -316,8 +367,11 @@ export default function ImageGenPage() {
     if (!generatedImage) return;
     try {
       const link = document.createElement('a');
-      link.href = generatedImage.dataUrl;
-      link.download = generatedImage.filename;
+      link.href = generatedImage.artifact.delivery.url;
+      link.download =
+        typeof generatedImage.artifact.metadata.filename === 'string'
+          ? generatedImage.artifact.metadata.filename
+          : 'styx-ai-image.png';
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -527,15 +581,14 @@ export default function ImageGenPage() {
 
           {/* Right - Preview */}
           <div className="flex flex-col items-center justify-center rounded-2xl border border-black/5 bg-white/[0.02] p-8">
-            {isGenerating ? (
-              <div className="flex flex-col items-center">
-                <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-black/8 border-t-white" />
-                <p className="text-sm text-[#444444]">AI 正在创作中...</p>
-              </div>
-            ) : generatedImage ? (
+            {generatedImage ? (
               <div className="flex w-full flex-col items-center gap-4 text-center">
                 <div className="w-full overflow-hidden rounded-xl border border-black/5 bg-[#f5f5f7]">
-                  <img src={generatedImage.dataUrl} alt={generatedImage.title} className="aspect-square w-full object-contain" />
+                  <img
+                    src={generatedImage.artifact.delivery.url}
+                    alt={generatedImage.artifact.title}
+                    className="max-h-[520px] w-full rounded-xl object-contain"
+                  />
                 </div>
                 <div className="flex w-full flex-col gap-2 sm:flex-row">
                   <button onClick={handleDownloadImage} className="apple-btn apple-btn-primary flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-medium">
@@ -546,10 +599,15 @@ export default function ImageGenPage() {
                   </button>
                 </div>
                 <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
-                  图片不会保存到服务器，请及时下载。刷新、离开页面或生成下一张后无法恢复。
+                  生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。
                 </div>
                 {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
                 {selectedModel ? <p className="text-xs text-[#6e6e73]">模型：{selectedModel.name}</p> : null}
+              </div>
+            ) : isGenerating ? (
+              <div className="flex flex-col items-center">
+                <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-black/8 border-t-white" />
+                <p className="text-sm text-[#444444]">AI 正在创作中...</p>
               </div>
             ) : generationError ? (
               <div className="flex flex-col items-center text-center">

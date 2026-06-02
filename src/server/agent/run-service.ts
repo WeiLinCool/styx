@@ -16,7 +16,7 @@ import {
   type ImageProviderResult,
 } from '@/server/ai/image-provider-adapters';
 import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
-import type { AgentRunRepository } from '@/server/repositories/agent-runs';
+import type { AgentArtifactInput, AgentRunRepository } from '@/server/repositories/agent-runs';
 import {
   resolveChatModelForUser as defaultResolveChatModelForUser,
   resolveImageModelForUser as defaultResolveImageModelForUser,
@@ -32,11 +32,15 @@ import type {
   CreateAgentRunResult,
   TransientAgentArtifactDto,
 } from './types';
-import type { AgentArtifactInput } from '@/server/repositories/agent-runs';
 import {
   createUnconfiguredCapabilitySnapshot,
   type PiAgentRuntime,
 } from './pi-runtime';
+import {
+  createDirectMediaEventPayload,
+  sanitizeDirectMediaArtifact,
+  toDirectMediaResult,
+} from './media-results';
 
 export class AgentCapabilityBundleNotFoundError extends Error {
   constructor(taskType: AgentTaskType) {
@@ -80,6 +84,11 @@ type DebitForImageAgentRun = (input: {
 type ChatMessage = {
   role: 'user' | 'assistant' | 'system';
   content: string;
+};
+
+type MediaRunScheduler = {
+  schedule(runId: string, task: () => Promise<void>): void;
+  getActiveRunIds(): string[];
 };
 
 export type CreateAgentRunServiceInput = {
@@ -198,11 +207,39 @@ function splitTransientArtifacts(artifacts: AgentArtifactInput[]) {
   };
 }
 
+function isMediaTask(taskType: AgentTaskType) {
+  return taskType === 'image' || taskType === 'video';
+}
+
+function hasUsableDirectMedia(artifacts: AgentArtifactInput[]) {
+  return artifacts.some((artifact) => toDirectMediaResult(artifact));
+}
+
 function runResult(
   run: AgentRunDto,
   transientArtifacts: TransientAgentArtifactDto[] = [],
 ): CreateAgentRunResult {
   return { run, transientArtifacts };
+}
+
+function createMediaRunScheduler(): MediaRunScheduler {
+  const activeRuns = new Map<string, Promise<void>>();
+
+  return {
+    schedule(runId, task) {
+      const scheduled = Promise.resolve().then(task);
+      activeRuns.set(runId, scheduled);
+      const cleanup = () => {
+        if (activeRuns.get(runId) === scheduled) {
+          activeRuns.delete(runId);
+        }
+      };
+      scheduled.then(cleanup, cleanup);
+    },
+    getActiveRunIds() {
+      return [...activeRuns.keys()];
+    },
+  };
 }
 
 async function recordEventIfSupported(
@@ -245,6 +282,14 @@ function requireUpdatedRun(run: AgentRunDto | null, action: string): AgentRunDto
   }
 
   return run;
+}
+
+async function appendRunEventsRequired(
+  repository: AgentRunRepository,
+  runId: string,
+  input: Parameters<AgentRunRepository['appendRunEvents']>[1],
+) {
+  await repository.appendRunEvents(runId, input);
 }
 
 function toSelectedModelSnapshot(model: ResolvedChatModel | ResolvedImageModel) {
@@ -457,6 +502,8 @@ export function createAgentRunService({
   createImageProviderAdapter = () => defaultCreateImageProviderAdapter(),
   debitForImageAgentRun = defaultDebitForImageAgentRun,
 }: CreateAgentRunServiceInput) {
+  const mediaRunScheduler = createMediaRunScheduler();
+
   return {
     async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<CreateAgentRunResult> {
       if (input.taskType === 'chat') {
@@ -507,6 +554,30 @@ export function createAgentRunService({
         return runResult(requireUpdatedRun(await repository.failRun(created.id, error.message), 'fail run'));
       }
 
+      if (isMediaTask(input.taskType)) {
+        const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+        await recordEventIfSupported(repository, running.id, 'running', 'Agent runtime started', {
+          provider: capabilitySnapshot.provider,
+          model: capabilitySnapshot.model,
+        });
+
+        mediaRunScheduler.schedule(running.id, async () => {
+          try {
+            await runMediaOrchestration({
+              repository,
+              runtime,
+              request: input,
+              capabilitySnapshot,
+              running,
+            });
+          } catch (error) {
+            await failMediaRun(repository, running.id, toErrorMessage(error));
+          }
+        });
+
+        return runResult(running);
+      }
+
       try {
         const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
         await recordEventIfSupported(repository, running.id, 'running', 'Agent runtime started', {
@@ -545,6 +616,89 @@ export function createAgentRunService({
       }
     },
   };
+}
+
+async function failMediaRun(repository: AgentRunRepository, runId: string, errorMessage: string) {
+  await recordEventIfSupported(repository, runId, 'failed', errorMessage);
+  await repository.failRun(runId, errorMessage);
+  await appendRunEventIfSupported(repository, runId, {
+    eventType: 'run_failed',
+    payload: {
+      message: errorMessage,
+      failedAt: new Date().toISOString(),
+    },
+  });
+}
+
+async function runMediaOrchestration(input: {
+  repository: AgentRunRepository;
+  runtime: PiAgentRuntime;
+  request: CreateAndRunAgentRunInput;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  running: AgentRunDto;
+}) {
+  await appendRunEventIfSupported(input.repository, input.running.id, {
+    eventType: 'artifact_started',
+    payload: {
+      taskType: input.request.taskType,
+      startedAt: new Date().toISOString(),
+    },
+  });
+
+  const result = await input.runtime.run({
+    runId: input.running.id,
+    userId: input.request.userId,
+    taskType: input.request.taskType,
+    prompt: input.request.prompt,
+    provider: input.capabilitySnapshot.provider,
+    model: input.capabilitySnapshot.model,
+    capabilities: structuredClone(input.capabilitySnapshot.capabilities),
+    input: cloneRecord(input.request.input),
+  });
+
+  if (!hasUsableDirectMedia(result.artifacts)) {
+    throw new Error('模型任务完成，但没有返回可展示的图片或视频。');
+  }
+
+  const directMediaResults = result.artifacts
+    .map(toDirectMediaResult)
+    .filter((artifact): artifact is NonNullable<ReturnType<typeof toDirectMediaResult>> => artifact !== null);
+
+  try {
+    await appendRunEventsRequired(
+      input.repository,
+      input.running.id,
+      directMediaResults.map((artifact) => ({
+        eventType: 'artifact_completed',
+        payload: createDirectMediaEventPayload(artifact),
+      })),
+    );
+  } catch {
+    throw new Error('图片或视频结果推送失败，请重试。');
+  }
+
+  const completed = requireUpdatedRun(
+    await input.repository.completeRun(input.running.id, {
+      finalMessage: result.finalMessage,
+      artifacts: result.artifacts.map(sanitizeDirectMediaArtifact),
+    }),
+    'complete run',
+  );
+
+  await appendRunEventIfSupported(input.repository, completed.id, {
+    eventType: 'run_completed',
+    payload: {
+      finalMessage: result.finalMessage,
+      artifactCount: directMediaResults.length,
+      storageStatus: 'provider_direct',
+      completedAt: new Date().toISOString(),
+    },
+  });
+
+  await recordEventIfSupported(input.repository, completed.id, 'succeeded', 'Agent run succeeded', {
+    artifactCount: directMediaResults.length,
+    storageStatus: 'provider_direct',
+  });
 }
 
 async function createAndRunChatAgentRun(input: {
@@ -668,148 +822,195 @@ async function createAndRunImageAgentRun(input: {
     mode,
   });
 
-  try {
-    const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
-    await recordEventIfSupported(repository, running.id, 'running', 'Image provider started', {
-      provider: model.providerCode,
-      model: model.model,
-      mode,
-    });
+  const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+  await recordEventIfSupported(repository, running.id, 'running', 'Image provider started', {
+    provider: model.providerCode,
+    model: model.model,
+    mode,
+  });
 
-    const adapter = input.createImageProviderAdapter(model);
-    const providerResult = await adapter.runImage({
-      runId: running.id,
-      userId: request.userId,
-      model,
-      mode,
-      prompt: request.prompt,
-      size: typeof request.input.size === 'string' ? request.input.size : undefined,
-      scale: typeof request.input.scale === 'string' ? request.input.scale : undefined,
-      sourceImageDataUrl,
-    });
-
-    const acceptedArtifacts = providerResult.artifacts.filter((artifact) => artifact.kind === 'image');
-    if (acceptedArtifacts.length === 0) {
-      throw new Error('Provider response did not include image output.');
-    }
-
-    const creditCost = calculateImageCreditCost({ pricing: model.pricing });
-    let debit: { entryId: string; balanceAfter: number };
-    try {
-      debit = await input.debitForImageAgentRun({
-        userId: request.userId,
-        runId: running.id,
-        pricing: model.pricing,
-        modelSnapshot: model,
-        metadata: {
-          mode,
-          rawMetadata: providerResult.rawMetadata,
-        },
-        amount: creditCost,
-      });
-    } catch (error) {
-      const errorMessage = toErrorMessage(error);
-      const failedSnapshot = toFailedImageSnapshot({
-        capabilitySnapshot,
-        providerResult,
-        creditCost,
-        errorMessage,
-      });
-      const { durableArtifacts } = splitTransientArtifacts(acceptedArtifacts);
-      await repository.appendRunEvent(running.id, {
-        eventType: 'run_failed',
-        payload: {
-          message: errorMessage,
-          failedAt: new Date().toISOString(),
-        },
-      });
-      const failed = requireUpdatedRun(
-        await repository.failRun(running.id, {
-          errorMessage,
-          finalMessage: providerResult.finalMessage,
-          artifacts: durableArtifacts,
-          capabilitySnapshot: failedSnapshot,
-          input: {
-            ...runInput,
-            billing: failedSnapshot.billing as Record<string, unknown>,
-          },
-        }),
-        'fail run',
-      );
-      return runResult(failed);
-    }
-
-    await appendRunEventIfSupported(repository, running.id, {
-      eventType: 'billing_recorded',
-      payload: {
-        creditCost,
-        ledgerEntryId: debit.entryId,
-        balanceAfter: debit.balanceAfter,
-      },
-    });
-
-    const completedSnapshot = {
-      ...capabilitySnapshot,
-      billing: {
-        status: 'billed',
-        creditCost,
-        ledgerEntryId: debit.entryId,
-      },
-      rawMetadata: providerResult.rawMetadata,
-    } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
-    const { durableArtifacts, transientArtifacts } = splitTransientArtifacts(acceptedArtifacts);
-    const completed = requireUpdatedRun(
-      await repository.completeRun(running.id, {
-        finalMessage: providerResult.finalMessage,
-        artifacts: durableArtifacts,
-        capabilitySnapshot: completedSnapshot,
-        input: {
-          ...runInput,
-          billing: completedSnapshot.billing,
-        },
-      }),
-      'complete run',
-    );
-
-    await appendRunEventIfSupported(repository, completed.id, {
-      eventType: 'run_completed',
-      payload: {
-        finalMessage: providerResult.finalMessage,
-        completedAt: new Date().toISOString(),
-      },
-    });
-
-    await recordEventIfSupported(repository, completed.id, 'succeeded', 'Agent run succeeded', {
-      artifactCount: acceptedArtifacts.length,
-      creditCost,
-      ledgerEntryId: debit.entryId,
-    });
-
-    return runResult(completed, transientArtifacts);
-  } catch (error) {
+  void runImageProviderOrchestration({
+    repository,
+    request,
+    running,
+    model,
+    mode,
+    sourceImageDataUrl,
+    runInput,
+    capabilitySnapshot,
+    createImageProviderAdapter: input.createImageProviderAdapter,
+    debitForImageAgentRun: input.debitForImageAgentRun,
+  }).catch(async (error) => {
     const errorMessage = toErrorMessage(error);
     const failedSnapshot = toFailedImageSnapshot({ capabilitySnapshot, errorMessage });
-    await recordEventIfSupported(repository, created.id, 'failed', errorMessage);
-    await repository.appendRunEvent(created.id, {
+    await recordEventIfSupported(repository, running.id, 'failed', errorMessage);
+    await appendRunEventIfSupported(repository, running.id, {
       eventType: 'run_failed',
       payload: {
         message: errorMessage,
         failedAt: new Date().toISOString(),
       },
     });
-    const failed = requireUpdatedRun(
-      await repository.failRun(created.id, {
-        errorMessage,
-        capabilitySnapshot: failedSnapshot,
-        input: {
-          ...runInput,
-          billing: failedSnapshot.billing as Record<string, unknown>,
-        },
-      }),
-      'fail run',
-    );
-    return runResult(failed);
+    await repository.failRun(running.id, {
+      errorMessage,
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...runInput,
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+  });
+
+  return runResult(running);
+}
+
+async function runImageProviderOrchestration(input: {
+  repository: AgentRunRepository;
+  request: CreateAndRunAgentRunInput;
+  running: AgentRunDto;
+  model: ResolvedImageModel;
+  mode: ImageModelMode;
+  sourceImageDataUrl?: string;
+  runInput: Record<string, unknown>;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  createImageProviderAdapter: (model: ResolvedImageModel) => ImageProviderAdapter;
+  debitForImageAgentRun: DebitForImageAgentRun;
+}) {
+  const adapter = input.createImageProviderAdapter(input.model);
+  await appendRunEventIfSupported(input.repository, input.running.id, {
+    eventType: 'artifact_started',
+    payload: {
+      taskType: input.request.taskType,
+      mode: input.mode,
+      startedAt: new Date().toISOString(),
+    },
+  });
+
+  const providerResult = await adapter.runImage({
+    runId: input.running.id,
+    userId: input.request.userId,
+    model: input.model,
+    mode: input.mode,
+    prompt: input.request.prompt,
+    size: typeof input.request.input.size === 'string' ? input.request.input.size : undefined,
+    scale: typeof input.request.input.scale === 'string' ? input.request.input.scale : undefined,
+    sourceImageDataUrl: input.sourceImageDataUrl,
+  });
+
+  const acceptedArtifacts = providerResult.artifacts.filter((artifact) => artifact.kind === 'image');
+  if (acceptedArtifacts.length === 0) {
+    throw new Error('Provider response did not include image output.');
   }
+
+  const directMediaResults = acceptedArtifacts
+    .map(toDirectMediaResult)
+    .filter((artifact): artifact is NonNullable<ReturnType<typeof toDirectMediaResult>> => artifact !== null);
+  if (directMediaResults.length === 0) {
+    throw new Error('Provider response did not include image output.');
+  }
+
+  const creditCost = calculateImageCreditCost({ pricing: input.model.pricing });
+  let debit: { entryId: string; balanceAfter: number };
+  try {
+    debit = await input.debitForImageAgentRun({
+      userId: input.request.userId,
+      runId: input.running.id,
+      pricing: input.model.pricing,
+      modelSnapshot: input.model,
+      metadata: {
+        mode: input.mode,
+        rawMetadata: providerResult.rawMetadata,
+      },
+      amount: creditCost,
+    });
+  } catch (error) {
+    const errorMessage = toErrorMessage(error);
+    const failedSnapshot = toFailedImageSnapshot({
+      capabilitySnapshot: input.capabilitySnapshot,
+      providerResult,
+      creditCost,
+      errorMessage,
+    });
+    await appendRunEventIfSupported(input.repository, input.running.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: errorMessage,
+        failedAt: new Date().toISOString(),
+      },
+    });
+    await input.repository.failRun(input.running.id, {
+      errorMessage,
+      finalMessage: providerResult.finalMessage,
+      artifacts: acceptedArtifacts.map(sanitizeDirectMediaArtifact),
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...input.runInput,
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+    return;
+  }
+
+  await appendRunEventIfSupported(input.repository, input.running.id, {
+    eventType: 'billing_recorded',
+    payload: {
+      creditCost,
+      ledgerEntryId: debit.entryId,
+      balanceAfter: debit.balanceAfter,
+    },
+  });
+
+  try {
+    await appendRunEventsRequired(
+      input.repository,
+      input.running.id,
+      directMediaResults.map((artifact) => ({
+        eventType: 'artifact_completed',
+        payload: createDirectMediaEventPayload(artifact),
+      })),
+    );
+  } catch {
+    throw new Error('图片或视频结果推送失败，请重试。');
+  }
+
+  const completedSnapshot = {
+    ...input.capabilitySnapshot,
+    billing: {
+      status: 'billed',
+      creditCost,
+      ledgerEntryId: debit.entryId,
+    },
+    rawMetadata: providerResult.rawMetadata,
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+  const completed = requireUpdatedRun(
+    await input.repository.completeRun(input.running.id, {
+      finalMessage: providerResult.finalMessage,
+      artifacts: acceptedArtifacts.map(sanitizeDirectMediaArtifact),
+      capabilitySnapshot: completedSnapshot,
+      input: {
+        ...input.runInput,
+        billing: completedSnapshot.billing,
+      },
+    }),
+    'complete run',
+  );
+
+  await appendRunEventIfSupported(input.repository, completed.id, {
+    eventType: 'run_completed',
+    payload: {
+      finalMessage: providerResult.finalMessage,
+      artifactCount: directMediaResults.length,
+      storageStatus: 'provider_direct',
+      completedAt: new Date().toISOString(),
+    },
+  });
+
+  await recordEventIfSupported(input.repository, completed.id, 'succeeded', 'Agent run succeeded', {
+    artifactCount: acceptedArtifacts.length,
+    creditCost,
+    ledgerEntryId: debit.entryId,
+    storageStatus: 'provider_direct',
+  });
 }
 
 async function runChatOrchestration(input: {

@@ -4,10 +4,13 @@ import test from 'node:test';
 import {
   AgentRuntimeApiError,
   createAgentRun,
+  createAgentRunEventsUrl,
   getAgentRunDetail,
   listImageModels,
   listChatModels,
+  parseDirectMediaArtifactPayload,
   parseImageModel,
+  parseStreamEventPayload,
   selectImageModelId,
   selectChatModelId,
   type ChatModelOption,
@@ -317,4 +320,109 @@ test('selectImageModelId falls back to default compatible model', () => {
   ];
 
   assert.equal(selectImageModelId(models, 'missing'), 'b');
+});
+
+test('createAgentRunEventsUrl returns the run SSE route', () => {
+  assert.equal(createAgentRunEventsUrl('run-1'), '/api/agent/runs/run-1/events');
+});
+
+test('parseDirectMediaArtifactPayload reads provider-direct image payload', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    payload: {
+      artifact: {
+        kind: 'image',
+        title: '生成图片',
+        delivery: {
+          mode: 'data_url',
+          url: 'data:image/png;base64,abc',
+          expiresAt: null,
+        },
+        metadata: {
+          storageStatus: 'provider_direct',
+          mimeType: 'image/png',
+          filename: 'image.png',
+        },
+      },
+    },
+  });
+
+  assert.equal(parsed?.kind, 'image');
+  assert.equal(parsed?.delivery.url, 'data:image/png;base64,abc');
+  assert.equal(parsed?.metadata.storageStatus, 'provider_direct');
+});
+
+test('parseDirectMediaArtifactPayload accepts direct artifact payloads', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    kind: 'video',
+    title: '生成视频',
+    delivery: {
+      mode: 'provider_url',
+      url: 'https://provider.example/video.mp4',
+      expiresAt: '2026-06-01T10:00:00.000Z',
+    },
+    metadata: {
+      storageStatus: 'provider_direct',
+      mimeType: 'video/mp4',
+    },
+  });
+
+  assert.equal(parsed?.kind, 'video');
+  assert.equal(parsed?.delivery.mode, 'provider_url');
+  assert.equal(parsed?.delivery.url, 'https://provider.example/video.mp4');
+});
+
+test('parseDirectMediaArtifactPayload normalizes omitted expiresAt to null', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    artifact: {
+      kind: 'image',
+      title: '生成图片',
+      delivery: {
+        mode: 'data_url',
+        url: 'data:image/png;base64,abc',
+      },
+      metadata: {
+        storageStatus: 'provider_direct',
+        mimeType: 'image/png',
+      },
+    },
+  });
+
+  assert.equal(parsed?.delivery.expiresAt, null);
+});
+
+test('parseDirectMediaArtifactPayload sanitizes typed metadata fields', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    kind: 'image',
+    title: '生成图片',
+    delivery: {
+      mode: 'data_url',
+      url: 'data:image/png;base64,abc',
+    },
+    metadata: {
+      storageStatus: 'provider_direct',
+      width: 'wide',
+      height: 1024,
+      durationSeconds: Number.NaN,
+      mimeType: 123,
+      filename: 'image.png',
+      providerTaskId: false,
+      model: 'pi-default',
+      customTraceId: 'trace-1',
+    },
+  });
+
+  assert.ok(parsed);
+  assert.equal('width' in parsed.metadata, false);
+  assert.equal(parsed.metadata.height, 1024);
+  assert.equal('durationSeconds' in parsed.metadata, false);
+  assert.equal('mimeType' in parsed.metadata, false);
+  assert.equal(parsed.metadata.filename, 'image.png');
+  assert.equal('providerTaskId' in parsed.metadata, false);
+  assert.equal(parsed.metadata.model, 'pi-default');
+  assert.equal(parsed.metadata.customTraceId, 'trace-1');
+  assert.equal(parsed.metadata.storageStatus, 'provider_direct');
+});
+
+test('parseStreamEventPayload returns null for invalid event JSON', () => {
+  assert.equal(parseStreamEventPayload({ data: '{' } as MessageEvent), null);
 });

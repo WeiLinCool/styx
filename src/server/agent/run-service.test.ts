@@ -12,7 +12,7 @@ import {
   type ResolvedChatModel,
   type ResolvedImageModel,
 } from '@/server/repositories/ai-models';
-import type { AgentTaskType } from './types';
+import type { DirectMediaArtifactCompletedPayload, AgentTaskType } from './types';
 import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
 import { ProviderRequestError } from '@/server/ai/provider-adapters';
 import { calculateImageCreditCost, InsufficientCreditsError } from '@/server/billing/credits';
@@ -68,6 +68,27 @@ function resolvedImageModel(overrides: Partial<ResolvedImageModel> = {}): Resolv
   };
 }
 
+function directMediaPayload(payload: Record<string, unknown>): DirectMediaArtifactCompletedPayload {
+  return payload as DirectMediaArtifactCompletedPayload;
+}
+
+async function waitForRunStatus(
+  repository: AgentRunRepository,
+  runId: string,
+  userId: string,
+  status: 'succeeded' | 'failed',
+) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const run = await repository.getRunForUser(runId, userId);
+    if (run?.status === status) {
+      return run;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  return repository.getRunForUser(runId, userId);
+}
+
 test('createAndRunAgentRun rejects image without modelId before legacy runtime fallback', async () => {
   const repository = createMemoryAgentRunRepository();
   const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
@@ -86,7 +107,7 @@ test('createAndRunAgentRun rejects image without modelId before legacy runtime f
   assert.deepEqual(await repository.listRunsForUser('user-1'), []);
 });
 
-test('createAndRunAgentRun returns transient image artifact while persisting only summary data', async () => {
+test('createAndRunAgentRun streams direct image artifact while persisting only summary data', async () => {
   const repository = createMemoryAgentRunRepository();
   const service = createAgentRunService({
     repository,
@@ -120,20 +141,128 @@ test('createAndRunAgentRun returns transient image artifact while persisting onl
   });
 
   assert.equal(result.run.status, 'succeeded');
-  assert.equal(result.run.artifacts.length, 1);
-  assert.equal(result.run.artifacts[0]?.kind, 'image');
-  assert.equal(result.run.artifacts[0]?.body, null);
-  assert.equal(result.run.artifacts[0]?.url, null);
-  assert.equal(result.run.artifacts[0]?.metadata.transient, true);
-  assert.equal(result.run.artifacts[0]?.metadata.mimeType, 'image/png');
   assert.equal(result.transientArtifacts.length, 1);
-  assert.equal(result.transientArtifacts[0]?.kind, 'image');
   assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,SHOULD_NOT_PERSIST');
-  assert.equal(result.transientArtifacts[0]?.metadata.transient, true);
-
-  const stored = await repository.getRunForUser(result.run.id, 'user-1');
+  const stored = result.run;
+  const events = await repository.listRunEvents(result.run.id);
+  assert.equal(stored?.status, 'succeeded');
+  assert.equal(stored?.artifacts.length, 1);
+  assert.equal(stored?.artifacts[0]?.kind, 'image');
   assert.equal(stored?.artifacts[0]?.body, null);
   assert.equal(stored?.artifacts[0]?.url, null);
+  assert.equal(stored?.artifacts[0]?.metadata.transient, true);
+  assert.equal(stored?.artifacts[0]?.metadata.mimeType, 'image/png');
+  assert.deepEqual(events.map((event) => event.eventType), []);
+});
+
+test('createAndRunAgentRun returns running image run and streams direct media completion', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let unblockProvider = () => {};
+  const providerStarted = new Promise<void>((resolve) => {
+    unblockProvider = resolve;
+  });
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => resolvedImageModel({ id: 'model-image' }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        await providerStarted;
+        return {
+          finalMessage: '图片已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图片',
+              body: 'data:image/png;base64,abc',
+              metadata: { mimeType: 'image/png', width: 1024, height: 1024 },
+            },
+          ],
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-image', balanceAfter: 90 }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '山谷里的石头印画',
+    modelId: 'model-image',
+    input: { mode: 'generate', size: '1:1' },
+  });
+
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(result.transientArtifacts, []);
+
+  unblockProvider();
+  const completed = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+
+  const events = await repository.listRunEvents(result.run.id);
+
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.artifacts[0]?.body, null);
+  assert.equal(completed?.artifacts[0]?.url, null);
+  assert.equal(completed?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],
+  );
+  assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.kind, 'image');
+  assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.url, 'data:image/png;base64,abc');
+});
+
+test('createAndRunAgentRun returns running video run and streams provider URL completion', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        return {
+          finalMessage: '视频已生成',
+          artifacts: [
+            {
+              kind: 'video',
+              title: '生成视频',
+              url: 'https://provider.example/video.mp4',
+              metadata: {
+                mimeType: 'video/mp4',
+                filename: 'video.mp4',
+                durationSeconds: 5,
+                providerExpiresAt: '2026-06-01T10:00:00.000Z',
+              },
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'video',
+    prompt: '石头印画动起来',
+    input: { duration: '5秒' },
+  });
+
+  assert.equal(result.run.status, 'running');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const completed = await repository.getRunForUser(result.run.id, 'user-1');
+  const events = await repository.listRunEvents(result.run.id);
+
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.equal(events[1]?.eventType, 'artifact_completed');
+  assert.equal(directMediaPayload(events[1]?.payload ?? {}).artifact.kind, 'video');
+  assert.equal(directMediaPayload(events[1]?.payload ?? {}).artifact.delivery.mode, 'provider_url');
+  assert.equal(
+    directMediaPayload(events[1]?.payload ?? {}).artifact.delivery.url,
+    'https://provider.example/video.mp4',
+  );
 });
 
 test('createAndRunAgentRun returns transient image artifact from provider URL output', async () => {
@@ -192,7 +321,105 @@ test('createAndRunAgentRun records failure when runtime throws', async () => {
   const run = result.run;
 
   assert.equal(run.status, 'failed');
-  assert.equal(run.errorMessage, 'pi unavailable');
+  const failed = run;
+  const events = await repository.listRunEvents(run.id);
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.errorMessage, 'pi unavailable');
+  assert.equal(events.at(-1)?.eventType, undefined);
+});
+
+test('createAndRunAgentRun marks media run failed when run_failed event persistence fails', async () => {
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async appendRunEvent(runId, input) {
+      if (input.eventType === 'run_failed') {
+        throw new Error('stream event store unavailable');
+      }
+      return baseRepository.appendRunEvent(runId, input);
+    },
+  };
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        throw new Error('pi unavailable');
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'video',
+    prompt: 'hello',
+    input: {},
+  });
+
+  const failed = await waitForRunStatus(repository, result.run.id, 'user-1', 'failed');
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.errorMessage, 'pi unavailable');
+});
+
+test('createAndRunAgentRun marks media run failed when artifact_completed event persistence fails', async () => {
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async appendRunEvent(runId, input) {
+      if (input.eventType === 'artifact_completed') {
+        throw new Error('artifact event store unavailable');
+      }
+
+      return baseRepository.appendRunEvent(runId, input);
+    },
+    async appendRunEvents(runId, input) {
+      const appended = [];
+      for (const event of input) {
+        const stored = await this.appendRunEvent(runId, event);
+        if (stored) {
+          appended.push(stored);
+        }
+      }
+      return appended;
+    },
+  };
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        return {
+          finalMessage: '图片已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图片',
+              body: 'data:image/png;base64,abc',
+              metadata: { mimeType: 'image/png' },
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'video',
+    prompt: '山谷里的石头印画',
+    input: {},
+  });
+
+  assert.equal(result.run.status, 'running');
+
+  const failed = await waitForRunStatus(repository, result.run.id, 'user-1', 'failed');
+  const events = await repository.listRunEvents(result.run.id);
+
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.artifacts.length, 0);
+  assert.equal(failed?.errorMessage, '图片或视频结果推送失败，请重试。');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['artifact_started', 'run_failed'],
+  );
 });
 
 test('createAndRunAgentRun keeps completed run succeeded when succeeded event recording fails', async () => {
@@ -215,7 +442,44 @@ test('createAndRunAgentRun keeps completed run succeeded when succeeded event re
   const run = result.run;
 
   assert.equal(run.status, 'succeeded');
-  assert.equal(run.errorMessage, null);
+  const completed = run;
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.errorMessage, null);
+});
+
+test('createAndRunAgentRun keeps media run succeeded when run_completed event persistence fails', async () => {
+  const baseRepository = createMemoryAgentRunRepository();
+  const repository: AgentRunRepository = {
+    ...baseRepository,
+    async appendRunEvent(runId, input) {
+      if (input.eventType === 'run_completed') {
+        throw new Error('stream event store unavailable');
+      }
+      return baseRepository.appendRunEvent(runId, input);
+    },
+    async appendRunEvents(runId, input) {
+      const appended = [];
+      for (const event of input) {
+        const stored = await this.appendRunEvent(runId, event);
+        if (stored) {
+          appended.push(stored);
+        }
+      }
+      return appended;
+    },
+  };
+  const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'video',
+    prompt: 'hello',
+    input: {},
+  });
+
+  const completed = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.errorMessage, null);
 });
 
 test('createAndRunAgentRun clones runtime request input and capabilities', async () => {
@@ -360,20 +624,21 @@ test('image run resolves selected model, returns transient image, persists no me
     input: { mode: 'generate', size: '1024x1024' },
   });
 
-  assert.equal(result.run.status, 'succeeded');
-  assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,RESULT');
-  assert.equal(result.run.artifacts[0]?.body, null);
-  assert.equal(result.run.artifacts[0]?.url, null);
-  assert.equal(result.run.selectedModel?.code, 'dev-free-image');
-  assert.equal(result.run.billing?.status, 'billed');
-  assert.equal(result.run.billing?.creditCost, 7);
-  assert.equal(result.run.billing?.ledgerEntryId, 'ledger-1');
-  assert.equal(debits.length, 1);
-  assert.equal(debits[0]?.amount, 7);
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(result.transientArtifacts, []);
+  const stored = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+  const events = await repository.listRunEvents(result.run.id);
 
-  const stored = await repository.getRunForUser(result.run.id, 'user-1');
   assert.equal(stored?.artifacts[0]?.body, null);
   assert.equal(stored?.artifacts[0]?.url, null);
+  assert.equal(stored?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.equal(stored?.selectedModel?.code, 'dev-free-image');
+  assert.equal(stored?.billing?.status, 'billed');
+  assert.equal(stored?.billing?.creditCost, 7);
+  assert.equal(stored?.billing?.ledgerEntryId, 'ledger-1');
+  assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.url, 'data:image/png;base64,RESULT');
+  assert.equal(debits.length, 1);
+  assert.equal(debits[0]?.amount, 7);
 });
 
 test('image run rejects unsupported selected model before creating a run', async () => {
@@ -542,12 +807,13 @@ test('image run records failed billing metadata when provider fails after run cr
     input: { mode: 'generate' },
   });
 
-  assert.equal(result.run.status, 'failed');
-  assert.equal(result.run.errorMessage, 'image provider unavailable');
-  assert.equal(result.run.selectedModel?.code, 'dev-free-image');
-  assert.equal(result.run.billing?.status, 'failed');
-  assert.equal(result.run.billing?.creditCost, null);
-  assert.equal(result.run.billing?.ledgerEntryId, null);
+  assert.equal(result.run.status, 'running');
+  const failed = await waitForRunStatus(repository, result.run.id, 'user-1', 'failed');
+  assert.equal(failed?.errorMessage, 'image provider unavailable');
+  assert.equal(failed?.selectedModel?.code, 'dev-free-image');
+  assert.equal(failed?.billing?.status, 'failed');
+  assert.equal(failed?.billing?.creditCost, null);
+  assert.equal(failed?.billing?.ledgerEntryId, null);
   assert.equal(debitCalled, false);
 
   const storedRuns = await repository.listRunsForUser('user-1');
@@ -607,11 +873,13 @@ test('image run remains billed and succeeded when post-debit event persistence f
     input: { mode: 'generate' },
   });
 
-  assert.equal(result.run.status, 'succeeded');
-  assert.equal(result.run.billing?.status, 'billed');
-  assert.equal(result.run.billing?.creditCost, 9);
-  assert.equal(result.run.billing?.ledgerEntryId, 'ledger-after-debit');
-  assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,RESULT');
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(result.transientArtifacts, []);
+  const completed = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+  assert.equal(completed?.billing?.status, 'billed');
+  assert.equal(completed?.billing?.creditCost, 9);
+  assert.equal(completed?.billing?.ledgerEntryId, 'ledger-after-debit');
+  assert.equal(completed?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
 });
 
 test('image run rejects upscale without source image before model resolution or run creation', async () => {
@@ -761,7 +1029,8 @@ test('image run strips source image data URL from durable input before provider 
     },
   });
 
-  assert.equal(result.run.status, 'succeeded');
+  assert.equal(result.run.status, 'running');
+  await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
   assert.equal(JSON.stringify(durableInputs).includes('sourceImageDataUrl'), false);
   assert.equal(JSON.stringify(durableInputs).includes('data:image/png;base64,SOURCE'), false);
 });
