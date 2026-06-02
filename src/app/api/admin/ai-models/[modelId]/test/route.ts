@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { createAgentRunService } from '@/server/agent/run-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { testAiModelConfiguration } from '@/server/repositories/ai-models';
@@ -29,6 +30,7 @@ export async function POST(
     const result = await testAiModelConfiguration({
       modelId: params.modelId,
       prompt: body.prompt,
+      createAgentRunService,
     });
 
     return NextResponse.json({ ok: result.ok, result }, { status: 200 });

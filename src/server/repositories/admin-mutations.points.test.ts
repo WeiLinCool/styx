@@ -11,9 +11,13 @@ type ReferralRecord = {
   id: string;
   referrerUserId: string;
   referredUserId: string;
+  inviteCodeId: string | null;
+  inviteCodeSnapshot: string | null;
   qualifiedAt: Date | null;
   qualifiedBy: ReferralQualificationSource | null;
   rewardLedgerEntryId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 function createQualificationHarness(initialReferral: Partial<ReferralRecord> | null = {}) {
@@ -24,9 +28,13 @@ function createQualificationHarness(initialReferral: Partial<ReferralRecord> | n
           id: initialReferral.id ?? 'referral-1',
           referrerUserId: initialReferral.referrerUserId ?? 'referrer-1',
           referredUserId: initialReferral.referredUserId ?? 'referred-1',
+          inviteCodeId: initialReferral.inviteCodeId ?? null,
+          inviteCodeSnapshot: initialReferral.inviteCodeSnapshot ?? null,
           qualifiedAt: initialReferral.qualifiedAt ?? null,
           qualifiedBy: initialReferral.qualifiedBy ?? null,
           rewardLedgerEntryId: initialReferral.rewardLedgerEntryId ?? null,
+          createdAt: initialReferral.createdAt ?? new Date('2026-05-29T00:00:00.000Z'),
+          updatedAt: initialReferral.updatedAt ?? new Date('2026-05-29T00:00:00.000Z'),
         };
 
   const grants: Array<{
@@ -61,6 +69,7 @@ function createQualificationHarness(initialReferral: Partial<ReferralRecord> | n
             referral.qualifiedAt = new Date('2026-05-30T00:00:00.000Z');
             referral.qualifiedBy = input.qualifiedBy;
             referral.rewardLedgerEntryId = input.rewardLedgerEntryId ?? null;
+            referral.updatedAt = new Date('2026-05-30T00:00:00.000Z');
             return referral;
           },
           buildReferralRewardKey(referredUserId) {

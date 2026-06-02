@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { createChatProviderAdapter } from '@/server/ai/provider-adapters';
-import { createAgentRunService } from '@/server/agent/run-service';
+import type { PiAgentRuntime } from '@/server/agent/pi-runtime';
+import type {
+  AgentRunDto,
+  AgentRunStreamEventDto,
+  CreateAgentRunResult,
+} from '@/server/agent/types';
 import {
   evaluateModelEntitlement,
   listActiveUserEntitlements,
@@ -116,8 +121,26 @@ export type AdminAiConfigTestSummary = {
 
 export type AdminAiChatLoopTestResult = AdminAiConfigTestSummary & {
   prompt: string;
-  run: import('@/server/agent/types').AgentRunDto | null;
-  events: import('@/server/agent/types').AgentRunStreamEventDto[];
+  run: AgentRunDto | null;
+  events: AgentRunStreamEventDto[];
+};
+
+type AdminAiChatLoopAgentRunServiceFactory = (input: {
+  repository: ReturnType<typeof getAgentRunRepository>;
+  runtime: PiAgentRuntime;
+  resolveChatModelForUser: (userId: string, modelId: string) => Promise<ResolvedChatModel>;
+  assertCanAffordMinimum: (
+    userId: string,
+    pricing: ResolvedChatModel['pricing'],
+  ) => Promise<void>;
+}) => {
+  createAndRunAgentRun(input: {
+    userId: string;
+    taskType: 'chat';
+    prompt: string;
+    modelId: string;
+    input: Record<string, unknown>;
+  }): Promise<CreateAgentRunResult>;
 };
 
 type AdminModelStatusAction = {
@@ -1115,11 +1138,16 @@ export async function testAiProviderConfiguration(input: {
   providerId: string;
   modelId: string;
   prompt?: string;
+  createAgentRunService?: AdminAiChatLoopAgentRunServiceFactory;
 }): Promise<AdminAiConfigTestSummary> {
   if (input.prompt?.trim()) {
+    if (!input.createAgentRunService) {
+      throw new Error('Agent run service factory is required for chat loop tests.');
+    }
     return runAdminAiChatLoopTest({
       modelId: input.modelId,
       prompt: input.prompt,
+      createAgentRunService: input.createAgentRunService,
     });
   }
 
@@ -1162,10 +1190,18 @@ export async function testAiProviderConfiguration(input: {
 export async function testAiModelConfiguration(input: {
   modelId: string;
   prompt?: string;
+  createAgentRunService?: AdminAiChatLoopAgentRunServiceFactory;
 }): Promise<AdminAiConfigTestSummary> {
   const prompt = input.prompt?.trim();
   if (prompt) {
-    return runAdminAiChatLoopTest({ modelId: input.modelId, prompt });
+    if (!input.createAgentRunService) {
+      throw new Error('Agent run service factory is required for chat loop tests.');
+    }
+    return runAdminAiChatLoopTest({
+      modelId: input.modelId,
+      prompt,
+      createAgentRunService: input.createAgentRunService,
+    });
   }
 
   const model = await resolveAdminTestModel(input.modelId);
@@ -1207,6 +1243,7 @@ export async function testAiModelConfiguration(input: {
 async function runAdminAiChatLoopTest(input: {
   modelId: string;
   prompt: string;
+  createAgentRunService: AdminAiChatLoopAgentRunServiceFactory;
 }): Promise<AdminAiChatLoopTestResult> {
   const model = await resolveAdminTestModel(input.modelId);
   validateProviderTestConfiguration({
@@ -1217,7 +1254,7 @@ async function runAdminAiChatLoopTest(input: {
   });
 
   const repository = getAgentRunRepository();
-  const service = createAgentRunService({
+  const service = input.createAgentRunService({
     repository,
     runtime: {
       async run() {

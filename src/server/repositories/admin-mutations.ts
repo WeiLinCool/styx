@@ -55,9 +55,9 @@ export function normalizeAiJobReviewAction(action: string): AiJobReviewAction {
   throw new Error(`Unsupported AI job review action: ${action}`);
 }
 
-type ReferralRecord = Awaited<ReturnType<typeof getReferralByReferredUserId>>;
+type ReferralRecord = Awaited<ReturnType<typeof getReferralByReferredUserId>> | null;
 type QualificationDeps = {
-  getReferralByReferredUserId: typeof getReferralByReferredUserId;
+  getReferralByReferredUserId: (userId: string) => Promise<ReferralRecord>;
   grantCredits: typeof grantCredits;
   markReferralQualified: typeof markReferralQualified;
   buildReferralRewardKey: typeof buildReferralRewardKey;

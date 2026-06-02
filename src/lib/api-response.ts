@@ -1,5 +1,7 @@
 import { decryptResponseBody, isEncryptedResponseEnvelope } from '@/lib/request-encryption';
 
+// Existing callers rely on this response helper as an untyped JSON boundary.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readJsonResponse<T = any>(response: Response): Promise<T | null> {
   const text = await response.text();
   if (!text.trim()) {

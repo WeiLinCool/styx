@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { Table } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 
 import {
@@ -11,9 +10,9 @@ import {
 } from './schema';
 
 test('points-growth tables expose the expected schema shape', () => {
-  assert.equal(userInviteCodes[Table.Symbol.Name], 'user_invite_codes');
-  assert.equal(userReferrals[Table.Symbol.Name], 'user_referrals');
-  assert.equal(userDailyCheckins[Table.Symbol.Name], 'user_daily_checkins');
+  assert.equal(getTableConfig(userInviteCodes).name, 'user_invite_codes');
+  assert.equal(getTableConfig(userReferrals).name, 'user_referrals');
+  assert.equal(getTableConfig(userDailyCheckins).name, 'user_daily_checkins');
 
   const dailyCheckinsConfig = getTableConfig(userDailyCheckins);
   const dailyCheckinColumns = new Map(
@@ -45,8 +44,11 @@ test('points-growth tables expose the expected schema shape', () => {
   );
   assert.ok(dailyCheckinUniqueIndex);
   assert.equal(dailyCheckinUniqueIndex.config.unique, true);
+  const dailyCheckinUniqueIndexColumns = dailyCheckinUniqueIndex.config.columns as Array<{
+    name?: string;
+  }>;
   assert.deepEqual(
-    dailyCheckinUniqueIndex.config.columns.map((column) => column.name),
+    dailyCheckinUniqueIndexColumns.map((column) => column.name),
     ['user_id', 'checkin_date'],
   );
 
@@ -63,7 +65,10 @@ test('points-growth tables expose the expected schema shape', () => {
   assert.ok(activeInviteCodeIndex);
   assert.equal(activeInviteCodeIndex.config.unique, true);
   assert.equal(activeInviteCodeIndex.config.columns.length, 1);
-  assert.equal(activeInviteCodeIndex.config.columns[0]?.name, 'user_id');
+  const activeInviteCodeIndexColumns = activeInviteCodeIndex.config.columns as Array<{
+    name?: string;
+  }>;
+  assert.equal(activeInviteCodeIndexColumns[0]?.name, 'user_id');
   assert.ok(activeInviteCodeIndex.config.where);
   assert.ok(
     inviteCodesConfig.checks.some(
@@ -102,8 +107,11 @@ test('points-growth tables expose the expected schema shape', () => {
   );
   assert.ok(referredUserUniqueIndex);
   assert.equal(referredUserUniqueIndex.config.unique, true);
+  const referredUserUniqueIndexColumns = referredUserUniqueIndex.config.columns as Array<{
+    name?: string;
+  }>;
   assert.deepEqual(
-    referredUserUniqueIndex.config.columns.map((column) => column.name),
+    referredUserUniqueIndexColumns.map((column) => column.name),
     ['referred_user_id'],
   );
 });
