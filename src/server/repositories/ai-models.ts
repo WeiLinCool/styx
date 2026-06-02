@@ -21,6 +21,10 @@ import {
   type AdminModuleData,
   ensureAdminReadSource,
 } from './admin-shared';
+import {
+  parseProviderBillingRules,
+  type ProviderBillingRuleConfig,
+} from '@/server/billing/provider-rules';
 
 export type AiModelPricing = {
   unit: 'token';
@@ -114,6 +118,7 @@ export type AdminAiProviderRow = {
   enabledModelCount: number;
   chatModelCount: number;
   videoModelCount: number;
+  billingRules: ProviderBillingRuleConfig;
 };
 
 export type AdminAiModelData = AdminModuleData<AdminAiModelRow> & {
@@ -357,6 +362,7 @@ const seedProviders = [
     status: 'enabled',
     baseUrl: null,
     credentialEnvKey: null,
+    metadata: {},
   },
 ] satisfies Array<{
   id: string;
@@ -366,6 +372,7 @@ const seedProviders = [
   status: AiProviderStatus;
   baseUrl: string | null;
   credentialEnvKey: string | null;
+  metadata: Record<string, unknown>;
 }>;
 
 const adminAiLoopTestUserId = '00000000-0000-4000-8000-000000000001';
@@ -1001,10 +1008,12 @@ export async function createAiProvider(input: {
   baseUrl: string | null;
   credentialEnvKey: string | null;
   status: Extract<AiProviderStatus, 'enabled' | 'disabled'>;
+  billingRules?: ProviderBillingRuleConfig;
 }): Promise<AdminAiProviderRow> {
   const database = requireAiModelDatabase('AI provider create');
   const trimmedBaseUrl = input.baseUrl?.trim() ?? null;
   const trimmedCredentialEnvKey = input.credentialEnvKey?.trim() ?? null;
+  const billingRules = parseProviderBillingRules(input.billingRules);
 
   if (input.status === 'enabled') {
     validateProviderTestConfiguration({
@@ -1025,6 +1034,7 @@ export async function createAiProvider(input: {
         status: input.status,
         baseUrl: trimmedBaseUrl,
         credentialEnvKey: trimmedCredentialEnvKey,
+        metadata: providerMetadataWithBillingRules({}, billingRules),
       },
       models: [],
     });
@@ -1040,7 +1050,7 @@ export async function createAiProvider(input: {
       status: input.status,
       baseUrl: trimmedBaseUrl,
       credentialEnvKey: trimmedCredentialEnvKey,
-      metadata: {},
+      metadata: providerMetadataWithBillingRules({}, billingRules),
     })
     .returning();
 
@@ -1101,10 +1111,12 @@ export async function updateAiProvider(input: {
   baseUrl: string | null;
   credentialEnvKey: string | null;
   status: Extract<AiProviderStatus, 'enabled' | 'disabled'>;
+  billingRules?: ProviderBillingRuleConfig;
 }): Promise<AdminAiProviderRow> {
   const database = requireAiModelDatabase('AI provider update');
   const trimmedBaseUrl = input.baseUrl?.trim() ?? null;
   const trimmedCredentialEnvKey = input.credentialEnvKey?.trim() ?? null;
+  const billingRules = parseProviderBillingRules(input.billingRules);
 
   if (input.status === 'enabled') {
     validateProviderTestConfiguration({
@@ -1130,10 +1142,17 @@ export async function updateAiProvider(input: {
         status: input.status,
         baseUrl: trimmedBaseUrl,
         credentialEnvKey: trimmedCredentialEnvKey,
+        metadata: providerMetadataWithBillingRules(seed.metadata, billingRules),
       },
       models: getSeedAiModelAdminData().records.filter((record) => record.providerId === seed.id),
     });
   }
+
+  const [existing] = await database
+    .select({ metadata: schema.aiProviders.metadata })
+    .from(schema.aiProviders)
+    .where(eq(schema.aiProviders.id, input.providerId))
+    .limit(1);
 
   const [updated] = await database
     .update(schema.aiProviders)
@@ -1144,6 +1163,7 @@ export async function updateAiProvider(input: {
       status: input.status,
       baseUrl: trimmedBaseUrl,
       credentialEnvKey: trimmedCredentialEnvKey,
+      metadata: providerMetadataWithBillingRules(existing?.metadata ?? {}, billingRules),
       updatedAt: new Date(),
     })
     .where(eq(schema.aiProviders.id, input.providerId))
@@ -1172,6 +1192,7 @@ export async function createAiModel(input: {
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
   supportsImageUpscale: boolean;
+  supportsVideoGeneration: boolean;
 }): Promise<AdminAiModelRow> {
   const database = requireAiModelDatabase('AI model create');
 
@@ -1194,7 +1215,7 @@ export async function createAiModel(input: {
         supportsImageGeneration: input.supportsImageGeneration,
         supportsImageEdit: input.supportsImageEdit,
         supportsImageUpscale: input.supportsImageUpscale,
-        supportsVideoGeneration: false,
+        supportsVideoGeneration: input.supportsVideoGeneration,
         isDefaultImage: false,
         isDefaultVideo: false,
         pricing: defaultPricing,
@@ -1218,7 +1239,7 @@ export async function createAiModel(input: {
       supportsImageGeneration: input.supportsImageGeneration,
       supportsImageEdit: input.supportsImageEdit,
       supportsImageUpscale: input.supportsImageUpscale,
-      supportsVideoGeneration: false,
+      supportsVideoGeneration: input.supportsVideoGeneration,
       isDefaultImage: false,
       isDefaultVideo: false,
       sortOrder: 0,
@@ -1247,6 +1268,7 @@ export async function updateAiModel(input: {
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
   supportsImageUpscale: boolean;
+  supportsVideoGeneration: boolean;
 }): Promise<AdminAiModelRow> {
   const database = requireAiModelDatabase('AI model update');
 
@@ -1269,7 +1291,7 @@ export async function updateAiModel(input: {
         supportsImageGeneration: input.supportsImageGeneration,
         supportsImageEdit: input.supportsImageEdit,
         supportsImageUpscale: input.supportsImageUpscale,
-        supportsVideoGeneration: false,
+        supportsVideoGeneration: input.supportsVideoGeneration,
         isDefaultImage: false,
         isDefaultVideo: false,
         pricing: defaultPricing,
@@ -1291,6 +1313,7 @@ export async function updateAiModel(input: {
       supportsImageGeneration: input.supportsImageGeneration,
       supportsImageEdit: input.supportsImageEdit,
       supportsImageUpscale: input.supportsImageUpscale,
+      supportsVideoGeneration: input.supportsVideoGeneration,
       updatedAt: new Date(),
     })
     .where(eq(schema.aiModels.id, input.modelId))
@@ -1953,7 +1976,14 @@ type AdminAiModelGroup = {
   >;
   provider: Pick<
     typeof schema.aiProviders.$inferSelect,
-    'id' | 'code' | 'name' | 'providerType' | 'status' | 'baseUrl' | 'credentialEnvKey'
+    | 'id'
+    | 'code'
+    | 'name'
+    | 'providerType'
+    | 'status'
+    | 'baseUrl'
+    | 'credentialEnvKey'
+    | 'metadata'
   >;
   requirements: ModelEntitlementRequirement[];
 };
@@ -1994,6 +2024,16 @@ function summarizeRequirements(requirements: ModelEntitlementRequirement[]) {
   }
 
   return requirements.map((requirement) => requirement.label).join(' · ');
+}
+
+function providerMetadataWithBillingRules(
+  metadata: Record<string, unknown>,
+  billingRules: ProviderBillingRuleConfig,
+) {
+  return {
+    ...metadata,
+    billingRules,
+  };
 }
 
 function toAdminAiModelRow(group: AdminAiModelGroup): AdminAiModelRow {
@@ -2048,6 +2088,7 @@ function toAdminAiProviderRow(input: {
     enabledModelCount: input.models.filter((model) => model.status === 'enabled').length,
     chatModelCount: input.models.filter((model) => model.supportsChat).length,
     videoModelCount: input.models.filter((model) => model.supportsVideoGeneration).length,
+    billingRules: parseProviderBillingRules(input.provider.metadata.billingRules),
   };
 }
 
@@ -2113,6 +2154,12 @@ function buildAdminAiModelData(
         tone: 'info',
       },
       {
+        label: 'Video 支持',
+        value: String(records.filter((record) => record.supportsVideoGeneration).length),
+        hint: 'supports_video',
+        tone: 'info',
+      },
+      {
         label: '凭据检查',
         value: String(invalidCredentialCount),
         hint: invalidCredentialCount > 0 ? 'needs attention' : 'valid',
@@ -2145,6 +2192,11 @@ function buildAdminAiModelData(
             record.supportsImageEdit ||
             record.supportsImageUpscale,
         ).length,
+      },
+      {
+        label: 'Video',
+        value: 'video',
+        count: records.filter((record) => record.supportsVideoGeneration).length,
       },
       {
         label: 'Default',
@@ -2215,6 +2267,7 @@ async function loadAdminAiModelRows(modelId?: string): Promise<AdminAiModelRowSo
         status: schema.aiProviders.status,
         baseUrl: schema.aiProviders.baseUrl,
         credentialEnvKey: schema.aiProviders.credentialEnvKey,
+        metadata: schema.aiProviders.metadata,
       },
       requirement: schema.aiModelEntitlementRequirements,
     })
@@ -2248,6 +2301,7 @@ async function loadAdminProviderRows(): Promise<AdminAiModelGroup['provider'][]>
       status: schema.aiProviders.status,
       baseUrl: schema.aiProviders.baseUrl,
       credentialEnvKey: schema.aiProviders.credentialEnvKey,
+      metadata: schema.aiProviders.metadata,
     })
     .from(schema.aiProviders)
     .orderBy(desc(schema.aiProviders.updatedAt), asc(schema.aiProviders.createdAt));

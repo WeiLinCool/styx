@@ -89,6 +89,10 @@ function modelMatchesQuickFilter(model: AdminAiModelRow, filter: string) {
     );
   }
 
+  if (filter === 'video') {
+    return model.supportsVideoGeneration;
+  }
+
   return model.status === filter;
 }
 
@@ -113,7 +117,11 @@ function modelMatchesKeyword(model: AdminAiModelRow, keyword: string) {
     model.supportsImageUpscale
       ? 'image upscale supports_image_upscale 图像放大'
       : 'no_image_upscale 不支持图像放大',
+    model.supportsVideoGeneration
+      ? 'video generation supports_video_generation 视频生成'
+      : 'no_video_generation 不支持视频生成',
     model.isDefaultImage ? 'default image 默认图像模型' : 'not_default_image 非默认图像模型',
+    model.isDefaultVideo ? 'default video 默认视频模型' : 'not_default_video 非默认视频模型',
     model.providerName,
     model.providerCode,
     model.providerType,
@@ -174,8 +182,10 @@ const columns: AiModelColumn[] = [
           model.supportsImageGeneration ? 'image generate' : 'no image generate',
           model.supportsImageEdit ? 'image edit' : 'no image edit',
           model.supportsImageUpscale ? 'image upscale' : 'no image upscale',
+          model.supportsVideoGeneration ? 'video generate' : 'no video generate',
           model.isDefaultChat ? 'default chat' : 'not default chat',
           model.isDefaultImage ? 'default image' : 'not default image',
+          model.isDefaultVideo ? 'default video' : 'not default video',
         ]}
       />
     ),
@@ -297,7 +307,7 @@ export function AdminAiModelsModule({
         <div>
           <h2 className="text-base font-semibold text-neutral-950">AI 模型</h2>
           <p className="mt-1 text-sm text-neutral-600">
-            管理用户 Chat 使用的 AI 供应商、模型、默认状态、权益门槛、价格与凭据引用检查。
+            管理用户 Chat、Image、Video 使用的 AI 供应商、模型、默认状态、权益门槛、价格与凭据引用检查。
           </p>
         </div>
         <StatusBadge

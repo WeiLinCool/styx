@@ -3,8 +3,21 @@ import { z } from 'zod';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
+import { parseProviderBillingRules } from '@/server/billing/provider-rules';
 import { createAiProvider } from '@/server/repositories/ai-models';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+
+function parseBillingRulesAtBoundary(value: unknown, context: z.RefinementCtx) {
+  try {
+    return typeof value === 'undefined' ? {} : parseProviderBillingRules(value);
+  } catch (error) {
+    context.addIssue({
+      code: 'custom',
+      message: error instanceof Error ? error.message : 'Billing rules are invalid.',
+    });
+    return z.NEVER;
+  }
+}
 
 const bodySchema = z.object({
   code: z.string().trim().min(1),
@@ -13,6 +26,7 @@ const bodySchema = z.object({
   baseUrl: z.string().trim().min(1).nullable(),
   credentialEnvKey: z.string().trim().min(1).nullable(),
   status: z.enum(['enabled', 'disabled']),
+  billingRules: z.unknown().optional().transform(parseBillingRulesAtBoundary),
 });
 
 export async function parseAiProviderCreateBody(request: Pick<Request, 'json'>) {

@@ -16,6 +16,7 @@ const bodySchema = z.object({
   supportsImageGeneration: z.boolean(),
   supportsImageEdit: z.boolean(),
   supportsImageUpscale: z.boolean(),
+  supportsVideoGeneration: z.boolean(),
 });
 
 export async function parseAiModelCreateBody(request: Pick<Request, 'json'>) {

@@ -194,9 +194,9 @@ function parseImageRule(
 
   return {
     mode,
-    fixedCredits: optionalNonNegativeNumber(value.fixedCredits),
-    imageCredits: optionalNonNegativeNumber(value.imageCredits),
-    tokenCreditsPer1k: optionalNonNegativeNumber(value.tokenCreditsPer1k),
+    ...optionalNumberEntry('fixedCredits', value.fixedCredits),
+    ...optionalNumberEntry('imageCredits', value.imageCredits),
+    ...optionalNumberEntry('tokenCreditsPer1k', value.tokenCreditsPer1k),
     minimumCredits: nonNegativeInteger(value.minimumCredits),
   };
 }
@@ -208,16 +208,18 @@ function parseVideoRule(
 
   return {
     mode,
-    tokenCreditsPer1k: optionalNonNegativeNumber(value.tokenCreditsPer1k),
-    secondsCredits: optionalNonNegativeNumber(value.secondsCredits),
-    resolutionMultipliers: isRecord(value.resolutionMultipliers)
-      ? Object.fromEntries(
-          Object.entries(value.resolutionMultipliers).map(([key, item]) => [
-            key,
-            nonNegativeNumber(item),
-          ]),
-        )
-      : undefined,
+    ...optionalNumberEntry('tokenCreditsPer1k', value.tokenCreditsPer1k),
+    ...optionalNumberEntry('secondsCredits', value.secondsCredits),
+    ...(isRecord(value.resolutionMultipliers)
+      ? {
+          resolutionMultipliers: Object.fromEntries(
+            Object.entries(value.resolutionMultipliers).map(([key, item]) => [
+              key,
+              nonNegativeNumber(item),
+            ]),
+          ),
+        }
+      : {}),
     minimumCredits: nonNegativeInteger(value.minimumCredits),
   };
 }
@@ -246,6 +248,11 @@ function nonNegativeNumber(value: unknown) {
 
 function optionalNonNegativeNumber(value: unknown) {
   return typeof value === 'undefined' ? undefined : nonNegativeNumber(value);
+}
+
+function optionalNumberEntry<T extends string>(key: T, value: unknown) {
+  const parsed = optionalNonNegativeNumber(value);
+  return typeof parsed === 'undefined' ? {} : { [key]: parsed };
 }
 
 function nonNegativeInteger(value: unknown) {

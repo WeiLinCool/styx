@@ -14,6 +14,7 @@ type AiModelBody = {
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
   supportsImageUpscale: boolean;
+  supportsVideoGeneration: boolean;
 };
 
 const validBody: AiModelBody = {
@@ -26,9 +27,10 @@ const validBody: AiModelBody = {
   supportsImageGeneration: true,
   supportsImageEdit: true,
   supportsImageUpscale: false,
+  supportsVideoGeneration: true,
 };
 
-test('parseAiModelUpdateBody parses image capability flags', async () => {
+test('parseAiModelUpdateBody parses image and video capability flags', async () => {
   const body = await parseAiModelUpdateBody({
     json: async () => validBody,
   });
@@ -44,6 +46,19 @@ test('parseAiModelUpdateBody requires image capability flags', async () => {
     () =>
       parseAiModelUpdateBody({
         json: async () => bodyWithoutImageFlag,
+      }),
+    ZodError,
+  );
+});
+
+test('parseAiModelUpdateBody requires video capability flag', async () => {
+  const bodyWithoutVideoFlag: Partial<typeof validBody> = { ...validBody };
+  delete bodyWithoutVideoFlag.supportsVideoGeneration;
+
+  await assert.rejects(
+    () =>
+      parseAiModelUpdateBody({
+        json: async () => bodyWithoutVideoFlag,
       }),
     ZodError,
   );

@@ -665,6 +665,7 @@ test('updateAiModel updates model summary in seed mode', async () => {
     supportsImageGeneration: false,
     supportsImageEdit: false,
     supportsImageUpscale: false,
+    supportsVideoGeneration: false,
   });
 
   assert.equal(model.name, 'Development Free Chat Updated');
@@ -683,6 +684,7 @@ test('updateAiModel accepts image capability flags in seed mode', async () => {
     supportsImageGeneration: true,
     supportsImageEdit: false,
     supportsImageUpscale: true,
+    supportsVideoGeneration: false,
   });
 
   assert.equal(model.supportsChat, false);
@@ -702,6 +704,7 @@ test('createAiModel returns a new model summary in seed mode', async () => {
     supportsImageGeneration: false,
     supportsImageEdit: false,
     supportsImageUpscale: false,
+    supportsVideoGeneration: false,
   });
 
   assert.equal(model.code, 'dev-preview-chat');
@@ -719,6 +722,7 @@ test('createAiModel accepts image capability flags in seed mode', async () => {
     supportsImageGeneration: true,
     supportsImageEdit: false,
     supportsImageUpscale: true,
+    supportsVideoGeneration: false,
   });
 
   assert.equal(model.supportsChat, false);

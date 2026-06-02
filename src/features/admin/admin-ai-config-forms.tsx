@@ -24,6 +24,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { readJsonResponse } from '@/lib/api-response';
 import { adminApiRequest } from '@/lib/admin-api-client';
 import {
@@ -46,6 +47,7 @@ type ProviderFormValues = {
   baseUrl: string;
   credentialEnvKey: string;
   status: 'enabled' | 'disabled';
+  billingRulesJson: string;
 };
 
 type ModelFormValues = {
@@ -58,6 +60,7 @@ type ModelFormValues = {
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
   supportsImageUpscale: boolean;
+  supportsVideoGeneration: boolean;
 };
 
 async function postJson(url: string, body: Record<string, unknown>) {
@@ -75,6 +78,10 @@ async function postJson(url: string, body: Record<string, unknown>) {
   }
 
   return payload;
+}
+
+function formatBillingRulesJson(value: unknown) {
+  return JSON.stringify(value ?? {}, null, 2);
 }
 
 function ProviderDialog({
@@ -107,15 +114,24 @@ function ProviderDialog({
   async function onSubmit(values: ProviderFormValues) {
     setError(null);
     try {
+      const billingRules = JSON.parse(values.billingRulesJson.trim() || '{}');
+
       await postJson(submitUrl, {
         ...values,
         baseUrl: values.baseUrl.trim() || null,
         credentialEnvKey: values.credentialEnvKey.trim() || null,
+        billingRules,
       });
       setOpen(false);
       router.refresh();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '提交失败。');
+      setError(
+        submitError instanceof SyntaxError
+          ? '计费规则 JSON 格式无效。'
+          : submitError instanceof Error
+            ? submitError.message
+            : '提交失败。',
+      );
     }
   }
 
@@ -227,6 +243,24 @@ function ProviderDialog({
                   <FormLabel>Credential Env Key</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="OPENAI_API_KEY" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="billingRulesJson"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>计费规则 JSON</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      className="min-h-40 font-mono text-xs"
+                      spellCheck={false}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -458,6 +492,21 @@ function ModelDialog({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="supportsVideoGeneration"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>视频生成</FormLabel>
+                    <FormControl>
+                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {error ? <p className="text-sm text-red-700">{error}</p> : null}
@@ -494,6 +543,7 @@ export function CreateAiProviderDialog() {
         baseUrl: '',
         credentialEnvKey: '',
         status: 'disabled',
+        billingRulesJson: formatBillingRulesJson({}),
       }}
     />
   );
@@ -523,6 +573,7 @@ export function EditAiProviderDialog({
         baseUrl: provider.baseUrlLabel === 'not configured' ? '' : provider.baseUrlLabel,
         credentialEnvKey: provider.credential.label === 'not required' ? '' : provider.credential.label,
         status: provider.status === 'archived' ? 'disabled' : provider.status,
+        billingRulesJson: formatBillingRulesJson(provider.billingRules),
       }}
     />
   );
@@ -559,6 +610,7 @@ export function CreateAiModelDialog({
         supportsImageGeneration: false,
         supportsImageEdit: false,
         supportsImageUpscale: false,
+        supportsVideoGeneration: false,
       }}
     />
   );
@@ -594,6 +646,7 @@ export function EditAiModelDialog({
         supportsImageGeneration: model.supportsImageGeneration,
         supportsImageEdit: model.supportsImageEdit,
         supportsImageUpscale: model.supportsImageUpscale,
+        supportsVideoGeneration: model.supportsVideoGeneration,
       }}
     />
   );
