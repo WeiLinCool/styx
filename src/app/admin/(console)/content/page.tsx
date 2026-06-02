@@ -1,8 +1,11 @@
 import {
-  AdminActionBar,
   AdminModulePage,
   type AdminColumn,
 } from '@/features/admin/module-page';
+import {
+  AdminContentActions,
+  CreateAdminContentDialog,
+} from '@/features/admin/admin-content-actions';
 import { StatusBadge } from '@/features/admin/status-badge';
 import {
   getAdminContent,
@@ -61,7 +64,7 @@ const columns: AdminColumn<AdminContentRow>[] = [
     key: 'actions',
     label: '操作',
     className: 'text-right',
-    render: (content) => <AdminActionBar actions={content.actions} />,
+    render: (content) => <AdminContentActions content={content} />,
   },
 ];
 
@@ -69,15 +72,20 @@ export default async function AdminContentPage() {
   const data = await getAdminContent();
 
   return (
-    <AdminModulePage
-      title="内容管理"
-      description="首页内容、banner、教程、示例资产与媒体引用管理视图。"
-      source={data.source}
-      metrics={data.metrics}
-      filters={data.filters}
-      records={data.records}
-      columns={columns}
-      searchPlaceholder="搜索 slug、标题或位置..."
-    />
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <CreateAdminContentDialog />
+      </div>
+      <AdminModulePage
+        title="内容管理"
+        description="首页内容、banner、教程、示例资产与媒体引用管理视图。"
+        source={data.source}
+        metrics={data.metrics}
+        filters={data.filters}
+        records={data.records}
+        columns={columns}
+        searchPlaceholder="搜索 slug、标题或位置..."
+      />
+    </div>
   );
 }

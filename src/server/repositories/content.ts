@@ -26,6 +26,8 @@ export type AdminContentRow = {
   owner: string;
   placement: string;
   mediaReference: string;
+  body: string | null;
+  metadata: Record<string, unknown>;
   bodySummary: string;
   publishedAt: string;
   updatedAt: string;
@@ -124,6 +126,8 @@ function getSeedContent(): AdminModuleData<AdminContentRow> {
       owner: 'Styx Admin',
       placement: 'homepage hero',
       mediaReference: '/home/hero',
+      body: '首页首屏标题、描述与主要 CTA。',
+      metadata: {},
       bodySummary: '首页首屏标题、描述与主要 CTA。',
       publishedAt: '2026-05-29T08:00:00.000Z',
       updatedAt: '2026-05-29T08:00:00.000Z',
@@ -138,6 +142,8 @@ function getSeedContent(): AdminModuleData<AdminContentRow> {
       owner: 'Styx Admin',
       placement: 'tutorials',
       mediaReference: '/tutorials/image-workflow',
+      body: '图像生成工作流教学内容，等待发布。',
+      metadata: {},
       bodySummary: '图像生成工作流教学内容，等待发布。',
       publishedAt: '未记录',
       updatedAt: '2026-05-28T09:00:00.000Z',
@@ -263,10 +269,15 @@ export async function getAdminContent(): Promise<AdminModuleData<AdminContentRow
     owner: owner?.displayName ?? '系统',
     placement: metadataText(asset.metadata, 'placement', asset.kind),
     mediaReference: asset.url ?? metadataText(asset.metadata, 'mediaReference', 'none'),
+    body: asset.body,
+    metadata: asset.metadata,
     bodySummary: summarizeBody(asset.body),
     publishedAt: formatIso(asset.publishedAt),
     updatedAt: formatIso(asset.updatedAt),
-    actions: ['Edit draft', 'Publish', 'Archive'],
+    actions:
+      asset.status === 'published'
+        ? ['Edit', 'Unpublish', 'Archive']
+        : ['Edit', 'Publish', 'Archive'],
   }));
 
   return {
