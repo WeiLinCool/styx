@@ -16,6 +16,7 @@ import {
   listVideoModels,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
+  saveGeneratedMedia,
   type VideoModelOption,
 } from '@/features/public/agent-runtime-client';
 import {
@@ -54,6 +55,7 @@ export default function VideoGenPage() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const [generatedVideo, setGeneratedVideo] = useState<DirectMediaResultDto | null>(null);
+  const [generatedVideoRunId, setGeneratedVideoRunId] = useState<string | null>(null);
   const videoReceivedRunIdRef = useRef<string | null>(null);
   const modelLoading = modelAvailability.status === 'loading';
   const modelMaintenanceMessage =
@@ -136,6 +138,7 @@ export default function VideoGenPage() {
 
       videoReceivedRunIdRef.current = streamRunId;
       setGeneratedVideo(artifact);
+      setGeneratedVideoRunId(streamRunId);
       setGenerationError(null);
       setGenerationMessage('视频已生成，请及时下载。');
     });
@@ -190,6 +193,7 @@ export default function VideoGenPage() {
     setGenerationError(null);
     setGenerationMessage(null);
     setGeneratedVideo(null);
+    setGeneratedVideoRunId(null);
     videoReceivedRunIdRef.current = null;
 
     try {
@@ -244,6 +248,40 @@ export default function VideoGenPage() {
       link.remove();
     } catch {
       setGenerationError('下载未能自动开始，请在视频上右键另存为。');
+    }
+  };
+
+  const handleSaveVideo = async () => {
+    if (!generatedVideo || !generatedVideoRunId) return;
+    const artifactId =
+      typeof generatedVideo.metadata.artifactId === 'string' ? generatedVideo.metadata.artifactId : null;
+
+    if (!artifactId) {
+      setGenerationError('当前结果暂不支持保存到我的媒体。');
+      return;
+    }
+
+    try {
+      setGenerationError(null);
+      setGenerationMessage('正在保存到我的媒体...');
+      const result = await saveGeneratedMedia({
+        runId: generatedVideoRunId,
+        artifactId,
+      });
+      setGeneratedVideo((current) =>
+        current
+          ? {
+              ...current,
+              metadata: {
+                ...current.metadata,
+                ...result.artifact.metadata,
+              },
+            }
+          : current,
+      );
+      setGenerationMessage('已保存到我的媒体，可在用户中心重复引用。');
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : '保存媒体失败');
     }
   };
 
@@ -453,11 +491,21 @@ export default function VideoGenPage() {
                     />
                   )}
                 </div>
-                <button onClick={handleDownloadVideo} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-2.5 text-sm font-medium">
-                  下载视频
-                </button>
+                <div className="flex w-full flex-col gap-2 sm:flex-row">
+                  <button onClick={handleDownloadVideo} className="apple-btn apple-btn-primary flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-medium">
+                    下载视频
+                  </button>
+                  <button
+                    onClick={handleSaveVideo}
+                    className="flex-1 cursor-pointer rounded-xl border border-black/8 px-4 py-2.5 text-sm text-[#1d1d1f] transition-colors hover:border-black/15"
+                  >
+                    {generatedVideo.metadata.saveStatus === 'saved' ? '已保存到我的媒体' : '保存到我的媒体'}
+                  </button>
+                </div>
                 <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
-                  生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。
+                  {generatedVideo.metadata.saveStatus === 'saved'
+                    ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
+                    : '生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。'}
                 </div>
                 {generationError ? (
                   <div className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-left text-xs leading-5 text-red-700">

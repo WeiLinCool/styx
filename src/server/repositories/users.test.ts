@@ -3,7 +3,11 @@ import test from 'node:test';
 
 import { AccountDomainError } from '@/server/auth/account-types';
 
-import { adjustUserPointsByAdmin } from './users';
+import {
+  adjustUserPointsByAdmin,
+  createMemoryUserStorageRepository,
+  createUserStorageQuota,
+} from './users';
 
 test('adjustUserPointsByAdmin writes signed ledger adjustment and audit event', async () => {
   const ledgerCalls: Array<Record<string, unknown>> = [];
@@ -108,4 +112,25 @@ test('adjustUserPointsByAdmin rejects unknown users before touching ledger', asy
       error.code === 'account_not_found' &&
       /Account not found/i.test(error.message),
   );
+});
+
+test('storage quota owner rejects saves that exceed remaining bytes', () => {
+  const quota = createUserStorageQuota({
+    storageQuotaBytes: 2_000,
+    storageUsedBytes: 1_500,
+  });
+
+  assert.equal(quota.canAllocate(400), true);
+  assert.equal(quota.canAllocate(600), false);
+});
+
+test('storage quota owner updates used bytes on save and delete', async () => {
+  const repository = createMemoryUserStorageRepository();
+
+  await repository.setStorageQuota('user-1', { storageQuotaBytes: 2_000, storageUsedBytes: 500 });
+  await repository.incrementStorageUsedBytes('user-1', 300);
+  await repository.incrementStorageUsedBytes('user-1', -200);
+
+  const quota = await repository.getStorageQuota('user-1');
+  assert.deepEqual(quota, { storageQuotaBytes: 2_000, storageUsedBytes: 600 });
 });

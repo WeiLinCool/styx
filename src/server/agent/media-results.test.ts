@@ -89,6 +89,7 @@ test('sanitizeDirectMediaArtifact persists no direct media body or URL', () => {
   assert.equal(sanitized.metadata.storageStatus, 'provider_direct');
   assert.equal(sanitized.metadata.deliveryMode, 'provider_url');
   assert.equal(sanitized.metadata.providerExpiresAt, '2026-06-01T10:00:00.000Z');
+  assert.equal(sanitized.metadata.sourceUrl, 'https://provider.example/result.mp4');
 });
 
 test('createDirectMediaEventPayload returns browser preview payload', () => {

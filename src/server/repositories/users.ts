@@ -36,6 +36,116 @@ function requireDb() {
   return db;
 }
 
+export type UserStorageQuota = {
+  storageQuotaBytes: number;
+  storageUsedBytes: number;
+  canAllocate: (byteSize: number) => boolean;
+};
+
+export type UserStorageQuotaSnapshot = Omit<UserStorageQuota, 'canAllocate'>;
+
+export type UserStorageRepository = {
+  getStorageQuota(userId: string): Promise<UserStorageQuotaSnapshot | null>;
+  setStorageQuota(userId: string, input: UserStorageQuotaSnapshot): Promise<UserStorageQuotaSnapshot | null>;
+  incrementStorageUsedBytes(userId: string, deltaBytes: number): Promise<UserStorageQuotaSnapshot | null>;
+};
+
+export function createUserStorageQuota(input: UserStorageQuotaSnapshot): UserStorageQuota {
+  return {
+    ...input,
+    canAllocate(byteSize: number) {
+      return input.storageUsedBytes + byteSize <= input.storageQuotaBytes;
+    },
+  };
+}
+
+export function createMemoryUserStorageRepository(
+  initial: Record<string, UserStorageQuotaSnapshot> = {},
+): UserStorageRepository {
+  const quotas = new Map<string, UserStorageQuotaSnapshot>(
+    Object.entries(initial).map(([userId, quota]) => [userId, { ...quota }]),
+  );
+
+  return {
+    async getStorageQuota(userId) {
+      const quota = quotas.get(userId);
+      return quota ? { ...quota } : null;
+    },
+    async setStorageQuota(userId, input) {
+      const next = { ...input };
+      quotas.set(userId, next);
+      return { ...next };
+    },
+    async incrementStorageUsedBytes(userId, deltaBytes) {
+      const current = quotas.get(userId);
+      if (!current) {
+        return null;
+      }
+
+      const next = {
+        storageQuotaBytes: current.storageQuotaBytes,
+        storageUsedBytes: Math.max(0, current.storageUsedBytes + deltaBytes),
+      };
+      quotas.set(userId, next);
+      return { ...next };
+    },
+  };
+}
+
+export function getUserStorageRepository(): UserStorageRepository {
+  if (!db) {
+    return createMemoryUserStorageRepository();
+  }
+
+  const database = db;
+
+  return {
+    async getStorageQuota(userId) {
+      const [user] = await database
+        .select({
+          storageQuotaBytes: schema.users.storageQuotaBytes,
+          storageUsedBytes: schema.users.storageUsedBytes,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      return user ?? null;
+    },
+    async setStorageQuota(userId, input) {
+      const [user] = await database
+        .update(schema.users)
+        .set({
+          storageQuotaBytes: input.storageQuotaBytes,
+          storageUsedBytes: input.storageUsedBytes,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, userId))
+        .returning({
+          storageQuotaBytes: schema.users.storageQuotaBytes,
+          storageUsedBytes: schema.users.storageUsedBytes,
+        });
+
+      return user ?? null;
+    },
+    async incrementStorageUsedBytes(userId, deltaBytes) {
+      const [user] = await database
+        .update(schema.users)
+        .set({
+          storageUsedBytes: sql`GREATEST(0, ${schema.users.storageUsedBytes} + ${deltaBytes})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, userId))
+        .returning({
+          storageQuotaBytes: schema.users.storageQuotaBytes,
+          storageUsedBytes: schema.users.storageUsedBytes,
+        });
+
+      return user ?? null;
+    },
+  };
+}
+
 export async function getUserById(userId: string) {
   const database = requireDb();
   const [user] = await database

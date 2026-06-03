@@ -86,6 +86,11 @@ export type AgentRunRepository = {
   appendRunEvents(runId: string, input: AgentRunStreamEventInput[]): Promise<AgentRunStreamEventDto[]>;
   listRunEvents(runId: string): Promise<AgentRunStreamEventDto[]>;
   addArtifact(runId: string, input: AgentArtifactInput): Promise<AgentRunDto | null>;
+  updateArtifactSaveState(
+    runId: string,
+    artifactId: string,
+    input: Record<string, unknown>,
+  ): Promise<AgentRunDto | null>;
 };
 
 function cloneRecord(record: Record<string, unknown>) {
@@ -138,6 +143,16 @@ function createArtifact(input: AgentArtifactInput): AgentArtifactDto {
     url: input.url ?? null,
     metadata: cloneRecord(input.metadata ?? {}),
     createdAt: new Date().toISOString(),
+  };
+}
+
+function mergeArtifactMetadata(
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...cloneRecord(current),
+    ...cloneRecord(patch),
   };
 }
 
@@ -610,6 +625,27 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       });
       return getDatabaseRunDto(database, runId);
     },
+    async updateArtifactSaveState(runId, artifactId, input) {
+      const [artifact] = await database
+        .select()
+        .from(schema.agentArtifacts)
+        .where(and(eq(schema.agentArtifacts.runId, runId), eq(schema.agentArtifacts.id, artifactId)))
+        .limit(1);
+
+      if (!artifact) {
+        return null;
+      }
+
+      await database
+        .update(schema.agentArtifacts)
+        .set({
+          metadata: mergeArtifactMetadata((artifact.metadata ?? {}) as Record<string, unknown>, input),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.agentArtifacts.id, artifactId));
+
+      return getDatabaseRunDto(database, runId);
+    },
   };
 }
 
@@ -800,6 +836,21 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
       }
 
       run.artifacts.push(createArtifact(input));
+      touch(run);
+      return toAgentRunDto(run);
+    },
+    async updateArtifactSaveState(runId, artifactId, input) {
+      const run = runs.get(runId);
+      if (!run) {
+        return null;
+      }
+
+      const artifact = run.artifacts.find((item) => item.id === artifactId);
+      if (!artifact) {
+        return null;
+      }
+
+      artifact.metadata = mergeArtifactMetadata(artifact.metadata, input);
       touch(run);
       return toAgentRunDto(run);
     },

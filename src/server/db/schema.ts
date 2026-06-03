@@ -220,6 +220,11 @@ export const contentAssetStatus = pgEnum('content_asset_status', [
   'archived',
 ]);
 
+export const generatedMediaAssetStatus = pgEnum('generated_media_asset_status', [
+  'ready',
+  'deleted',
+]);
+
 export const requestIdempotencyActorType = pgEnum('request_idempotency_actor_type', [
   'anonymous',
   'user',
@@ -250,12 +255,16 @@ export const users = pgTable(
     activatedAt: timestamp('activated_at', { withTimezone: true }),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    storageQuotaBytes: integer('storage_quota_bytes').notNull().default(0),
+    storageUsedBytes: integer('storage_used_bytes').notNull().default(0),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: now,
     updatedAt: updated,
   },
   (table) => [
     index('users_account_state_idx').on(table.accountState),
+    check('users_storage_quota_bytes_non_negative', sql`${table.storageQuotaBytes} >= 0`),
+    check('users_storage_used_bytes_non_negative', sql`${table.storageUsedBytes} >= 0`),
     uniqueIndex('users_email_unique_idx')
       .on(table.email)
       .where(sql`${table.email} is not null`),
@@ -992,6 +1001,51 @@ export const agentArtifacts = pgTable(
   (table) => [
     index('agent_artifacts_run_id_idx').on(table.runId),
     index('agent_artifacts_kind_idx').on(table.kind),
+  ],
+);
+
+export const generatedMediaAssets = pgTable(
+  'generated_media_assets',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    conversationId: uuid('conversation_id').notNull(),
+    artifactId: uuid('artifact_id').notNull(),
+    kind: agentArtifactKind('kind').notNull(),
+    title: text('title').notNull(),
+    sourceProvider: text('source_provider').notNull(),
+    sourceModel: text('source_model').notNull(),
+    sourceUrl: text('source_url'),
+    sourceExpiresAt: timestamp('source_expires_at', { withTimezone: true }),
+    storageProvider: text('storage_provider').notNull().default('tencent_cos'),
+    bucket: text('bucket').notNull(),
+    region: text('region').notNull(),
+    objectKey: text('object_key').notNull(),
+    mimeType: text('mime_type'),
+    byteSize: integer('byte_size').notNull(),
+    width: integer('width'),
+    height: integer('height'),
+    durationSeconds: numeric('duration_seconds', { precision: 10, scale: 2 }).$type<number | null>(),
+    status: generatedMediaAssetStatus('status').notNull().default('ready'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    saveRequestedAt: timestamp('save_requested_at', { withTimezone: true }).notNull().defaultNow(),
+    savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('generated_media_assets_user_id_idx').on(table.userId),
+    index('generated_media_assets_run_id_idx').on(table.runId),
+    index('generated_media_assets_conversation_id_idx').on(table.conversationId),
+    index('generated_media_assets_artifact_id_idx').on(table.artifactId),
+    index('generated_media_assets_status_idx').on(table.status),
+    uniqueIndex('generated_media_assets_object_key_unique_idx').on(table.objectKey),
   ],
 );
 

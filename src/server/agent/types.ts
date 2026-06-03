@@ -49,6 +49,38 @@ export type AgentArtifactDto = {
   createdAt: string;
 };
 
+export type GeneratedMediaAssetStatus = 'ready' | 'deleted';
+
+export type GeneratedMediaAssetDto = {
+  id: string;
+  userId: string;
+  runId: string;
+  conversationId: string;
+  artifactId: string;
+  kind: Extract<AgentArtifactKind, 'image' | 'video'>;
+  title: string;
+  sourceProvider: string;
+  sourceModel: string;
+  sourceUrl: string | null;
+  sourceExpiresAt: string | null;
+  storageProvider: string;
+  bucket: string;
+  region: string;
+  objectKey: string;
+  mimeType: string | null;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  status: GeneratedMediaAssetStatus;
+  metadata: Record<string, unknown>;
+  saveRequestedAt: string;
+  savedAt: string;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type TransientAgentArtifactDto = {
   kind: Extract<AgentArtifactKind, 'image' | 'video'>;
   title: string;

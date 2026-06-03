@@ -739,23 +739,6 @@ async function runMediaOrchestration(input: {
     throw new Error('模型任务完成，但没有返回可展示的图片或视频。');
   }
 
-  const directMediaResults = result.artifacts
-    .map(toDirectMediaResult)
-    .filter((artifact): artifact is NonNullable<ReturnType<typeof toDirectMediaResult>> => artifact !== null);
-
-  try {
-    await appendRunEventsRequired(
-      input.repository,
-      input.running.id,
-      directMediaResults.map((artifact) => ({
-        eventType: 'artifact_completed',
-        payload: createDirectMediaEventPayload(artifact),
-      })),
-    );
-  } catch {
-    throw new Error('图片或视频结果推送失败，请重试。');
-  }
-
   const completed = requireUpdatedRun(
     await input.repository.completeRun(input.running.id, {
       finalMessage: result.finalMessage,
@@ -764,18 +747,40 @@ async function runMediaOrchestration(input: {
     'complete run',
   );
 
+  const directMediaPayloads = completed.artifacts
+    .map((artifact, index) => {
+      const directMedia = toDirectMediaResult(result.artifacts[index] ?? null);
+      if (!directMedia || (artifact.kind !== 'image' && artifact.kind !== 'video')) {
+        return null;
+      }
+
+      return {
+        eventType: 'artifact_completed' as const,
+        payload: createDirectMediaEventPayload(directMedia, {
+          artifactId: artifact.id,
+        }),
+      };
+    })
+    .filter((event): event is { eventType: 'artifact_completed'; payload: Record<string, unknown> } => event !== null);
+
+  try {
+    await appendRunEventsRequired(input.repository, input.running.id, directMediaPayloads);
+  } catch {
+    throw new Error('图片或视频结果推送失败，请重试。');
+  }
+
   await appendRunEventIfSupported(input.repository, completed.id, {
     eventType: 'run_completed',
     payload: {
       finalMessage: result.finalMessage,
-      artifactCount: directMediaResults.length,
+      artifactCount: directMediaPayloads.length,
       storageStatus: 'provider_direct',
       completedAt: new Date().toISOString(),
     },
   });
 
   await recordEventIfSupported(input.repository, completed.id, 'succeeded', 'Agent run succeeded', {
-    artifactCount: directMediaResults.length,
+    artifactCount: directMediaPayloads.length,
     storageStatus: 'provider_direct',
   });
 }
@@ -1044,19 +1049,6 @@ async function runImageProviderOrchestration(input: {
     },
   });
 
-  try {
-    await appendRunEventsRequired(
-      input.repository,
-      input.running.id,
-      directMediaResults.map((artifact) => ({
-        eventType: 'artifact_completed',
-        payload: createDirectMediaEventPayload(artifact),
-      })),
-    );
-  } catch {
-    throw new Error('图片或视频结果推送失败，请重试。');
-  }
-
   const completedSnapshot = {
     ...input.capabilitySnapshot,
     billing: {
@@ -1078,6 +1070,28 @@ async function runImageProviderOrchestration(input: {
     }),
     'complete run',
   );
+
+  const directMediaPayloads = completed.artifacts
+    .map((artifact, index) => {
+      const directMedia = directMediaResults[index];
+      if (!directMedia || (artifact.kind !== 'image' && artifact.kind !== 'video')) {
+        return null;
+      }
+
+      return {
+        eventType: 'artifact_completed' as const,
+        payload: createDirectMediaEventPayload(directMedia, {
+          artifactId: artifact.id,
+        }),
+      };
+    })
+    .filter((event): event is { eventType: 'artifact_completed'; payload: Record<string, unknown> } => event !== null);
+
+  try {
+    await appendRunEventsRequired(input.repository, input.running.id, directMediaPayloads);
+  } catch {
+    throw new Error('图片或视频结果推送失败，请重试。');
+  }
 
   await appendRunEventIfSupported(input.repository, completed.id, {
     eventType: 'run_completed',

@@ -100,6 +100,51 @@ test('memory agent run repository lifecycle methods mark running and complete wi
   assert.equal(completed?.artifacts[0].metadata.source, 'test');
 });
 
+test('memory agent run repository updates artifact save metadata without changing run status', async () => {
+  const repo = createMemoryAgentRunRepository();
+  const run = await repo.createRun({
+    userId: 'user-alice',
+    taskType: 'image',
+    prompt: '山水海报',
+    provider: 'doubao',
+    model: 'seedream-3',
+    capabilitySnapshot: {
+      bundleId: 'bundle-image',
+      bundleCode: 'image-default',
+      provider: 'doubao',
+      model: 'seedream-3',
+      capabilities: [],
+    },
+    input: {},
+  });
+
+  const completed = await repo.completeRun(run.id, {
+    finalMessage: '生成完成',
+    artifacts: [
+      {
+        kind: 'image',
+        title: '生成图片',
+        metadata: {
+          saveStatus: 'not_saved',
+          providerExpiresAt: '2026-06-03T12:00:00.000Z',
+        },
+      },
+    ],
+  });
+
+  const artifactId = completed?.artifacts[0]?.id;
+  assert.ok(artifactId);
+
+  const updated = await repo.updateArtifactSaveState(run.id, artifactId, {
+    saveStatus: 'saved',
+    savedAssetId: 'asset-1',
+  });
+
+  assert.equal(updated?.status, 'succeeded');
+  assert.equal(updated?.artifacts[0]?.metadata.saveStatus, 'saved');
+  assert.equal(updated?.artifacts[0]?.metadata.savedAssetId, 'asset-1');
+});
+
 test('memory agent run repository extracts selected model, usage, and billing metadata', async () => {
   const repo = createMemoryAgentRunRepository();
   const run = await repo.createRun({

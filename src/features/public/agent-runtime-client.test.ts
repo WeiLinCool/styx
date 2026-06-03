@@ -6,6 +6,7 @@ import {
   createAgentRun,
   createAgentRunEventsUrl,
   getAgentRunDetail,
+  listSavedMediaAssets,
   listImageModels,
   listChatModels,
   listVideoModels,
@@ -13,6 +14,7 @@ import {
   parseImageModel,
   parseVideoModel,
   parseStreamEventPayload,
+  saveGeneratedMedia,
   selectImageModelId,
   selectChatModelId,
   type ChatModelOption,
@@ -355,6 +357,106 @@ test('getAgentRunDetail returns typed run detail payload from API', async () => 
     assert.equal(detail.run.id, 'run-1');
     assert.equal(detail.events.length, 1);
     assert.equal(detail.events[0]?.eventType, 'assistant_delta');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('saveGeneratedMedia returns saved asset payload and artifact save state', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      asset: {
+        id: 'asset-1',
+        userId: 'user-1',
+        runId: 'run-1',
+        conversationId: 'conversation-1',
+        artifactId: 'artifact-1',
+        kind: 'image',
+        title: '生成图片',
+        sourceProvider: 'doubao',
+        sourceModel: 'seedream-3',
+        sourceUrl: null,
+        sourceExpiresAt: null,
+        storageProvider: 'tencent_cos',
+        bucket: 'bucket-a',
+        region: 'ap-shanghai',
+        objectKey: 'key',
+        mimeType: 'image/png',
+        byteSize: 1024,
+        width: 512,
+        height: 512,
+        durationSeconds: null,
+        status: 'ready',
+        metadata: {},
+        saveRequestedAt: '2026-06-03T12:00:00.000Z',
+        savedAt: '2026-06-03T12:00:01.000Z',
+        deletedAt: null,
+        createdAt: '2026-06-03T12:00:00.000Z',
+        updatedAt: '2026-06-03T12:00:01.000Z',
+      },
+      artifact: {
+        id: 'artifact-1',
+        kind: 'image',
+        title: '生成图片',
+        status: 'ready',
+        body: null,
+        url: null,
+        metadata: { saveStatus: 'saved', savedAssetId: 'asset-1' },
+        createdAt: '2026-06-03T12:00:00.000Z',
+      },
+    });
+
+  try {
+    const result = await saveGeneratedMedia({ runId: 'run-1', artifactId: 'artifact-1' });
+    assert.equal(result.asset.id, 'asset-1');
+    assert.equal(result.artifact.metadata.saveStatus, 'saved');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('listSavedMediaAssets returns saved asset rows from API payload', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      assets: [
+        {
+          id: 'asset-1',
+          userId: 'user-1',
+          runId: 'run-1',
+          conversationId: 'conversation-1',
+          artifactId: 'artifact-1',
+          kind: 'image',
+          title: '生成图片',
+          sourceProvider: 'doubao',
+          sourceModel: 'seedream-3',
+          sourceUrl: null,
+          sourceExpiresAt: null,
+          storageProvider: 'tencent_cos',
+          bucket: 'bucket-a',
+          region: 'ap-shanghai',
+          objectKey: 'key',
+          mimeType: 'image/png',
+          byteSize: 1024,
+          width: 512,
+          height: 512,
+          durationSeconds: null,
+          status: 'ready',
+          metadata: {},
+          saveRequestedAt: '2026-06-03T12:00:00.000Z',
+          savedAt: '2026-06-03T12:00:01.000Z',
+          deletedAt: null,
+          createdAt: '2026-06-03T12:00:00.000Z',
+          updatedAt: '2026-06-03T12:00:01.000Z',
+        },
+      ],
+    });
+
+  try {
+    const assets = await listSavedMediaAssets();
+    assert.equal(assets.length, 1);
+    assert.equal(assets[0]?.id, 'asset-1');
   } finally {
     globalThis.fetch = originalFetch;
   }

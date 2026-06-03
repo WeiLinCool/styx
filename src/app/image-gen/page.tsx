@@ -17,6 +17,7 @@ import {
   listImageModels,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
+  saveGeneratedMedia,
   type ImageModelMode,
   type ImageModelOption,
 } from '@/features/public/agent-runtime-client';
@@ -48,6 +49,7 @@ const acceptedSourceImageTypes = new Set(['image/png', 'image/jpeg', 'image/webp
 const maxSourceImageFileBytes = 7 * 1024 * 1024;
 
 type GeneratedImageResult = {
+  runId: string;
   artifact: DirectMediaResultDto;
   prompt: string;
 };
@@ -279,7 +281,7 @@ export default function ImageGenPage() {
       }
 
       imageReceivedRunIdRef.current = streamRunId;
-      setGeneratedImage({ artifact, prompt: submittedPrompt });
+      setGeneratedImage({ runId: streamRunId, artifact, prompt: submittedPrompt });
       setGenerationError(null);
       setGenerationMessage('图片已生成，请及时下载。');
     });
@@ -407,6 +409,45 @@ export default function ImageGenPage() {
       setGenerationMessage('提示词已复制。图片不会保存到服务器，请及时下载。');
     } catch {
       setGenerationError('提示词复制失败，请手动复制输入框内容。');
+    }
+  };
+
+  const handleSaveImage = async () => {
+    if (!generatedImage) return;
+    const artifactId =
+      typeof generatedImage.artifact.metadata.artifactId === 'string'
+        ? generatedImage.artifact.metadata.artifactId
+        : null;
+
+    if (!artifactId) {
+      setGenerationError('当前结果暂不支持保存到我的媒体。');
+      return;
+    }
+
+    try {
+      setGenerationError(null);
+      setGenerationMessage('正在保存到我的媒体...');
+      const result = await saveGeneratedMedia({
+        runId: generatedImage.runId,
+        artifactId,
+      });
+      setGeneratedImage((current) =>
+        current
+          ? {
+              ...current,
+              artifact: {
+                ...current.artifact,
+                metadata: {
+                  ...current.artifact.metadata,
+                  ...result.artifact.metadata,
+                },
+              },
+            }
+          : current,
+      );
+      setGenerationMessage('已保存到我的媒体，可在用户中心重复引用。');
+    } catch (error) {
+      setGenerationError(readRuntimeErrorMessage(error, '保存媒体失败'));
     }
   };
 
@@ -668,12 +709,20 @@ export default function ImageGenPage() {
                   <button onClick={handleDownloadImage} className="apple-btn apple-btn-primary flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-medium">
                     下载图片
                   </button>
+                  <button
+                    onClick={handleSaveImage}
+                    className="cursor-pointer rounded-xl border border-black/8 px-4 py-2.5 text-sm text-[#1d1d1f] transition-colors hover:border-black/15"
+                  >
+                    {generatedImage.artifact.metadata.saveStatus === 'saved' ? '已保存到我的媒体' : '保存到我的媒体'}
+                  </button>
                   <button onClick={handleCopyPrompt} className="cursor-pointer rounded-xl border border-black/8 px-4 py-2.5 text-sm text-[#1d1d1f] transition-colors hover:border-black/15">
                     复制提示词
                   </button>
                 </div>
                 <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
-                  生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。
+                  {generatedImage.artifact.metadata.saveStatus === 'saved'
+                    ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
+                    : '生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。'}
                 </div>
                 {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
                 {selectedModel ? <p className="text-xs text-[#6e6e73]">模型：{selectedModel.name}</p> : null}

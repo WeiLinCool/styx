@@ -9,6 +9,7 @@ import { HumanVerificationDialog } from '@/components/human-verification-dialog'
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 import { userCenterCartFixtures, userCenterPurchaseHistory } from '@/features/public/user-center-data';
+import { UserMediaModule } from '@/features/public/user-media-module';
 import { userApiRequest } from '@/lib/user-api-client';
 import { formatCredits } from '@/lib/credits';
 import {
@@ -16,6 +17,7 @@ import {
   shouldRefreshUserCenterOnResume,
 } from './refresh';
 import { ArrowLeft, ShoppingBag, Clock, Star, Crown, Camera, Edit3, Check, X, ChevronRight, Trash2, Minus, Plus, Gift, Copy, CalendarCheck } from 'lucide-react';
+import type { GeneratedMediaAssetDto } from '@/server/agent/types';
 
 interface CartItem {
   id: string;
@@ -68,6 +70,7 @@ export default function UserCenterPage() {
   const [checkinStatus, setCheckinStatus] = useState(user?.checkinStatus ?? null);
   const [subscriptionWorkOrder, setSubscriptionWorkOrder] =
     useState<SubscriptionWorkOrderSummary | null>(null);
+  const [savedMediaAssets, setSavedMediaAssets] = useState<GeneratedMediaAssetDto[]>([]);
   const [checkinPending, setCheckinPending] = useState(false);
   const [checkinVerificationOpen, setCheckinVerificationOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -147,17 +150,31 @@ export default function UserCenterPage() {
   useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user)) {
       setSubscriptionWorkOrder(null);
+      setSavedMediaAssets([]);
       return;
     }
 
     let cancelled = false;
     void (async () => {
-      const response = await userApiRequest('/api/membership/subscription-work-orders/current', {
-        cache: 'no-store',
-      });
-      const payload = await readJsonResponse(response);
-      if (!cancelled && response.ok) {
-        setSubscriptionWorkOrder(payload.subscriptionWorkOrder ?? null);
+      const [workOrderResponse, mediaResponse] = await Promise.all([
+        userApiRequest('/api/membership/subscription-work-orders/current', {
+          cache: 'no-store',
+        }),
+        userApiRequest('/api/user/media-assets', {
+          cache: 'no-store',
+        }),
+      ]);
+      const [workOrderPayload, mediaPayload] = await Promise.all([
+        readJsonResponse(workOrderResponse),
+        readJsonResponse(mediaResponse),
+      ]);
+      if (!cancelled) {
+        if (workOrderResponse.ok) {
+          setSubscriptionWorkOrder(workOrderPayload.subscriptionWorkOrder ?? null);
+        }
+        if (mediaResponse.ok) {
+          setSavedMediaAssets(Array.isArray(mediaPayload.assets) ? mediaPayload.assets : []);
+        }
       }
     })();
 
@@ -241,6 +258,12 @@ export default function UserCenterPage() {
       // ignore clipboard failures in unsupported contexts
     }
   };
+
+  const renderOverview = () => (
+    <div className="space-y-4">
+      <UserMediaModule assets={savedMediaAssets} />
+    </div>
+  );
 
   const handleRefreshInviteSummary = async () => {
     setInviteBusy(true);
@@ -412,6 +435,8 @@ export default function UserCenterPage() {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <div className="space-y-3">
+              {renderOverview()}
+
               <div
                 onClick={() => setActiveTab('cart')}
                 className="flex cursor-pointer items-center justify-between rounded-xl bg-[#f5f5f7] p-4 transition-all hover:bg-[#eee]"

@@ -36,6 +36,8 @@ test('POST accepts inviteCode and forwards it to registerOrLoginUser', async () 
         activatedAt: now,
         suspendedAt: null,
         archivedAt: null,
+        storageQuotaBytes: 0,
+        storageUsedBytes: 0,
         metadata: {},
         createdAt: now,
         updatedAt: now,

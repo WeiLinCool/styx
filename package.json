@@ -21,8 +21,9 @@
     "seed": "tsx src/server/db/seed.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.958.0",
-    "@aws-sdk/lib-storage": "^3.958.0",
+    "@aws-sdk/client-s3": "^3.975.0",
+    "@aws-sdk/lib-storage": "^3.975.0",
+    "@aws-sdk/s3-request-presigner": "^3.1057.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",

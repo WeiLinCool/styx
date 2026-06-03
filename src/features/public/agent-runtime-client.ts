@@ -4,6 +4,7 @@ import type {
   AgentTaskType,
   CreateAgentRunResult,
   DirectMediaResultDto,
+  GeneratedMediaAssetDto,
 } from '@/server/agent/types';
 import { userApiRequest } from '@/lib/user-api-client';
 
@@ -244,6 +245,38 @@ export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailDt
   }
 
   return payload;
+}
+
+export async function saveGeneratedMedia(input: {
+  runId: string;
+  artifactId: string;
+}): Promise<{ asset: GeneratedMediaAssetDto; artifact: AgentRunDetailDto['run']['artifacts'][number] }> {
+  const response = await userApiRequest('/api/user/media-assets', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '保存媒体失败');
+  }
+
+  return payload;
+}
+
+export async function listSavedMediaAssets(): Promise<GeneratedMediaAssetDto[]> {
+  const response = await userApiRequest('/api/user/media-assets', {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '媒体库加载失败');
+  }
+
+  return Array.isArray(payload?.assets) ? payload.assets : [];
 }
 
 export async function deleteAgentRun(runId: string): Promise<AgentRunDto> {

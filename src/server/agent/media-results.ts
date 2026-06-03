@@ -106,12 +106,24 @@ export function sanitizeDirectMediaArtifact(artifact: AgentArtifactInput): Sanit
       storageStatus: 'provider_direct',
       deliveryMode: media.delivery.mode,
       providerExpiresAt: media.delivery.expiresAt,
+      sourceUrl: media.delivery.url,
     },
   };
 }
 
 export function createDirectMediaEventPayload(
   artifact: DirectMediaResultDto,
+  input?: {
+    artifactId?: string;
+  },
 ): DirectMediaArtifactCompletedPayload {
-  return { artifact };
+  return {
+    artifact: {
+      ...artifact,
+      metadata: {
+        ...artifact.metadata,
+        ...(input?.artifactId ? { artifactId: input.artifactId } : {}),
+      },
+    },
+  };
 }

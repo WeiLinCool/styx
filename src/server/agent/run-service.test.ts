@@ -213,6 +213,7 @@ test('createAndRunAgentRun returns running image run and streams direct media co
   );
   assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.kind, 'image');
   assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.url, 'data:image/png;base64,abc');
+  assert.equal(typeof directMediaPayload(events[2]?.payload ?? {}).artifact.metadata.artifactId, 'string');
 });
 
 test('createAndRunAgentRun returns running video run and streams provider URL completion', async () => {
@@ -263,6 +264,7 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
     directMediaPayload(events[1]?.payload ?? {}).artifact.delivery.url,
     'https://provider.example/video.mp4',
   );
+  assert.equal(typeof directMediaPayload(events[1]?.payload ?? {}).artifact.metadata.artifactId, 'string');
 });
 
 test('createAndRunAgentRun returns transient image artifact from provider URL output', async () => {
@@ -414,7 +416,7 @@ test('createAndRunAgentRun marks media run failed when artifact_completed event 
   const events = await repository.listRunEvents(result.run.id);
 
   assert.equal(failed?.status, 'failed');
-  assert.equal(failed?.artifacts.length, 0);
+  assert.equal(failed?.artifacts.length, 1);
   assert.equal(failed?.errorMessage, '图片或视频结果推送失败，请重试。');
   assert.deepEqual(
     events.map((event) => event.eventType),
