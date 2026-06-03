@@ -208,6 +208,26 @@ export async function replaceMembershipPlanPermissionBindings(input: {
   });
 }
 
+export async function replaceMembershipPlanPermissionBindingsByPlanId(input: {
+  planId: string;
+  permissionCodes: string[];
+}) {
+  const database = requireDb('membership plan permission mutations');
+  const plan = await database.query.membershipPlans.findFirst({
+    where: eq(schema.membershipPlans.id, input.planId),
+    columns: { code: true },
+  });
+
+  if (!plan) {
+    throw new Error(`Unknown membership plan id: ${input.planId}`);
+  }
+
+  return replaceMembershipPlanPermissionBindings({
+    planCode: plan.code,
+    permissionCodes: input.permissionCodes,
+  });
+}
+
 export async function listMembershipPlanPermissionWorkspace(
   planCode: string,
 ): Promise<MembershipPlanPermissionWorkspace> {
@@ -273,4 +293,25 @@ export async function listMembershipPlanPermissionWorkspace(
     selectedCodes,
     modules: [...grouped.values()].sort((left, right) => left.key.localeCompare(right.key)),
   };
+}
+
+export async function listMembershipPlanPermissionWorkspaceByPlanId(
+  planId: string,
+): Promise<MembershipPlanPermissionWorkspace> {
+  const database = ensureAdminReadSource('membership plan permissions');
+  if (!database) {
+    const plan = seedPlans.find((item) => item.id === planId) ?? seedPlans[0]!;
+    return listMembershipPlanPermissionWorkspace(plan.code);
+  }
+
+  const plan = await database.query.membershipPlans.findFirst({
+    where: eq(schema.membershipPlans.id, planId),
+    columns: { code: true },
+  });
+
+  if (!plan) {
+    throw new Error(`Unknown membership plan id: ${planId}`);
+  }
+
+  return listMembershipPlanPermissionWorkspace(plan.code);
 }
