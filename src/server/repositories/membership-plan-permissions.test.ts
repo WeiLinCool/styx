@@ -4,6 +4,7 @@ import test from 'node:test';
 import { permissionCatalog } from '@/server/auth/permission-catalog';
 import {
   createMembershipPlanPermissionRepositoryHarness,
+  defaultMembershipPlanPermissionCodes,
   listMembershipPlanPermissionWorkspace,
 } from './membership-plan-permissions';
 
@@ -32,4 +33,8 @@ test('listMembershipPlanPermissionWorkspace returns grouped resources and select
   assert.equal(workspace.plan.code, 'pro-monthly');
   assert.ok(workspace.modules.some((module) => module.key === 'user-center'));
   assert.ok(workspace.selectedCodes.includes('page.user_center'));
+});
+
+test('defaultMembershipPlanPermissionCodes includes baseline access for yearly members', () => {
+  assert.deepEqual(defaultMembershipPlanPermissionCodes['team-yearly'], ['page.user_center']);
 });

@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import * as dotenv from 'dotenv';
 import { eq, sql } from 'drizzle-orm';
 import { Pool } from 'pg';
+import { defaultMembershipPlanPermissionCodes } from '@/server/repositories/membership-plan-permissions';
 import {
   adminRoles,
   activationTokens,
@@ -71,6 +72,7 @@ const ids = {
   permissionResourceUserCenterCopyInvite: '00000000-0000-4000-8000-000000000142',
   membershipPlanPermissionBindingUserCenterPage: '00000000-0000-4000-8000-000000000151',
   membershipPlanPermissionBindingUserCenterCopyInvite: '00000000-0000-4000-8000-000000000152',
+  membershipPlanPermissionBindingTeamUserCenterPage: '00000000-0000-4000-8000-000000000153',
 };
 
 async function main() {
@@ -306,16 +308,25 @@ async function main() {
   await db
     .insert(membershipPlanPermissionBindings)
     .values([
-      {
-        id: ids.membershipPlanPermissionBindingUserCenterPage,
+      ...defaultMembershipPlanPermissionCodes['pro-monthly'].map((code) => ({
+        id:
+          code === 'page.user_center'
+            ? ids.membershipPlanPermissionBindingUserCenterPage
+            : ids.membershipPlanPermissionBindingUserCenterCopyInvite,
         planId: ids.proPlan,
-        permissionResourceId: ids.permissionResourceUserCenterPage,
-      },
-      {
-        id: ids.membershipPlanPermissionBindingUserCenterCopyInvite,
-        planId: ids.proPlan,
-        permissionResourceId: ids.permissionResourceUserCenterCopyInvite,
-      },
+        permissionResourceId:
+          code === 'page.user_center'
+            ? ids.permissionResourceUserCenterPage
+            : ids.permissionResourceUserCenterCopyInvite,
+      })),
+      ...defaultMembershipPlanPermissionCodes['team-yearly'].map((code) => ({
+        id: ids.membershipPlanPermissionBindingTeamUserCenterPage,
+        planId: ids.teamPlan,
+        permissionResourceId:
+          code === 'page.user_center'
+            ? ids.permissionResourceUserCenterPage
+            : ids.permissionResourceUserCenterCopyInvite,
+      })),
     ])
     .onConflictDoNothing();
 

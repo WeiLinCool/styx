@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
+import { listActiveUserEntitlementsAt } from '@/server/ai/model-entitlements';
+import { resolveUserMembershipSnapshot } from '@/server/auth/membership-snapshot';
 import { listUserPermissionCodes } from '@/server/auth/permission-service';
 import { getCreditBalance } from '@/server/billing/credits';
 import { buildInviteUrl, formatBusinessDateInShanghai } from '@/server/points/service';
@@ -59,7 +61,16 @@ export async function GET(request: Request) {
       session.user.id,
       new URL(request.url).origin,
     );
-    const permissionCodes = await listUserPermissionCodes(session.user.id);
+    const now = new Date();
+    const entitlements = await listActiveUserEntitlementsAt(session.user.id, now);
+    const permissionCodes = await listUserPermissionCodes(session.user.id, {
+      now,
+      entitlements,
+    });
+    const membershipSnapshot = resolveUserMembershipSnapshot({
+      entitlements,
+      now,
+    });
 
     return createJsonResponse({
       authenticated: true,
@@ -69,9 +80,9 @@ export async function GET(request: Request) {
         avatar: session.user.phone ?? session.user.email ?? session.user.displayName,
         email: session.user.email ?? '',
         phone: session.user.phone ?? '',
-        membershipLevel: 'free',
-        membershipExpiry: null,
-        userLevel: 'free',
+        membershipLevel: membershipSnapshot.membershipLevel,
+        membershipExpiry: membershipSnapshot.membershipExpiry,
+        userLevel: membershipSnapshot.userLevel,
         accountState: session.user.accountState,
         displayName: session.user.displayName,
         mustResetPassword: session.user.metadata?.mustResetPassword === true,

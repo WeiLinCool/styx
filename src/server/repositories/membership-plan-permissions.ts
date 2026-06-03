@@ -33,15 +33,19 @@ export type MembershipPlanPermissionWorkspace = {
   modules: WorkspaceModuleGroup[];
 };
 
+export const defaultMembershipPlanPermissionCodes: Record<string, string[]> = {
+  'pro-monthly': ['page.user_center', 'action.user_center.copy_invite_code'],
+  'team-yearly': ['page.user_center'],
+};
+
 const seedPlans: WorkspacePlan[] = [
   { id: 'seed:pro-monthly', code: 'pro-monthly', name: 'Pro Monthly' },
   { id: 'seed:team-yearly', code: 'team-yearly', name: 'Team Yearly' },
 ];
 
-const seedBindings = new Map<string, string[]>([
-  ['pro-monthly', ['page.user_center', 'action.user_center.copy_invite_code']],
-  ['team-yearly', ['page.user_center']],
-]);
+const seedBindings = new Map<string, string[]>(
+  Object.entries(defaultMembershipPlanPermissionCodes).map(([planCode, codes]) => [planCode, [...codes]]),
+);
 
 function groupResources() {
   const grouped = new Map<string, WorkspaceModuleGroup>();
