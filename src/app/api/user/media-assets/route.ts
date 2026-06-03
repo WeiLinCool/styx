@@ -69,47 +69,49 @@ export function createMediaAssetsRouteHandlers(dependencies: {
   };
 }
 
-const service = createSaveGeneratedMediaService({
-  runRepository: getAgentRunRepository(),
-  mediaAssetRepository: getGeneratedMediaAssetRepository(),
-  userStorageRepository: getUserStorageRepository(),
-  cosClient: createTencentCosClient(),
-  async fetchSource(url) {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`无法获取待保存的媒体源，状态码 ${response.status}。`);
-    }
-
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    const mimeType = response.headers.get('content-type') ?? 'application/octet-stream';
-    return {
-      bytes: buffer,
-      mimeType,
-      byteSize: buffer.byteLength,
-      width: null,
-      height: null,
-      durationSeconds: null,
-    };
-  },
-  createObjectKey({ userId, conversationId, runId, assetId, mimeType }) {
-    const ext =
-      mimeType === 'image/png'
-        ? '.png'
-        : mimeType === 'image/jpeg'
-          ? '.jpg'
-          : mimeType === 'image/webp'
-            ? '.webp'
-            : mimeType === 'video/mp4'
-              ? '.mp4'
-              : '';
-
-    return `ai-generated/${process.env.NODE_ENV ?? 'development'}/users/${userId}/conversations/${conversationId}/runs/${runId}/${assetId}${ext}`;
-  },
-});
-
 const handlers = createMediaAssetsRouteHandlers({
   requireSession: requireActiveAccount,
-  saveGeneratedMedia: (input) => service.saveForUser(input),
+  saveGeneratedMedia: async (input) => {
+    const service = createSaveGeneratedMediaService({
+      runRepository: getAgentRunRepository(),
+      mediaAssetRepository: getGeneratedMediaAssetRepository(),
+      userStorageRepository: getUserStorageRepository(),
+      cosClient: createTencentCosClient(),
+      async fetchSource(url) {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`无法获取待保存的媒体源，状态码 ${response.status}。`);
+        }
+
+        const buffer = new Uint8Array(await response.arrayBuffer());
+        const mimeType = response.headers.get('content-type') ?? 'application/octet-stream';
+        return {
+          bytes: buffer,
+          mimeType,
+          byteSize: buffer.byteLength,
+          width: null,
+          height: null,
+          durationSeconds: null,
+        };
+      },
+      createObjectKey({ userId, conversationId, runId, assetId, mimeType }) {
+        const ext =
+          mimeType === 'image/png'
+            ? '.png'
+            : mimeType === 'image/jpeg'
+              ? '.jpg'
+              : mimeType === 'image/webp'
+                ? '.webp'
+                : mimeType === 'video/mp4'
+                  ? '.mp4'
+                  : '';
+
+        return `ai-generated/${process.env.NODE_ENV ?? 'development'}/users/${userId}/conversations/${conversationId}/runs/${runId}/${assetId}${ext}`;
+      },
+    });
+
+    return service.saveForUser(input);
+  },
   listSavedAssets: (userId) => getGeneratedMediaAssetRepository().listSavedAssetsForUser(userId),
 });
 

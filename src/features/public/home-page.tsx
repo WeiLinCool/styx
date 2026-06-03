@@ -64,6 +64,11 @@ function Navbar({
           <Link href="/home" className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#1d1d1f] transition-all hover:bg-black/[0.04] hover:backdrop-blur-md">
             首页
           </Link>
+          {isLoggedIn && user ? (
+            <Link href="/my-assets" className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#1d1d1f] transition-all hover:bg-black/[0.04] hover:backdrop-blur-md">
+              我的资料
+            </Link>
+          ) : null}
           {links.map((l) => (
             <Link key={l.href} href={l.href} className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#1d1d1f] transition-all hover:bg-black/[0.04] hover:backdrop-blur-md">
               {l.label}
@@ -130,6 +135,11 @@ function Navbar({
             <Link href="/home" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 text-[13px] text-[#1d1d1f] hover:bg-black/[0.04]">
               首页
             </Link>
+            {isLoggedIn && user ? (
+              <Link href="/my-assets" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 text-[13px] text-[#1d1d1f] hover:bg-black/[0.04]">
+                我的资料
+              </Link>
+            ) : null}
             {links.map((l) => (
               <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 text-[13px] text-[#1d1d1f] hover:bg-black/[0.04]">
                 {l.label}

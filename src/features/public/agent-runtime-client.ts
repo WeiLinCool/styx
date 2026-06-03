@@ -279,6 +279,32 @@ export async function listSavedMediaAssets(): Promise<GeneratedMediaAssetDto[]> 
   return Array.isArray(payload?.assets) ? payload.assets : [];
 }
 
+export async function getSavedMediaAssetAccess(
+  assetId: string,
+  disposition: 'preview' | 'download',
+): Promise<{
+  assetId: string;
+  disposition: 'preview' | 'download';
+  url: string;
+  expiresAt: string;
+  mimeType: string | null;
+}> {
+  const response = await userApiRequest(
+    `/api/user/media-assets/${assetId}/access?disposition=${disposition}`,
+    {
+      method: 'GET',
+      cache: 'no-store',
+    },
+  );
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '资料访问失败');
+  }
+
+  return payload.access;
+}
+
 export async function deleteAgentRun(runId: string): Promise<AgentRunDto> {
   const response = await userApiRequest(`/api/agent/runs/${runId}`, {
     method: 'DELETE',
