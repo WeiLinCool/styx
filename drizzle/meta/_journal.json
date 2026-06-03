@@ -120,6 +120,13 @@
       "when": 1780469663283,
       "tag": "0016_cloudy_hannibal_king",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1780478865698,
+      "tag": "0017_broad_wendigo",
+      "breakpoints": true
     }
   ]
 }

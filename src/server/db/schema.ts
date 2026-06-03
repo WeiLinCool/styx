@@ -220,6 +220,13 @@ export const contentAssetStatus = pgEnum('content_asset_status', [
   'archived',
 ]);
 
+export const permissionResourceType = pgEnum('permission_resource_type', [
+  'menu',
+  'page',
+  'action',
+  'api',
+]);
+
 export const generatedMediaAssetStatus = pgEnum('generated_media_asset_status', [
   'ready',
   'deleted',
@@ -518,6 +525,53 @@ export const userEntitlements = pgTable(
   (table) => [
     index('user_entitlements_user_id_idx').on(table.userId),
     index('user_entitlements_expiry_idx').on(table.expiresAt),
+  ],
+);
+
+export const permissionResources = pgTable(
+  'permission_resources',
+  {
+    id,
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    resourceType: permissionResourceType('resource_type').notNull(),
+    module: text('module').notNull(),
+    description: text('description'),
+    routePattern: text('route_pattern'),
+    actionKey: text('action_key'),
+    isActive: boolean('is_active').notNull().default(true),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('permission_resources_code_unique_idx').on(table.code),
+    index('permission_resources_type_idx').on(table.resourceType),
+    index('permission_resources_module_idx').on(table.module),
+    index('permission_resources_active_idx').on(table.isActive),
+  ],
+);
+
+export const membershipPlanPermissionBindings = pgTable(
+  'membership_plan_permission_bindings',
+  {
+    id,
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => membershipPlans.id, { onDelete: 'cascade' }),
+    permissionResourceId: uuid('permission_resource_id')
+      .notNull()
+      .references(() => permissionResources.id, { onDelete: 'cascade' }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('membership_plan_permission_bindings_unique_idx').on(
+      table.planId,
+      table.permissionResourceId,
+    ),
+    index('membership_plan_permission_bindings_plan_idx').on(table.planId),
+    index('membership_plan_permission_bindings_resource_idx').on(table.permissionResourceId),
   ],
 );
 

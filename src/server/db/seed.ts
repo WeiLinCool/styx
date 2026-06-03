@@ -12,10 +12,12 @@ import {
   auditEvents,
   benefits,
   contentAssets,
+  membershipPlanPermissionBindings,
   membershipPlans,
   orderEvents,
   orders,
   partnerLeads,
+  permissionResources,
   products,
   systemSettings,
   userEntitlements,
@@ -65,6 +67,10 @@ const ids = {
   aiModelProImageRequirement: '00000000-0000-4000-8000-000000000129',
   aiModelFreeVideoRequirement: '00000000-0000-4000-8000-000000000132',
   aiModelProVideoRequirement: '00000000-0000-4000-8000-000000000133',
+  permissionResourceUserCenterPage: '00000000-0000-4000-8000-000000000141',
+  permissionResourceUserCenterCopyInvite: '00000000-0000-4000-8000-000000000142',
+  membershipPlanPermissionBindingUserCenterPage: '00000000-0000-4000-8000-000000000151',
+  membershipPlanPermissionBindingUserCenterCopyInvite: '00000000-0000-4000-8000-000000000152',
 };
 
 async function main() {
@@ -252,6 +258,66 @@ async function main() {
         updatedAt: new Date(),
       },
     });
+
+  await db
+    .insert(permissionResources)
+    .values([
+      {
+        id: ids.permissionResourceUserCenterPage,
+        code: 'page.user_center',
+        name: '用户中心页面',
+        resourceType: 'page',
+        module: 'user-center',
+        description: '允许访问用户中心页面。',
+        routePattern: '/user-center',
+        metadata: { seed: true, dependsOn: [], recommendedWith: [] },
+      },
+      {
+        id: ids.permissionResourceUserCenterCopyInvite,
+        code: 'action.user_center.copy_invite_code',
+        name: '复制邀请码按钮',
+        resourceType: 'action',
+        module: 'user-center',
+        description: '允许在用户中心复制邀请码。',
+        actionKey: 'copy_invite_code',
+        metadata: {
+          seed: true,
+          dependsOn: ['page.user_center'],
+          recommendedWith: [],
+        },
+      },
+    ])
+    .onConflictDoUpdate({
+      target: permissionResources.id,
+      set: {
+        code: sql`excluded.code`,
+        name: sql`excluded.name`,
+        resourceType: sql`excluded.resource_type`,
+        module: sql`excluded.module`,
+        description: sql`excluded.description`,
+        routePattern: sql`excluded.route_pattern`,
+        actionKey: sql`excluded.action_key`,
+        isActive: true,
+        metadata: sql`excluded.metadata`,
+        updatedAt: new Date(),
+      },
+    });
+
+  await db
+    .insert(membershipPlanPermissionBindings)
+    .values([
+      {
+        id: ids.membershipPlanPermissionBindingUserCenterPage,
+        planId: ids.proPlan,
+        permissionResourceId: ids.permissionResourceUserCenterPage,
+      },
+      {
+        id: ids.membershipPlanPermissionBindingUserCenterCopyInvite,
+        planId: ids.proPlan,
+        permissionResourceId: ids.permissionResourceUserCenterCopyInvite,
+      },
+    ])
+    .onConflictDoNothing();
 
   await db
     .insert(aiProviders)
