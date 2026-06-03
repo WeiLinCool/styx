@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { HomepageContent } from '@/features/public/home-content';
+import { filterMenuItemsByPermissions } from '@/features/public/permissioned-menu';
 import {
   Menu, X, ArrowRight, Camera, Check, Hammer, Truck, Star,
   ChevronDown, ChevronRight, ImageIcon, Video, Workflow,
@@ -35,9 +36,11 @@ function Reveal({ children, className }: { children: ReactNode; className?: stri
 function Navbar({
   nav,
   onLoginClick,
+  permissionCodes,
 }: {
   nav: HomepageContent['nav'];
   onLoginClick: () => void;
+  permissionCodes: string[];
 }) {
   const router = useRouter();
   const { user, isLoggedIn, logout } = useAuth();
@@ -50,7 +53,7 @@ function Navbar({
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  const links = nav.publicNavLinks;
+  const links = filterMenuItemsByPermissions(nav.publicNavLinks, permissionCodes);
 
   return (
     <nav className={`fixed top-3 right-0 left-0 z-50 px-4 transition-all duration-500 ${scrolled ? 'opacity-100' : 'opacity-100'}`}>
@@ -491,13 +494,19 @@ function Footer() {
 }
 
 /* ── 主页 ── */
-export function HomePageClient({ content }: { content: HomepageContent }) {
+export function HomePageClient({
+  content,
+  permissionCodes,
+}: {
+  content: HomepageContent;
+  permissionCodes: string[];
+}) {
   const { openLoginModal } = useAuth();
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-white text-[#1d1d1f]">
-      <Navbar nav={content.nav} onLoginClick={openLoginModal} />
+      <Navbar nav={content.nav} onLoginClick={openLoginModal} permissionCodes={permissionCodes} />
       <main>
         <HeroSection content={content.hero} onStartCreate={() => setCreateModalOpen(true)} />
         <StoneIntroSection content={content.stoneIntro} />

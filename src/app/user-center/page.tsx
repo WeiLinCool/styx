@@ -148,11 +148,27 @@ export default function UserCenterPage() {
   }, [isLoggedIn, pathname, refreshUserCenterSnapshot, user]);
 
   useEffect(() => {
+    if (
+      isLoggedIn &&
+      user &&
+      !requiresActivation(user) &&
+      Array.isArray(user.permissionCodes) &&
+      !user.permissionCodes.includes('page.user_center')
+    ) {
+      router.replace('/forbidden');
+    }
+  }, [isLoggedIn, router, user]);
+
+  useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user)) {
       setSubscriptionWorkOrder(null);
       setSavedMediaAssets([]);
       return;
     }
+
+    const canReadMediaAssets = Array.isArray(user.permissionCodes)
+      ? user.permissionCodes.includes('api.user.media_assets.list')
+      : true;
 
     let cancelled = false;
     void (async () => {
@@ -160,9 +176,11 @@ export default function UserCenterPage() {
         userApiRequest('/api/membership/subscription-work-orders/current', {
           cache: 'no-store',
         }),
-        userApiRequest('/api/user/media-assets', {
-          cache: 'no-store',
-        }),
+        canReadMediaAssets
+          ? userApiRequest('/api/user/media-assets', {
+              cache: 'no-store',
+            })
+          : Promise.resolve(new Response(JSON.stringify({ assets: [] }), { status: 200 })),
       ]);
       const [workOrderPayload, mediaPayload] = await Promise.all([
         readJsonResponse(workOrderResponse),
@@ -181,7 +199,7 @@ export default function UserCenterPage() {
     return () => {
       cancelled = true;
     };
-  }, [isLoggedIn, user]);
+  }, [isLoggedIn, user, router]);
 
   if (!isLoggedIn || !user) {
     return null;
@@ -207,6 +225,12 @@ export default function UserCenterPage() {
   const totalCartPrice = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const maskedPhone = user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
   const membershipLabel = user.membershipLevel === 'free' ? '免费' : user.membershipLevel === 'monthly' ? '月度' : '年度';
+  const permissionCodes = Array.isArray(user.permissionCodes) ? user.permissionCodes : null;
+  const canAccessUserCenter = permissionCodes ? permissionCodes.includes('page.user_center') : true;
+  const canCopyInviteCode = permissionCodes
+    ? permissionCodes.includes('action.user_center.copy_invite_code')
+    : true;
+  const canCheckin = permissionCodes ? permissionCodes.includes('api.user.points.checkin') : true;
   const subscriptionWorkOrderLabel = subscriptionWorkOrder?.result === 'approved'
     ? '已通过'
     : subscriptionWorkOrder?.result === 'rejected'
@@ -286,6 +310,11 @@ export default function UserCenterPage() {
   };
 
   const handleStartDailyCheckin = async () => {
+    if (!canCheckin) {
+      setActionMessage('当前会员方案暂无签到权限。');
+      return;
+    }
+
     if (checkinPending || checkinStatus?.checkedIn) {
       return;
     }
@@ -489,20 +518,22 @@ export default function UserCenterPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      if (inviteSummary?.inviteLink) {
-                        void copyInviteValue(inviteSummary.inviteLink);
-                      } else {
-                        void handleRefreshInviteSummary();
-                      }
-                    }}
-                    disabled={inviteBusy}
-                    className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-white px-3 py-1 text-[10px] font-medium text-[#1d1d1f] disabled:opacity-50"
-                  >
-                    <Copy className="h-3 w-3" />
-                    {inviteSummary?.inviteLink ? '复制链接' : '刷新'}
-                  </button>
+                  {canCopyInviteCode ? (
+                    <button
+                      onClick={() => {
+                        if (inviteSummary?.inviteLink) {
+                          void copyInviteValue(inviteSummary.inviteLink);
+                        } else {
+                          void handleRefreshInviteSummary();
+                        }
+                      }}
+                      disabled={inviteBusy}
+                      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-white px-3 py-1 text-[10px] font-medium text-[#1d1d1f] disabled:opacity-50"
+                    >
+                      <Copy className="h-3 w-3" />
+                      {inviteSummary?.inviteLink ? '复制链接' : '刷新'}
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -524,12 +555,12 @@ export default function UserCenterPage() {
                   </div>
                   <button
                     onClick={() => void handleStartDailyCheckin()}
-                    disabled={checkinPending || checkinStatus?.checkedIn}
+                    disabled={!canCheckin || checkinPending || checkinStatus?.checkedIn}
                     className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-medium text-white ${
-                      checkinPending || checkinStatus?.checkedIn ? 'bg-[#c7c7cc]' : 'bg-[#1d1d1f]'
+                      !canCheckin || checkinPending || checkinStatus?.checkedIn ? 'bg-[#c7c7cc]' : 'bg-[#1d1d1f]'
                     }`}
                   >
-                    {checkinPending ? '签到中' : checkinStatus?.checkedIn ? '今日已签' : '立即签到'}
+                    {!canCheckin ? '无权限' : checkinPending ? '签到中' : checkinStatus?.checkedIn ? '今日已签' : '立即签到'}
                   </button>
                 </div>
               </div>
@@ -809,3 +840,6 @@ export default function UserCenterPage() {
     </div>
   );
 }
+  if (!canAccessUserCenter) {
+    return null;
+  }

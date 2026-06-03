@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
-import { requireActiveAccount } from '@/server/auth/guards';
+import { requireAuthenticatedUserPermission } from '@/server/auth/guards';
 import { readJsonBody } from '@/server/api-request-guard';
 import { grantCredits } from '@/server/billing/credits';
 import { getServerCache } from '@/server/cache/server-cache';
@@ -36,7 +36,7 @@ function getPreviousBusinessDate(date = new Date()) {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireActiveAccount();
+    const session = await requireAuthenticatedUserPermission('api.user.points.checkin');
     const parsed = await readJsonBody(request);
     const body = parseDailyCheckinBody(parsed.body);
 

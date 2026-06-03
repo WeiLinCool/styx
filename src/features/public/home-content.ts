@@ -22,6 +22,7 @@ export type LinkItem = {
   label: string;
   href: string;
   desc?: string;
+  permissionCode?: string;
 };
 
 export type HomepageContent = {
@@ -78,6 +79,7 @@ const linkSchema = z.object({
   label: requiredText,
   href: internalHrefSchema,
   desc: z.string().trim().optional(),
+  permissionCode: z.string().trim().min(1).optional(),
 });
 
 const heroSchema = z.object({

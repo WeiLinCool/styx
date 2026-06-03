@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { requireActiveAccount } from '@/server/auth/guards';
+import { accountErrorToResponse } from '@/server/auth/account-types';
+import { requireAuthenticatedUserPermission } from '@/server/auth/guards';
 import { getGeneratedMediaAssetRepository } from '@/server/repositories/generated-media-assets';
 import { getAgentRunRepository } from '@/server/repositories/agent-runs';
 import { createSaveGeneratedMediaService } from '@/server/media/save-generated-media';
@@ -36,9 +37,14 @@ export function createMediaAssetsRouteHandlers(dependencies: {
 }) {
   return {
     async GET() {
-      const session = await dependencies.requireSession();
-      const assets = await dependencies.listSavedAssets(session.user.id);
-      return NextResponse.json({ assets });
+      try {
+        const session = await dependencies.requireSession();
+        const assets = await dependencies.listSavedAssets(session.user.id);
+        return NextResponse.json({ assets });
+      } catch (error) {
+        const response = accountErrorToResponse(error);
+        return NextResponse.json(response.body, { status: response.status });
+      }
     },
     async POST(request: Request) {
       try {
@@ -59,6 +65,11 @@ export function createMediaAssetsRouteHandlers(dependencies: {
           return jsonError('invalid_request', error.issues[0]?.message ?? '媒体保存请求无效。', 400);
         }
 
+        const response = accountErrorToResponse(error);
+        if (response.status !== 500) {
+          return NextResponse.json(response.body, { status: response.status });
+        }
+
         return jsonError(
           'media_save_failed',
           error instanceof Error ? error.message : '媒体保存失败。',
@@ -70,7 +81,7 @@ export function createMediaAssetsRouteHandlers(dependencies: {
 }
 
 const handlers = createMediaAssetsRouteHandlers({
-  requireSession: requireActiveAccount,
+  requireSession: () => requireAuthenticatedUserPermission('api.user.media_assets.list'),
   saveGeneratedMedia: async (input) => {
     const service = createSaveGeneratedMediaService({
       runRepository: getAgentRunRepository(),

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { AccountDomainError } from '@/server/auth/account-types';
 import { createMediaAssetsRouteHandlers } from './route';
 
 test('POST /api/user/media-assets saves a generated artifact for the current user', async () => {
@@ -112,4 +113,22 @@ test('GET /api/user/media-assets lists saved assets for the current user', async
   const body = await response.json();
   assert.equal(body.assets.length, 1);
   assert.equal(body.assets[0].id, 'asset-1');
+});
+
+test('GET /api/user/media-assets returns permission_denied when session guard rejects access', async () => {
+  const handlers = createMediaAssetsRouteHandlers({
+    requireSession: async () => {
+      throw new AccountDomainError('permission_denied', 'Permission denied: api.user.media_assets.list', 403);
+    },
+    saveGeneratedMedia: async () => {
+      throw new Error('should not be called');
+    },
+    listSavedAssets: async () => [],
+  });
+
+  const response = await handlers.GET();
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error.code, 'permission_denied');
 });

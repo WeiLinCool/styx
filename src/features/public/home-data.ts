@@ -16,6 +16,7 @@ export const publicNavLinks = [
   { href: '/membership', label: '会员' },
   { href: '/user-benefits', label: '用户权益' },
   { href: '/partner-benefits', label: '合伙权益' },
+  { href: '/user-center', label: '用户中心', permissionCode: 'menu.user_center' },
 ];
 
 export const productValueProps = [
