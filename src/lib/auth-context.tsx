@@ -39,6 +39,7 @@ export type AuthUserInfo = UserInfo & {
   inviteSummary?: UserInviteSummary;
   checkinStatus?: UserCheckinStatus;
   recentPointActivities?: UserPointActivity[];
+  permissionCodes?: string[];
 };
 
 interface AuthContextType {

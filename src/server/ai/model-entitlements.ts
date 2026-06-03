@@ -94,6 +94,17 @@ export async function listActiveUserEntitlements(userId: string): Promise<Active
     return [];
   }
 
+  return listActiveUserEntitlementsAt(userId, new Date());
+}
+
+export async function listActiveUserEntitlementsAt(
+  userId: string,
+  now: Date,
+): Promise<ActiveUserEntitlement[]> {
+  if (!db || !process.env.DATABASE_URL) {
+    return [];
+  }
+
   const rows = await db
     .select({
       planCode: schema.membershipPlans.code,
@@ -108,8 +119,8 @@ export async function listActiveUserEntitlements(userId: string): Promise<Active
     .where(
       and(
         eq(schema.userEntitlements.userId, userId),
-        lte(schema.userEntitlements.startsAt, new Date()),
-        or(isNull(schema.userEntitlements.expiresAt), gt(schema.userEntitlements.expiresAt, new Date())),
+        lte(schema.userEntitlements.startsAt, now),
+        or(isNull(schema.userEntitlements.expiresAt), gt(schema.userEntitlements.expiresAt, now)),
       ),
     );
 

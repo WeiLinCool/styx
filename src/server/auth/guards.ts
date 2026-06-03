@@ -1,4 +1,5 @@
 import { AccountDomainError } from './account-types';
+import { requireUserPermission } from './permission-service';
 import { resolveAdminSession } from './admin-auth';
 import { resolveSession } from './session';
 
@@ -31,5 +32,11 @@ export async function requireAdmin() {
     throw new AccountDomainError('admin_required', 'Admin access is required.', 403);
   }
 
+  return session;
+}
+
+export async function requireAuthenticatedUserPermission(code: string) {
+  const session = await requireActiveAccount();
+  await requireUserPermission(session, code);
   return session;
 }

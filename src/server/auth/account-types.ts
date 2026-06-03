@@ -23,6 +23,7 @@ export type AccountErrorCode =
   | 'membership_plan_not_found'
   | 'membership_plan_unavailable'
   | 'identity_conflict'
+  | 'permission_denied'
   | 'session_required'
   | 'admin_required'
   | 'database_unavailable';

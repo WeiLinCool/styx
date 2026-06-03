@@ -16,6 +16,7 @@ export interface UserInfo {
   accountState?: AccountState;
   mustResetPassword?: boolean;
   points: number;
+  permissionCodes?: string[];
 }
 
 const USER_COOKIE_KEY = 'nfai_user';

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
+import { listUserPermissionCodes } from '@/server/auth/permission-service';
 import { getCreditBalance } from '@/server/billing/credits';
 import { buildInviteUrl, formatBusinessDateInShanghai } from '@/server/points/service';
 import { resolveSession } from '@/server/auth/session';
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
       session.user.id,
       new URL(request.url).origin,
     );
+    const permissionCodes = await listUserPermissionCodes(session.user.id);
 
     return createJsonResponse({
       authenticated: true,
@@ -74,6 +76,7 @@ export async function GET(request: Request) {
         displayName: session.user.displayName,
         mustResetPassword: session.user.metadata?.mustResetPassword === true,
         points: overview.points,
+        permissionCodes,
         inviteSummary: overview.inviteSummary,
         checkinStatus: overview.checkinStatus,
         recentPointActivities: overview.recentPointActivities,
