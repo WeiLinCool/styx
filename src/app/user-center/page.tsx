@@ -241,6 +241,10 @@ export default function UserCenterPage() {
           ? '已归档'
           : '待处理';
 
+  if (!canAccessUserCenter) {
+    return null;
+  }
+
   const handleSave = (field: string) => {
     if (!editValue.trim()) { setEditingField(null); return; }
     updateUser({ [field]: editValue.trim() });
@@ -840,6 +844,3 @@ export default function UserCenterPage() {
     </div>
   );
 }
-  if (!canAccessUserCenter) {
-    return null;
-  }

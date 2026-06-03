@@ -130,65 +130,28 @@ export async function getAdminPermissionResourceOverview(): Promise<AdminPermiss
     .from(schema.permissionResources)
     .orderBy(asc(schema.permissionResources.module), asc(schema.permissionResources.code));
 
+  const records = rows.map((row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    resourceType: row.resourceType,
+    module: row.module,
+    description: row.description ?? '',
+    routePattern: row.routePattern,
+    actionKey: row.actionKey,
+    isActive: row.isActive,
+    dependsOn: Array.isArray(row.metadata.dependsOn)
+      ? row.metadata.dependsOn.filter((value): value is string => typeof value === 'string')
+      : [],
+    recommendedWith: Array.isArray(row.metadata.recommendedWith)
+      ? row.metadata.recommendedWith.filter((value): value is string => typeof value === 'string')
+      : [],
+  }));
+
+  const overview = buildOverview(records);
   return {
+    ...overview,
     source: 'database',
-    ...buildOverview(
-      rows.map((row) => ({
-        id: row.id,
-        code: row.code,
-        name: row.name,
-        resourceType: row.resourceType,
-        module: row.module,
-        description: row.description ?? '',
-        routePattern: row.routePattern,
-        actionKey: row.actionKey,
-        isActive: row.isActive,
-        dependsOn: Array.isArray(row.metadata.dependsOn)
-          ? row.metadata.dependsOn.filter((value): value is string => typeof value === 'string')
-          : [],
-        recommendedWith: Array.isArray(row.metadata.recommendedWith)
-          ? row.metadata.recommendedWith.filter((value): value is string => typeof value === 'string')
-          : [],
-      })),
-    ).records,
-    metrics: buildOverview(
-      rows.map((row) => ({
-        id: row.id,
-        code: row.code,
-        name: row.name,
-        resourceType: row.resourceType,
-        module: row.module,
-        description: row.description ?? '',
-        routePattern: row.routePattern,
-        actionKey: row.actionKey,
-        isActive: row.isActive,
-        dependsOn: Array.isArray(row.metadata.dependsOn)
-          ? row.metadata.dependsOn.filter((value): value is string => typeof value === 'string')
-          : [],
-        recommendedWith: Array.isArray(row.metadata.recommendedWith)
-          ? row.metadata.recommendedWith.filter((value): value is string => typeof value === 'string')
-          : [],
-      })),
-    ).metrics,
-    filters: buildOverview(
-      rows.map((row) => ({
-        id: row.id,
-        code: row.code,
-        name: row.name,
-        resourceType: row.resourceType,
-        module: row.module,
-        description: row.description ?? '',
-        routePattern: row.routePattern,
-        actionKey: row.actionKey,
-        isActive: row.isActive,
-        dependsOn: Array.isArray(row.metadata.dependsOn)
-          ? row.metadata.dependsOn.filter((value): value is string => typeof value === 'string')
-          : [],
-        recommendedWith: Array.isArray(row.metadata.recommendedWith)
-          ? row.metadata.recommendedWith.filter((value): value is string => typeof value === 'string')
-          : [],
-      })),
-    ).filters,
   };
 }
 
