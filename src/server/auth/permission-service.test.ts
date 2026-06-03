@@ -7,6 +7,7 @@ import { listUserPermissionCodes, requireUserPermission } from './permission-ser
 
 const activeProEntitlement: ActiveUserEntitlement = {
   planCode: 'pro-monthly',
+  planVersionId: 'version-pro-v1',
   benefitCode: null,
   source: 'membership',
   startsAt: '2026-01-01T00:00:00.000Z',
@@ -15,6 +16,7 @@ const activeProEntitlement: ActiveUserEntitlement = {
 
 const expiredTeamEntitlement: ActiveUserEntitlement = {
   planCode: 'team-yearly',
+  planVersionId: 'version-team-v1',
   benefitCode: null,
   source: 'membership',
   startsAt: '2026-01-01T00:00:00.000Z',
@@ -32,6 +34,23 @@ test('listUserPermissionCodes resolves codes from active entitlement plans only'
   });
 
   assert.deepEqual(codes, ['menu.user_center', 'page.user_center']);
+});
+
+test('listUserPermissionCodes resolves codes from active entitlement versions when provided', async () => {
+  const codes = await listUserPermissionCodes('user-1', {
+    now: new Date('2026-06-03T00:00:00.000Z'),
+    entitlements: [activeProEntitlement, expiredTeamEntitlement],
+    planPermissionCodes: {
+      'pro-monthly': ['menu.user_center'],
+      'team-yearly': ['page.team_workspace'],
+    },
+    versionPermissionCodes: {
+      'version-pro-v1': ['page.user_center', 'action.user_center.copy_invite_code'],
+      'version-team-v1': ['page.team_workspace'],
+    },
+  });
+
+  assert.deepEqual(codes, ['action.user_center.copy_invite_code', 'page.user_center']);
 });
 
 test('requireUserPermission throws on missing permission', async () => {

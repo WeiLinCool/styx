@@ -9,6 +9,7 @@ import {
 
 const activePlanEntitlement: ActiveUserEntitlement = {
   planCode: 'pro-monthly',
+  planVersionId: 'version-pro-v1',
   benefitCode: null,
   source: 'membership',
   startsAt: '2026-01-01T00:00:00.000Z',
@@ -17,6 +18,7 @@ const activePlanEntitlement: ActiveUserEntitlement = {
 
 const expiredPlanEntitlement: ActiveUserEntitlement = {
   planCode: 'pro-monthly',
+  planVersionId: 'version-pro-v1',
   benefitCode: null,
   source: 'membership',
   startsAt: '2026-01-01T00:00:00.000Z',
@@ -25,6 +27,7 @@ const expiredPlanEntitlement: ActiveUserEntitlement = {
 
 const futurePlanEntitlement: ActiveUserEntitlement = {
   planCode: 'pro-monthly',
+  planVersionId: 'version-pro-v1',
   benefitCode: null,
   source: 'membership',
   startsAt: '2026-06-01T00:00:00.000Z',
@@ -92,6 +95,7 @@ test('evaluateModelEntitlement rejects malformed membership plan requirement wit
     entitlements: [
       {
         planCode: null,
+        planVersionId: null,
         benefitCode: null,
         source: 'membership',
         startsAt: '2026-01-01T00:00:00.000Z',

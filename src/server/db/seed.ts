@@ -13,8 +13,11 @@ import {
   auditEvents,
   benefits,
   contentAssets,
+  membershipPlanVersionBenefits,
   membershipPlanPermissionBindings,
   membershipPlans,
+  membershipPlanVersions,
+  membershipPlanVersionPermissionBindings,
   orderEvents,
   orders,
   partnerLeads,
@@ -45,8 +48,12 @@ const ids = {
   activationToken: '00000000-0000-4000-8000-000000000013',
   proPlan: '00000000-0000-4000-8000-000000000021',
   teamPlan: '00000000-0000-4000-8000-000000000022',
+  proPlanVersion1: '00000000-0000-4000-8000-000000000023',
+  teamPlanVersion1: '00000000-0000-4000-8000-000000000024',
   imageBenefit: '00000000-0000-4000-8000-000000000031',
   videoBenefit: '00000000-0000-4000-8000-000000000032',
+  proPlanVersionImageBenefit: '00000000-0000-4000-8000-000000000033',
+  teamPlanVersionVideoBenefit: '00000000-0000-4000-8000-000000000034',
   entitlement: '00000000-0000-4000-8000-000000000041',
   product: '00000000-0000-4000-8000-000000000051',
   order: '00000000-0000-4000-8000-000000000061',
@@ -73,6 +80,9 @@ const ids = {
   membershipPlanPermissionBindingUserCenterPage: '00000000-0000-4000-8000-000000000151',
   membershipPlanPermissionBindingUserCenterCopyInvite: '00000000-0000-4000-8000-000000000152',
   membershipPlanPermissionBindingTeamUserCenterPage: '00000000-0000-4000-8000-000000000153',
+  proPlanVersionPermissionBindingUserCenterPage: '00000000-0000-4000-8000-000000000154',
+  proPlanVersionPermissionBindingUserCenterCopyInvite: '00000000-0000-4000-8000-000000000155',
+  teamPlanVersionPermissionBindingUserCenterPage: '00000000-0000-4000-8000-000000000156',
 };
 
 async function main() {
@@ -208,7 +218,62 @@ async function main() {
     .onConflictDoUpdate({
       target: membershipPlans.id,
       set: {
+        name: sql`excluded.name`,
+        description: sql`excluded.description`,
+        billingPeriod: sql`excluded.billing_period`,
+        priceCents: sql`excluded.price_cents`,
         isActive: true,
+        sortOrder: sql`excluded.sort_order`,
+        updatedAt: new Date(),
+      },
+    });
+
+  const publishedAt = new Date('2026-01-01T00:00:00.000Z');
+
+  await db
+    .insert(membershipPlanVersions)
+    .values([
+      {
+        id: ids.proPlanVersion1,
+        planId: ids.proPlan,
+        versionNumber: 1,
+        status: 'published',
+        effectiveFrom: publishedAt,
+        publishedAt,
+        displayName: 'Pro Monthly',
+        description: 'Representative paid creator plan.',
+        billingPeriod: 'month',
+        priceCents: 9900,
+        currency: 'CNY',
+        metadata: { seed: true },
+      },
+      {
+        id: ids.teamPlanVersion1,
+        planId: ids.teamPlan,
+        versionNumber: 1,
+        status: 'published',
+        effectiveFrom: publishedAt,
+        publishedAt,
+        displayName: 'Team Yearly',
+        description: 'Representative team collaboration plan.',
+        billingPeriod: 'year',
+        priceCents: 99900,
+        currency: 'CNY',
+        metadata: { seed: true },
+      },
+    ])
+    .onConflictDoUpdate({
+      target: membershipPlanVersions.id,
+      set: {
+        status: sql`excluded.status`,
+        effectiveFrom: sql`excluded.effective_from`,
+        publishedAt: sql`excluded.published_at`,
+        displayName: sql`excluded.display_name`,
+        description: sql`excluded.description`,
+        billingPeriod: sql`excluded.billing_period`,
+        priceCents: sql`excluded.price_cents`,
+        currency: sql`excluded.currency`,
+        metadata: sql`excluded.metadata`,
         updatedAt: new Date(),
       },
     });
@@ -238,6 +303,48 @@ async function main() {
     .onConflictDoUpdate({
       target: benefits.id,
       set: {
+        code: sql`excluded.code`,
+        name: sql`excluded.name`,
+        kind: sql`excluded.kind`,
+        quantity: sql`excluded.quantity`,
+        unit: sql`excluded.unit`,
+        updatedAt: new Date(),
+      },
+    });
+
+  await db
+    .insert(membershipPlanVersionBenefits)
+    .values([
+      {
+        id: ids.proPlanVersionImageBenefit,
+        versionId: ids.proPlanVersion1,
+        code: 'image-credits',
+        name: 'Image generation credits',
+        kind: 'quota',
+        quantity: 500,
+        unit: 'credit',
+        metadata: { seed: true },
+      },
+      {
+        id: ids.teamPlanVersionVideoBenefit,
+        versionId: ids.teamPlanVersion1,
+        code: 'video-minutes',
+        name: 'Video generation minutes',
+        kind: 'quota',
+        quantity: 120,
+        unit: 'minute',
+        metadata: { seed: true },
+      },
+    ])
+    .onConflictDoUpdate({
+      target: membershipPlanVersionBenefits.id,
+      set: {
+        code: sql`excluded.code`,
+        name: sql`excluded.name`,
+        kind: sql`excluded.kind`,
+        quantity: sql`excluded.quantity`,
+        unit: sql`excluded.unit`,
+        metadata: sql`excluded.metadata`,
         updatedAt: new Date(),
       },
     });
@@ -248,6 +355,7 @@ async function main() {
       id: ids.entitlement,
       userId: ids.memberUser,
       planId: ids.proPlan,
+      planVersionId: ids.proPlanVersion1,
       benefitId: ids.imageBenefit,
       source: 'membership',
       remainingQuantity: 500,
@@ -256,6 +364,9 @@ async function main() {
     .onConflictDoUpdate({
       target: userEntitlements.id,
       set: {
+        planId: ids.proPlan,
+        planVersionId: ids.proPlanVersion1,
+        benefitId: ids.imageBenefit,
         remainingQuantity: 500,
         updatedAt: new Date(),
       },
@@ -322,6 +433,31 @@ async function main() {
       ...defaultMembershipPlanPermissionCodes['team-yearly'].map((code) => ({
         id: ids.membershipPlanPermissionBindingTeamUserCenterPage,
         planId: ids.teamPlan,
+        permissionResourceId:
+          code === 'page.user_center'
+            ? ids.permissionResourceUserCenterPage
+            : ids.permissionResourceUserCenterCopyInvite,
+      })),
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(membershipPlanVersionPermissionBindings)
+    .values([
+      ...defaultMembershipPlanPermissionCodes['pro-monthly'].map((code) => ({
+        id:
+          code === 'page.user_center'
+            ? ids.proPlanVersionPermissionBindingUserCenterPage
+            : ids.proPlanVersionPermissionBindingUserCenterCopyInvite,
+        versionId: ids.proPlanVersion1,
+        permissionResourceId:
+          code === 'page.user_center'
+            ? ids.permissionResourceUserCenterPage
+            : ids.permissionResourceUserCenterCopyInvite,
+      })),
+      ...defaultMembershipPlanPermissionCodes['team-yearly'].map((code) => ({
+        id: ids.teamPlanVersionPermissionBindingUserCenterPage,
+        versionId: ids.teamPlanVersion1,
         permissionResourceId:
           code === 'page.user_center'
             ? ids.permissionResourceUserCenterPage

@@ -1,38 +1,11 @@
 'use client';
 
+import { Boxes } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  Bot,
-  Boxes,
-  BrainCircuit,
-  FileText,
-  Gift,
-  Handshake,
-  KeyRound,
-  LayoutDashboard,
-  ReceiptText,
-  Settings,
-  ShieldCheck,
-  Users,
-} from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-
-const adminNavItems = [
-  { href: '/admin', label: '仪表盘', icon: LayoutDashboard },
-  { href: '/admin/users', label: '用户', icon: Users },
-  { href: '/admin/memberships', label: '会员', icon: ShieldCheck },
-  { href: '/admin/benefits', label: '权益', icon: Gift },
-  { href: '/admin/orders', label: '订单', icon: ReceiptText },
-  { href: '/admin/ai-jobs', label: 'AI 任务', icon: Bot },
-  { href: '/admin/ai-models', label: 'AI 模型', icon: BrainCircuit },
-  { href: '/admin/agent-capabilities', label: 'Agent 能力', icon: Boxes },
-  { href: '/admin/partners', label: '合作', icon: Handshake },
-  { href: '/admin/content', label: '内容', icon: FileText },
-  { href: '/admin/permissions', label: '权限', icon: KeyRound },
-  { href: '/admin/settings', label: '设置', icon: Settings },
-];
+import { ADMIN_NAV_ITEMS } from './admin-nav-config';
 
 type AdminNavProps = {
   className?: string;
@@ -51,7 +24,7 @@ export function AdminNav({ className }: AdminNavProps) {
 
   return (
     <nav className={cn('flex flex-col gap-1', className)} aria-label="后台导航">
-      {adminNavItems.map((item) => {
+      {ADMIN_NAV_ITEMS.map((item) => {
         const Icon = item.icon;
         const isActive = isAdminNavItemActive(item.href, pathname);
 

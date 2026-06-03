@@ -158,6 +158,34 @@ export async function listPermissionCodesForMembershipPlans(planCodes: string[])
   return [...new Set(rows.map((row) => row.code))];
 }
 
+export async function listPermissionCodesForMembershipPlanVersions(
+  versionIds: string[],
+): Promise<string[]> {
+  if (versionIds.length === 0) {
+    return [];
+  }
+
+  const database = ensureAdminReadSource('membership plan version permissions');
+  if (!database) {
+    return [];
+  }
+
+  const rows = await database
+    .select({ code: schema.permissionResources.code })
+    .from(schema.membershipPlanVersionPermissionBindings)
+    .innerJoin(
+      schema.permissionResources,
+      eq(
+        schema.permissionResources.id,
+        schema.membershipPlanVersionPermissionBindings.permissionResourceId,
+      ),
+    )
+    .where(inArray(schema.membershipPlanVersionPermissionBindings.versionId, versionIds))
+    .orderBy(asc(schema.permissionResources.code));
+
+  return [...new Set(rows.map((row) => row.code))];
+}
+
 export async function replaceMembershipPlanPermissionBindings(input: {
   planCode: string;
   permissionCodes: string[];

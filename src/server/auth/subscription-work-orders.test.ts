@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   addMembershipPeriod,
   assertSubscriptionWorkOrderTransition,
+  buildMembershipEntitlementRecord,
   getEntitlementWindow,
   getSubscriptionApprovalOrderAction,
 } from './subscription-work-orders';
@@ -77,4 +78,32 @@ test('subscription approval rejects linked orders outside pending/paid states', 
     () => getSubscriptionApprovalOrderAction('cancelled'),
     /Linked subscription order cannot be approved from status cancelled/,
   );
+});
+
+test('buildMembershipEntitlementRecord binds the resolved membership plan version', () => {
+  const approvalTime = new Date('2026-06-03T00:00:00.000Z');
+  const startsAt = new Date('2026-06-03T00:00:00.000Z');
+  const expiresAt = new Date('2026-07-03T00:00:00.000Z');
+
+  const record = buildMembershipEntitlementRecord({
+    userId: 'user-1',
+    planId: 'plan-1',
+    planVersionId: 'version-2',
+    workOrderId: 'work-order-1',
+    orderId: 'order-1',
+    orderNumber: 'SUB202606030001',
+    startsAt,
+    expiresAt,
+    approvalTime,
+  });
+
+  assert.equal(record.planVersionId, 'version-2');
+  assert.equal(record.startsAt.toISOString(), startsAt.toISOString());
+  assert.equal(record.expiresAt?.toISOString(), expiresAt.toISOString());
+  assert.deepEqual(record.metadata, {
+    source: 'subscription_work_order',
+    workOrderId: 'work-order-1',
+    orderId: 'order-1',
+    orderNumber: 'SUB202606030001',
+  });
 });

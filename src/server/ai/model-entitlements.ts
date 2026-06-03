@@ -10,6 +10,7 @@ export type ModelEntitlementRequirement = {
 
 export type ActiveUserEntitlement = {
   planCode: string | null;
+  planVersionId: string | null;
   benefitCode: string | null;
   source: string;
   startsAt: string;
@@ -108,6 +109,7 @@ export async function listActiveUserEntitlementsAt(
   const rows = await db
     .select({
       planCode: schema.membershipPlans.code,
+      planVersionId: schema.userEntitlements.planVersionId,
       benefitCode: schema.benefits.code,
       source: schema.userEntitlements.source,
       startsAt: schema.userEntitlements.startsAt,
@@ -126,6 +128,7 @@ export async function listActiveUserEntitlementsAt(
 
   return rows.map((row) => ({
     planCode: row.planCode,
+    planVersionId: row.planVersionId,
     benefitCode: row.benefitCode,
     source: row.source,
     startsAt: row.startsAt.toISOString(),

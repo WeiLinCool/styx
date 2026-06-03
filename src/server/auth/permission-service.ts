@@ -2,7 +2,10 @@ import {
   type ActiveUserEntitlement,
   listActiveUserEntitlementsAt,
 } from '@/server/ai/model-entitlements';
-import { listPermissionCodesForMembershipPlans } from '@/server/repositories/membership-plan-permissions';
+import {
+  listPermissionCodesForMembershipPlans,
+  listPermissionCodesForMembershipPlanVersions,
+} from '@/server/repositories/membership-plan-permissions';
 import { AccountDomainError } from './account-types';
 
 function isEntitlementActive(entitlement: ActiveUserEntitlement, now: Date) {
@@ -18,6 +21,7 @@ type PermissionLookupOverrides = {
   now?: Date;
   entitlements?: ActiveUserEntitlement[];
   planPermissionCodes?: Record<string, string[]>;
+  versionPermissionCodes?: Record<string, string[]>;
 };
 
 export async function listUserPermissionCodes(
@@ -37,6 +41,28 @@ export async function listUserPermissionCodes(
 
   if (activePlanCodes.length === 0) {
     return [];
+  }
+
+  const activeVersionIds = [...new Set(
+    entitlements
+      .filter((entitlement) => isEntitlementActive(entitlement, now))
+      .map((entitlement) => entitlement.planVersionId)
+      .filter((versionId): versionId is string => typeof versionId === 'string' && versionId.length > 0),
+  )];
+
+  if (overrides.versionPermissionCodes) {
+    return [
+      ...new Set(
+        activeVersionIds.flatMap((versionId) => overrides.versionPermissionCodes?.[versionId] ?? []),
+      ),
+    ].sort();
+  }
+
+  if (activeVersionIds.length > 0 && !overrides.planPermissionCodes) {
+    const versionCodes = await listPermissionCodesForMembershipPlanVersions(activeVersionIds);
+    if (versionCodes.length > 0) {
+      return versionCodes;
+    }
   }
 
   if (overrides.planPermissionCodes) {

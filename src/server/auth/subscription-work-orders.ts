@@ -4,6 +4,10 @@ import { recordAuditEvent } from '@/server/audit/audit-service';
 import { db, schema } from '@/server/db';
 import { qualifyReferralReward } from '@/server/repositories/admin-mutations';
 import {
+  membershipPlanVersionRepository,
+  resolvePlanVersionForEntitlement,
+} from '@/server/repositories/membership-plan-versions';
+import {
   buildSubscriptionOrderNumber,
   formatSubscriptionWorkOrderCode,
   getCurrentSubscriptionWorkOrderSummary,
@@ -86,6 +90,34 @@ export function getEntitlementWindow(input: {
   return {
     startsAt: input.approvalTime,
     expiresAt: addMembershipPeriod(base, input.billingPeriod),
+  };
+}
+
+export function buildMembershipEntitlementRecord(input: {
+  userId: string;
+  planId: string;
+  planVersionId: string;
+  workOrderId: string;
+  orderId: string;
+  orderNumber: string;
+  startsAt: Date;
+  expiresAt: Date | null;
+  approvalTime: Date;
+}) {
+  return {
+    userId: input.userId,
+    planId: input.planId,
+    planVersionId: input.planVersionId,
+    source: 'membership' as const,
+    startsAt: input.startsAt,
+    expiresAt: input.expiresAt,
+    metadata: {
+      source: 'subscription_work_order',
+      workOrderId: input.workOrderId,
+      orderId: input.orderId,
+      orderNumber: input.orderNumber,
+    },
+    updatedAt: input.approvalTime,
   };
 }
 
@@ -379,6 +411,10 @@ export async function approveSubscriptionWorkOrder(input: {
       billingPeriod: current.plan.billingPeriod,
       currentExpiresAt,
     });
+    const resolvedVersion = await resolvePlanVersionForEntitlement(current.plan.code, {
+      now: approvalTime,
+      loader: membershipPlanVersionRepository,
+    });
 
     const [existingOrder] = await tx
       .select()
@@ -428,20 +464,19 @@ export async function approveSubscriptionWorkOrder(input: {
       });
     }
 
-    await tx.insert(schema.userEntitlements).values({
-      userId: latest.userId,
-      planId: latest.planId,
-      source: 'membership',
-      startsAt: entitlementWindow.startsAt,
-      expiresAt: entitlementWindow.expiresAt,
-      metadata: {
-        source: 'subscription_work_order',
+    await tx.insert(schema.userEntitlements).values(
+      buildMembershipEntitlementRecord({
+        userId: latest.userId,
+        planId: latest.planId,
+        planVersionId: resolvedVersion.id,
         workOrderId: latest.id,
         orderId: order.id,
         orderNumber: order.orderNumber,
-      },
-      updatedAt: approvalTime,
-    });
+        startsAt: entitlementWindow.startsAt,
+        expiresAt: entitlementWindow.expiresAt,
+        approvalTime,
+      }),
+    );
 
     const [closed] = await tx
       .update(schema.subscriptionWorkOrders)

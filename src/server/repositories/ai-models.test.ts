@@ -33,6 +33,7 @@ import {
 
 const activeProEntitlement: ActiveUserEntitlement = {
   planCode: 'pro-monthly',
+  planVersionId: 'version-pro-v1',
   benefitCode: null,
   source: 'membership',
   startsAt: '2026-01-01T00:00:00.000Z',

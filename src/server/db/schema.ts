@@ -84,6 +84,13 @@ export const benefitKind = pgEnum('benefit_kind', [
   'support',
 ]);
 
+export const membershipPlanVersionStatus = pgEnum('membership_plan_version_status', [
+  'draft',
+  'scheduled',
+  'published',
+  'archived',
+]);
+
 export const entitlementSource = pgEnum('entitlement_source', [
   'membership',
   'order',
@@ -501,6 +508,75 @@ export const benefits = pgTable(
   ],
 );
 
+export const membershipPlanVersions = pgTable(
+  'membership_plan_versions',
+  {
+    id,
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => membershipPlans.id, { onDelete: 'cascade' }),
+    versionNumber: integer('version_number').notNull(),
+    status: membershipPlanVersionStatus('status').notNull().default('draft'),
+    effectiveFrom: timestamp('effective_from', { withTimezone: true }),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    displayName: text('display_name').notNull(),
+    description: text('description'),
+    billingPeriod: planBillingPeriod('billing_period').notNull(),
+    priceCents: integer('price_cents').notNull(),
+    currency: text('currency').notNull().default('CNY'),
+    changeSummary: text('change_summary'),
+    createdBy: uuid('created_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    publishedBy: uuid('published_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('membership_plan_versions_plan_version_unique_idx').on(
+      table.planId,
+      table.versionNumber,
+    ),
+    uniqueIndex('membership_plan_versions_single_draft_idx')
+      .on(table.planId)
+      .where(sql`${table.status} = 'draft'`),
+    uniqueIndex('membership_plan_versions_single_scheduled_idx')
+      .on(table.planId)
+      .where(sql`${table.status} = 'scheduled'`),
+    index('membership_plan_versions_status_idx').on(table.status),
+    index('membership_plan_versions_effective_from_idx').on(table.effectiveFrom),
+    check('membership_plan_versions_price_non_negative', sql`${table.priceCents} >= 0`),
+  ],
+);
+
+export const membershipPlanVersionBenefits = pgTable(
+  'membership_plan_version_benefits',
+  {
+    id,
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => membershipPlanVersions.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    kind: benefitKind('kind').notNull(),
+    quantity: integer('quantity'),
+    unit: text('unit'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('membership_plan_version_benefits_version_code_unique_idx').on(
+      table.versionId,
+      table.code,
+    ),
+    index('membership_plan_version_benefits_version_id_idx').on(table.versionId),
+  ],
+);
+
 export const userEntitlements = pgTable(
   'user_entitlements',
   {
@@ -509,6 +585,9 @@ export const userEntitlements = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     planId: uuid('plan_id').references(() => membershipPlans.id, {
+      onDelete: 'set null',
+    }),
+    planVersionId: uuid('plan_version_id').references(() => membershipPlanVersions.id, {
       onDelete: 'set null',
     }),
     benefitId: uuid('benefit_id').references(() => benefits.id, {
@@ -572,6 +651,28 @@ export const membershipPlanPermissionBindings = pgTable(
     ),
     index('membership_plan_permission_bindings_plan_idx').on(table.planId),
     index('membership_plan_permission_bindings_resource_idx').on(table.permissionResourceId),
+  ],
+);
+
+export const membershipPlanVersionPermissionBindings = pgTable(
+  'membership_plan_version_permission_bindings',
+  {
+    id,
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => membershipPlanVersions.id, { onDelete: 'cascade' }),
+    permissionResourceId: uuid('permission_resource_id')
+      .notNull()
+      .references(() => permissionResources.id, { onDelete: 'cascade' }),
+    createdAt: now,
+  },
+  (table) => [
+    uniqueIndex('membership_plan_version_permission_bindings_unique_idx').on(
+      table.versionId,
+      table.permissionResourceId,
+    ),
+    index('membership_plan_version_permission_bindings_version_idx').on(table.versionId),
+    index('membership_plan_version_permission_bindings_resource_idx').on(table.permissionResourceId),
   ],
 );
 

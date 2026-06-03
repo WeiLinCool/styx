@@ -127,6 +127,13 @@
       "when": 1780478865698,
       "tag": "0017_broad_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780492140486,
+      "tag": "0018_cuddly_rictor",
+      "breakpoints": true
     }
   ]
 }

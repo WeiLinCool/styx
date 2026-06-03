@@ -12,19 +12,49 @@ import type { AdminPermissionResourceOverview } from '@/server/repositories/perm
 import { StatusBadge } from './status-badge';
 
 type AdminPermissionsModuleProps = {
+  mode?: 'standalone' | 'embedded';
+  selectedCodes?: string[];
+  onSelectedCodesChange?: (codes: string[]) => void;
   data: {
     overview: AdminPermissionResourceOverview;
     workspace: MembershipPlanPermissionWorkspace;
   };
 };
 
-export function AdminPermissionsModule({ data }: AdminPermissionsModuleProps) {
+export function normalizePermissionCodes(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .sort();
+}
+
+export function AdminPermissionsModule({
+  mode = 'standalone',
+  selectedCodes: controlledSelectedCodes,
+  onSelectedCodesChange,
+  data,
+}: AdminPermissionsModuleProps) {
   const [workspace, setWorkspace] = useState(data.workspace);
   const [selectedPlanId, setSelectedPlanId] = useState(data.workspace.plan.id);
-  const [selectedCodes, setSelectedCodes] = useState<string[]>(data.workspace.selectedCodes);
+  const [internalSelectedCodes, setInternalSelectedCodes] = useState<string[]>(
+    normalizePermissionCodes(data.workspace.selectedCodes),
+  );
   const [search, setSearch] = useState('');
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [saving, setSaving] = useState(false);
+  const embedded = mode === 'embedded';
+  const selectedCodes = normalizePermissionCodes(controlledSelectedCodes ?? internalSelectedCodes);
+
+  function updateSelectedCodes(next: string[]) {
+    const normalized = normalizePermissionCodes(next);
+    onSelectedCodesChange?.(normalized);
+    if (controlledSelectedCodes === undefined) {
+      setInternalSelectedCodes(normalized);
+    }
+  }
 
   const filteredModules = workspace.modules
     .map((module) => ({
@@ -58,7 +88,7 @@ export function AdminPermissionsModule({ data }: AdminPermissionsModuleProps) {
 
       setWorkspace(payload);
       setSelectedPlanId(payload.plan.id);
-      setSelectedCodes(payload.selectedCodes ?? []);
+      updateSelectedCodes(normalizePermissionCodes(payload.selectedCodes));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '加载权限方案失败。');
     } finally {
@@ -91,52 +121,57 @@ export function AdminPermissionsModule({ data }: AdminPermissionsModuleProps) {
   }
 
   function toggleCode(code: string) {
-    setSelectedCodes((current) =>
+    const current = selectedCodes;
+    updateSelectedCodes(
       current.includes(code) ? current.filter((item) => item !== code) : [...current, code].sort(),
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {data.overview.metrics.map((metric) => (
-          <div key={metric.label} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium uppercase text-neutral-500">{metric.label}</p>
-              <StatusBadge value={metric.hint} tone={metric.tone} />
+      {embedded ? null : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {data.overview.metrics.map((metric) => (
+            <div key={metric.label} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium uppercase text-neutral-500">{metric.label}</p>
+                <StatusBadge value={metric.hint} tone={metric.tone} />
+              </div>
+              <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">{metric.value}</p>
             </div>
-            <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">{metric.value}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-neutral-950">会员方案</h3>
-              <p className="mt-1 text-xs text-neutral-500">选择要配置的方案。</p>
+      <div className={embedded ? 'space-y-4' : 'grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]'}>
+        {embedded ? null : (
+          <aside className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-neutral-950">会员方案</h3>
+                <p className="mt-1 text-xs text-neutral-500">选择要配置的方案。</p>
+              </div>
+              {loadingPlan ? <StatusBadge value="加载中" tone="warning" /> : null}
             </div>
-            {loadingPlan ? <StatusBadge value="加载中" tone="warning" /> : null}
-          </div>
-          <div className="space-y-2">
-            {workspace.plans.map((plan) => (
-              <button
-                key={plan.id}
-                type="button"
-                onClick={() => void loadPlan(plan.id)}
-                className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                  selectedPlanId === plan.id
-                    ? 'border-neutral-950 bg-neutral-950 text-white'
-                    : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
-                }`}
-              >
-                <span>{plan.name}</span>
-                <span className="text-xs opacity-70">{plan.code}</span>
-              </button>
-            ))}
-          </div>
-        </aside>
+            <div className="space-y-2">
+              {workspace.plans.map((plan) => (
+                <button
+                  key={plan.id}
+                  type="button"
+                  onClick={() => void loadPlan(plan.id)}
+                  className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                    selectedPlanId === plan.id
+                      ? 'border-neutral-950 bg-neutral-950 text-white'
+                      : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
+                  }`}
+                >
+                  <span>{plan.name}</span>
+                  <span className="text-xs opacity-70">{plan.code}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+        )}
 
         <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 border-b border-neutral-200 pb-4 md:flex-row md:items-center md:justify-between">
@@ -153,9 +188,11 @@ export function AdminPermissionsModule({ data }: AdminPermissionsModuleProps) {
                 placeholder="搜索权限编码或名称"
                 className="h-9 w-full md:w-72"
               />
-              <Button type="button" onClick={() => void saveBindings()} disabled={saving}>
-                {saving ? '保存中...' : '保存'}
-              </Button>
+              {embedded ? null : (
+                <Button type="button" onClick={() => void saveBindings()} disabled={saving}>
+                  {saving ? '保存中...' : '保存'}
+                </Button>
+              )}
             </div>
           </div>
 
