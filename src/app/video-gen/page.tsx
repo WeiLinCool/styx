@@ -13,10 +13,17 @@ import { ProtectedAccountPanel } from '@/features/account/protected-account-pane
 import {
   createAgentRun,
   createAgentRunEventsUrl,
+  listVideoModels,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
+  type VideoModelOption,
 } from '@/features/public/agent-runtime-client';
-import { videoModels } from '@/features/public/tool-data';
+import {
+  buildUnavailableModelMessage,
+  createInitialModelAvailabilityState,
+  nextReloadKey,
+  reconcileSelectedModelId,
+} from '@/features/public/model-availability';
 import type { DirectMediaResultDto } from '@/server/agent/types';
 
 const VIDEO_STYLES = [
@@ -34,7 +41,9 @@ const CLARITIES = [
 export default function VideoGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
-  const [selectedModel, setSelectedModel] = useState(videoModels[2].id);
+  const [videoModels, setVideoModels] = useState<VideoModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [modelAvailability, setModelAvailability] = useState(createInitialModelAvailabilityState());
   const [selectedStyle, setSelectedStyle] = useState('石头印画');
   const [selectedDuration, setSelectedDuration] = useState('5秒');
   const [selectedClarity, setSelectedClarity] = useState('720P');
@@ -46,6 +55,71 @@ export default function VideoGenPage() {
   const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const [generatedVideo, setGeneratedVideo] = useState<DirectMediaResultDto | null>(null);
   const videoReceivedRunIdRef = useRef<string | null>(null);
+  const modelLoading = modelAvailability.status === 'loading';
+  const modelMaintenanceMessage =
+    modelAvailability.status === 'maintenance' ? buildUnavailableModelMessage() : null;
+  const submitDisabledReason = !isLoggedIn
+    ? null
+    : !user || requiresActivation(user)
+      ? '账号激活后可使用'
+      : modelAvailability.status === 'loading'
+        ? '模型列表加载中'
+        : modelAvailability.status === 'maintenance'
+          ? buildUnavailableModelMessage()
+          : !selectedModel
+            ? buildUnavailableModelMessage()
+            : null;
+
+  useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user)) {
+      setVideoModels([]);
+      setSelectedModel(null);
+      setModelAvailability(createInitialModelAvailabilityState());
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadVideoModels() {
+      setModelAvailability((current) => ({
+        ...current,
+        status: 'loading',
+        message: null,
+      }));
+
+      try {
+        const models = await listVideoModels();
+        if (cancelled) {
+          return;
+        }
+
+        setVideoModels(models);
+        setSelectedModel((current) => reconcileSelectedModelId(models, current));
+        setModelAvailability((current) => ({
+          ...current,
+          status: models.length > 0 ? 'ready' : 'maintenance',
+          message: models.length > 0 ? null : buildUnavailableModelMessage(),
+        }));
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setVideoModels([]);
+        setSelectedModel(null);
+        setModelAvailability((current) => ({
+          ...current,
+          status: 'maintenance',
+          message: buildUnavailableModelMessage(),
+        }));
+      }
+    }
+
+    void loadVideoModels();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user, modelAvailability.reloadKey]);
 
   useEffect(() => {
     if (!streamRunId) {
@@ -101,6 +175,11 @@ export default function VideoGenPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
     if (isGenerating) return;
+    if (!selectedModel) {
+      setGenerationMessage(null);
+      setGenerationError(modelLoading ? '模型列表加载中' : buildUnavailableModelMessage());
+      return;
+    }
     if (!prompt.trim()) {
       setGenerationMessage(null);
       setGenerationError('请输入提示词后再开始生成。');
@@ -117,8 +196,8 @@ export default function VideoGenPage() {
       const { run } = await createAgentRun({
         taskType: 'video',
         prompt: prompt.trim(),
+        modelId: selectedModel,
         input: {
-          model: selectedModel,
           style: selectedStyle,
           duration: selectedDuration,
           clarity: selectedClarity,
@@ -199,36 +278,62 @@ export default function VideoGenPage() {
             {/* Model */}
             <div>
               <label className="mb-2 block text-sm font-medium">视频模型</label>
-              <div className="space-y-1.5">
-                {videoModels.map((model) => (
+              {!isLoggedIn ? (
+                <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">登录后查看可用模型</div>
+              ) : modelLoading ? (
+                <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">模型加载中...</div>
+              ) : modelMaintenanceMessage ? (
+                <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">
+                  <p>{modelMaintenanceMessage}</p>
                   <button
-                    key={model.id}
-                    onClick={() => setSelectedModel(model.id)}
-                    className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 text-left transition-all ${
-                      selectedModel === model.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
-                    }`}
+                    type="button"
+                    onClick={() =>
+                      setModelAvailability((current) => ({
+                        ...current,
+                        reloadKey: nextReloadKey(current.reloadKey),
+                      }))
+                    }
+                    className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{model.name}</span>
-                        {model.badge && <span className="rounded-md bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">{model.badge}</span>}
-                      </div>
-                      <div className="text-xs text-[#444444]">{model.desc}</div>
-                    </div>
-                    <div className="flex h-5 w-5 items-center justify-center">
-                      {selectedModel === model.id ? (
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f]">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                            <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </div>
-                      ) : (
-                        <div className="h-4 w-4 rounded-full border-2 border-black/10" />
-                      )}
-                    </div>
+                    重新加载模型
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {videoModels.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => setSelectedModel(model.id)}
+                      className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 text-left transition-all ${
+                        selectedModel === model.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{model.name}</span>
+                          {model.isDefault ? (
+                            <span className="rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] font-medium text-[#444444]">默认</span>
+                          ) : null}
+                        </div>
+                        <div className="text-xs text-[#444444]">
+                          {model.providerName} · {model.entitlementLabel} · {model.pricingSummary}
+                        </div>
+                      </div>
+                      <div className="flex h-5 w-5 items-center justify-center">
+                        {selectedModel === model.id ? (
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f]">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                              <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                        ) : (
+                          <div className="h-4 w-4 rounded-full border-2 border-black/10" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Prompt */}
@@ -323,9 +428,10 @@ export default function VideoGenPage() {
               </div>
             </div>
 
-            <button onClick={handleGenerate} disabled={isGenerating} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium">
+            <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
               {isGenerating ? '生成中...' : '开始生成'}
             </button>
+            {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
           </div>
 
           {/* Right - Preview */}

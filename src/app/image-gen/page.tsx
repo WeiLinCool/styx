@@ -17,10 +17,16 @@ import {
   listImageModels,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
-  selectImageModelId,
   type ImageModelMode,
   type ImageModelOption,
 } from '@/features/public/agent-runtime-client';
+import {
+  buildUnavailableModelMessage,
+  createInitialModelAvailabilityState,
+  nextReloadKey,
+  reconcileSelectedModelId,
+  type ModelAvailabilityState,
+} from '@/features/public/model-availability';
 import { styleOptions, toolSizes } from '@/features/public/tool-data';
 import type { DirectMediaResultDto } from '@/server/agent/types';
 
@@ -53,8 +59,7 @@ type SourceImageState = {
   size: number;
 };
 
-type ModeLoadState = Record<ImageModelMode, boolean>;
-type ModeErrorState = Record<ImageModelMode, string | null>;
+type ModeAvailabilityState = Record<ImageModelMode, ModelAvailabilityState>;
 
 export default function ImageGenPage() {
   const router = useRouter();
@@ -71,15 +76,10 @@ export default function ImageGenPage() {
     edit: null,
     upscale: null,
   });
-  const [modelsLoadingByMode, setModelsLoadingByMode] = useState<ModeLoadState>({
-    generate: false,
-    edit: false,
-    upscale: false,
-  });
-  const [modelsErrorByMode, setModelsErrorByMode] = useState<ModeErrorState>({
-    generate: null,
-    edit: null,
-    upscale: null,
+  const [modeAvailability, setModeAvailability] = useState<ModeAvailabilityState>({
+    generate: createInitialModelAvailabilityState(),
+    edit: createInitialModelAvailabilityState(),
+    upscale: createInitialModelAvailabilityState(),
   });
   const [selectedSize, setSelectedSize] = useState('1:1');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -104,8 +104,10 @@ export default function ImageGenPage() {
   const activeModels = modelsByMode[activeMode];
   const selectedModelId = selectedModelsByMode[activeMode];
   const selectedModel = activeModels.find((model) => model.id === selectedModelId) ?? null;
-  const modelsLoading = modelsLoadingByMode[activeMode];
-  const modelsError = modelsErrorByMode[activeMode];
+  const activeAvailability = modeAvailability[activeMode];
+  const modelsLoading = activeAvailability.status === 'loading';
+  const modelsError =
+    activeAvailability.status === 'maintenance' ? buildUnavailableModelMessage() : null;
   const activeSourceImage = activeMode === 'upscale' || activeMode === 'edit' ? sourceImages[activeMode] : null;
 
   useEffect(() => {
@@ -118,16 +120,25 @@ export default function ImageGenPage() {
     if (!isLoggedIn || !user || requiresActivation(user)) {
       setModelsByMode({ generate: [], edit: [], upscale: [] });
       setSelectedModelsByMode({ generate: null, edit: null, upscale: null });
-      setModelsErrorByMode({ generate: null, edit: null, upscale: null });
-      setModelsLoadingByMode({ generate: false, edit: false, upscale: false });
+      setModeAvailability({
+        generate: createInitialModelAvailabilityState(),
+        edit: createInitialModelAvailabilityState(),
+        upscale: createInitialModelAvailabilityState(),
+      });
       return;
     }
 
     let cancelled = false;
 
     async function loadModelsForMode() {
-      setModelsLoadingByMode((current) => ({ ...current, [activeMode]: true }));
-      setModelsErrorByMode((current) => ({ ...current, [activeMode]: null }));
+      setModeAvailability((current) => ({
+        ...current,
+        [activeMode]: {
+          ...current[activeMode],
+          status: 'loading',
+          message: null,
+        },
+      }));
 
       try {
         const models = await listImageModels(activeMode);
@@ -139,20 +150,29 @@ export default function ImageGenPage() {
         }));
         setSelectedModelsByMode((current) => ({
           ...current,
-          [activeMode]: selectImageModelId(models, current[activeMode]),
+          [activeMode]: reconcileSelectedModelId(models, current[activeMode]),
         }));
-      } catch (error) {
+
+        setModeAvailability((current) => ({
+          ...current,
+          [activeMode]: {
+            ...current[activeMode],
+            status: models.length > 0 ? 'ready' : 'maintenance',
+            message: models.length > 0 ? null : buildUnavailableModelMessage(),
+          },
+        }));
+      } catch {
         if (cancelled) return;
         setModelsByMode((current) => ({ ...current, [activeMode]: [] }));
         setSelectedModelsByMode((current) => ({ ...current, [activeMode]: null }));
-        setModelsErrorByMode((current) => ({
+        setModeAvailability((current) => ({
           ...current,
-          [activeMode]: readRuntimeErrorMessage(error, '图片模型列表加载失败'),
+          [activeMode]: {
+            ...current[activeMode],
+            status: 'maintenance',
+            message: buildUnavailableModelMessage(),
+          },
         }));
-      } finally {
-        if (!cancelled) {
-          setModelsLoadingByMode((current) => ({ ...current, [activeMode]: false }));
-        }
       }
     }
 
@@ -161,19 +181,19 @@ export default function ImageGenPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeMode, isLoggedIn, user]);
+  }, [activeMode, isLoggedIn, user, modeAvailability[activeMode].reloadKey]);
 
   const submitDisabledReason = useMemo(() => {
     if (!isLoggedIn) return null;
     if (!user || requiresActivation(user)) return '账号激活后可使用';
     if (modelsLoading) return '模型列表加载中';
-    if (modelsError) return modelsError;
-    if (!selectedModelId) return '当前模式暂无可用模型';
+    if (activeAvailability.status === 'maintenance') return buildUnavailableModelMessage();
+    if (!selectedModelId) return buildUnavailableModelMessage();
     if ((activeMode === 'upscale' || activeMode === 'edit') && !activeSourceImage) {
       return '请先上传原图';
     }
     return null;
-  }, [activeMode, activeSourceImage, isLoggedIn, modelsError, modelsLoading, selectedModelId, user]);
+  }, [activeAvailability.status, activeMode, activeSourceImage, isLoggedIn, modelsLoading, selectedModelId, user]);
 
   const handleTabChange = (tabId: ImageGenTabId) => {
     if (tabId === activeTab) return;
@@ -314,7 +334,7 @@ export default function ImageGenPage() {
     }
     if (!selectedModelId) {
       setGenerationMessage(null);
-      setGenerationError(modelsLoading ? '模型列表加载中' : '当前模式暂无可用模型');
+      setGenerationError(modelsLoading ? '模型列表加载中' : buildUnavailableModelMessage());
       return;
     }
     if ((activeMode === 'upscale' || activeMode === 'edit') && !activeSourceImage) {
@@ -462,8 +482,26 @@ export default function ImageGenPage() {
                     selectedModelId={selectedModelId}
                     loading={modelsLoading}
                     error={modelsError}
+                    isLoggedIn={isLoggedIn}
                     onSelect={handleModelSelect}
                   />
+                  {isLoggedIn && activeAvailability.status === 'maintenance' ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModeAvailability((current) => ({
+                          ...current,
+                          [activeMode]: {
+                            ...current[activeMode],
+                            reloadKey: nextReloadKey(current[activeMode].reloadKey),
+                          },
+                        }))
+                      }
+                      className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                    >
+                      重新加载模型
+                    </button>
+                  ) : null}
                 </div>
                 {/* Size */}
                 <div>
@@ -507,8 +545,26 @@ export default function ImageGenPage() {
                     selectedModelId={selectedModelId}
                     loading={modelsLoading}
                     error={modelsError}
+                    isLoggedIn={isLoggedIn}
                     onSelect={handleModelSelect}
                   />
+                  {isLoggedIn && activeAvailability.status === 'maintenance' ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModeAvailability((current) => ({
+                          ...current,
+                          [activeMode]: {
+                            ...current[activeMode],
+                            reloadKey: nextReloadKey(current[activeMode].reloadKey),
+                          },
+                        }))
+                      }
+                      className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                    >
+                      重新加载模型
+                    </button>
+                  ) : null}
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">放大倍数</label>
@@ -547,8 +603,26 @@ export default function ImageGenPage() {
                     selectedModelId={selectedModelId}
                     loading={modelsLoading}
                     error={modelsError}
+                    isLoggedIn={isLoggedIn}
                     onSelect={handleModelSelect}
                   />
+                  {isLoggedIn && activeAvailability.status === 'maintenance' ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModeAvailability((current) => ({
+                          ...current,
+                          [activeMode]: {
+                            ...current[activeMode],
+                            reloadKey: nextReloadKey(current[activeMode].reloadKey),
+                          },
+                        }))
+                      }
+                      className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                    >
+                      重新加载模型
+                    </button>
+                  ) : null}
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">选择风格</label>
@@ -646,24 +720,30 @@ function ModelOptions({
   selectedModelId,
   loading,
   error,
+  isLoggedIn,
   onSelect,
 }: {
   models: ImageModelOption[];
   selectedModelId: string | null;
   loading: boolean;
   error: string | null;
+  isLoggedIn: boolean;
   onSelect: (modelId: string) => void;
 }) {
+  if (!isLoggedIn) {
+    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">登录后查看可用模型</div>;
+  }
+
   if (loading) {
     return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">模型加载中...</div>;
   }
 
   if (error) {
-    return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>;
+    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">{error}</div>;
   }
 
   if (models.length === 0) {
-    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">当前模式暂无可用模型</div>;
+    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">{buildUnavailableModelMessage()}</div>;
   }
 
   return (

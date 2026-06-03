@@ -23,13 +23,6 @@ export const styleOptions = [
   { id: 'sketch', name: '素描风格', preview: '✏️' },
 ];
 
-export const videoModels = [
-  { id: 'seedance-2-fast-vip', name: 'Seedance 2.0 Fast VIP', badge: 'New', desc: '极速推理，会员专属通道' },
-  { id: 'seedance-2-vip', name: 'Seedance 2.0 VIP', badge: 'New', desc: '全模态能力，会员专属通道' },
-  { id: 'seedance-2-fast', name: 'Seedance 2.0 Fast', badge: 'New', desc: '高性价比' },
-  { id: 'seedance-2', name: 'Seedance 2.0', badge: '', desc: '全能王者' },
-];
-
 export const workflowImageModels = [
   {
     id: 'gpt-image-2.0',

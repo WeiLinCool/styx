@@ -24,6 +24,12 @@ import {
 } from '@/features/public/agent-runtime-client';
 import { ChatMarkdown } from '@/features/public/chat-markdown';
 import { formatChatModelLabel } from '@/features/public/chat-message-format';
+import {
+  buildUnavailableModelMessage,
+  createInitialModelAvailabilityState,
+  nextReloadKey,
+  reconcileSelectedModelId,
+} from '@/features/public/model-availability';
 import type { AgentRunDetailDto, AgentRunDto } from '@/server/agent/types';
 
 interface Message {
@@ -61,7 +67,7 @@ export default function ChatPage() {
   const [recentRuns, setRecentRuns] = useState<AgentRunDto[]>([]);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  const [modelLoading, setModelLoading] = useState(false);
+  const [modelAvailability, setModelAvailability] = useState(createInitialModelAvailabilityState());
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -84,20 +90,50 @@ export default function ChatPage() {
       setChatModels([]);
       setSelectedModelId(null);
       setMessages([]);
+      setModelAvailability(createInitialModelAvailabilityState());
       return;
     }
 
+    let cancelled = false;
+
     async function loadChatState() {
-      setModelLoading(true);
+      setModelAvailability((current) => ({
+        ...current,
+        status: 'loading',
+        message: null,
+      }));
+
       try {
         const [models, runs] = await Promise.all([listChatModels(), listAgentRuns()]);
+        if (cancelled) {
+          return;
+        }
+
         const chatRuns = runs.filter((run) => run.taskType === 'chat');
         const storedModelId =
           typeof window === 'undefined' ? null : window.localStorage.getItem(chatModelSelectionStorageKey);
-        const nextModelId = selectChatModelId(models, storedModelId);
+        const nextModelId = reconcileSelectedModelId(models, storedModelId);
 
         setChatModels(models);
         setSelectedModelId(nextModelId);
+        if (models.length === 0) {
+          setRecentRuns([]);
+          setSelectedRunId(null);
+          setMessages([]);
+          setModelAvailability((current) => ({
+            ...current,
+            status: 'maintenance',
+            message: buildUnavailableModelMessage(),
+          }));
+          return;
+        }
+
+        setModelAvailability((current) => ({
+          ...current,
+          status: 'ready',
+          message: null,
+        }));
+
         setRecentRuns(chatRuns);
         const latestRunId = chatRuns[0]?.id ?? null;
         setSelectedRunId(latestRunId);
@@ -107,17 +143,34 @@ export default function ChatPage() {
         }
 
         const detail = await getAgentRunDetail(latestRunId);
+        if (cancelled) {
+          return;
+        }
         const conversationRuns = getConversationRuns(chatRuns, detail.run.conversationId);
         setMessages(mapRunsToMessages(conversationRuns));
-      } catch (error) {
-        setErrorMessage(readRuntimeErrorMessage(error, '对话数据加载失败'));
-      } finally {
-        setModelLoading(false);
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setRecentRuns([]);
+        setChatModels([]);
+        setSelectedModelId(null);
+        setSelectedRunId(null);
+        setMessages([]);
+        setModelAvailability((current) => ({
+          ...current,
+          status: 'maintenance',
+          message: buildUnavailableModelMessage(),
+        }));
       }
     }
 
     void loadChatState();
-  }, [isLoggedIn, user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user, modelAvailability.reloadKey]);
 
   useEffect(() => {
     if (isLoggedIn || !user) {
@@ -206,9 +259,23 @@ export default function ChatPage() {
   }, [selectedRunId, streamRunId]);
 
   const selectedModel = chatModels.find((model) => model.id === selectedModelId) ?? null;
+  const modelLoading = modelAvailability.status === 'loading';
+  const modelMaintenanceMessage =
+    modelAvailability.status === 'maintenance' ? buildUnavailableModelMessage() : null;
+  const submitDisabledReason = !isLoggedIn
+    ? null
+    : !user || requiresActivation(user)
+      ? '账号激活后可使用'
+      : modelAvailability.status === 'loading'
+        ? '模型列表加载中'
+        : modelAvailability.status === 'maintenance'
+          ? buildUnavailableModelMessage()
+          : !selectedModelId
+            ? buildUnavailableModelMessage()
+            : null;
 
   const handleModelChange = (modelId: string) => {
-    const nextModelId = selectChatModelId(chatModels, modelId);
+    const nextModelId = reconcileSelectedModelId(chatModels, modelId);
     setSelectedModelId(nextModelId);
     if (nextModelId) {
       window.localStorage.setItem(chatModelSelectionStorageKey, nextModelId);
@@ -272,7 +339,11 @@ export default function ChatPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
     if (!selectedModelId) {
-      setErrorMessage(modelLoading ? '模型列表加载中' : '当前账号没有可用模型');
+      setErrorMessage(
+        modelAvailability.status === 'loading'
+          ? '模型列表加载中'
+          : buildUnavailableModelMessage(),
+      );
       return;
     }
 
@@ -505,7 +576,13 @@ export default function ChatPage() {
               title={selectedModel ? `${selectedModel.name} · ${selectedModel.entitlementLabel} · ${selectedModel.pricingSummary}` : undefined}
             >
               {chatModels.length === 0 ? (
-                <option value="">{modelLoading ? '模型加载中' : '无可用模型'}</option>
+                <option value="">
+                  {!isLoggedIn
+                    ? '登录后查看可用模型'
+                    : modelLoading
+                      ? '模型加载中'
+                      : buildUnavailableModelMessage()}
+                </option>
               ) : (
                 chatModels.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -514,19 +591,39 @@ export default function ChatPage() {
                 ))
               )}
             </select>
+            {!isLoggedIn ? (
+              <p className="text-xs text-[#6e6e73]">登录后查看可用模型</p>
+            ) : modelMaintenanceMessage ? (
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-[#6e6e73]">{modelMaintenanceMessage}</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setModelAvailability((current) => ({
+                      ...current,
+                      reloadKey: nextReloadKey(current.reloadKey),
+                    }))
+                  }
+                  className="text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                >
+                  重新加载模型
+                </button>
+              </div>
+            ) : null}
           </div>
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="输入消息..."
-              disabled={isSubmitting || modelLoading || chatModels.length === 0}
+              disabled={isSubmitting || Boolean(submitDisabledReason)}
               className="flex-1 rounded-xl border border-black/8 bg-white/[0.03] px-4 py-2.5 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none transition-colors focus:border-black/10"
             />
-            <button type="submit" disabled={isSubmitting || modelLoading || chatModels.length === 0} className="apple-btn apple-btn-primary cursor-pointer rounded-xl px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="submit" disabled={isSubmitting || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary cursor-pointer rounded-xl px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50">
               <Send size={16} />
             </button>
           </form>
+          {submitDisabledReason ? <p className="mt-2 text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
         </div>
       </div>
 

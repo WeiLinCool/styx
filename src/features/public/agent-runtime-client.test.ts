@@ -100,6 +100,30 @@ test('listChatModels returns typed model options from API payload', async () => 
   }
 });
 
+test('listChatModels drops malformed model rows', async () => {
+  const restore = installFetchMock({
+    models: [
+      { id: 'broken' },
+      {
+        id: 'model-1',
+        code: 'chat-1',
+        name: 'Chat One',
+        providerName: 'Development',
+        isDefault: true,
+        entitlementLabel: 'Free',
+        pricingSummary: '1 credit minimum',
+      },
+    ],
+  });
+
+  try {
+    const models = await listChatModels();
+    assert.deepEqual(models.map((model) => model.id), ['model-1']);
+  } finally {
+    restore();
+  }
+});
+
 test('listImageModels returns parsed image model options', async () => {
   const restore = installFetchMock({
     models: [
@@ -166,6 +190,17 @@ test('listVideoModels returns parsed video model options', async () => {
   try {
     const models = await listVideoModels();
     assert.equal(models[0]?.id, 'model-video');
+  } finally {
+    restore();
+  }
+});
+
+test('listVideoModels returns empty array for an empty payload', async () => {
+  const restore = installFetchMock({ models: [] });
+
+  try {
+    const models = await listVideoModels();
+    assert.deepEqual(models, []);
   } finally {
     restore();
   }
@@ -350,6 +385,31 @@ test('selectChatModelId keeps valid prior selection before falling back to defau
   assert.equal(selectChatModelId(models, 'model-pro'), 'model-pro');
   assert.equal(selectChatModelId(models, 'missing'), 'model-free');
   assert.equal(selectChatModelId([], 'model-pro'), null);
+});
+
+test('selectChatModelId can be reused for video models with default fallback', () => {
+  const models: ChatModelOption[] = [
+    {
+      id: 'video-fast',
+      code: 'video-fast',
+      name: 'Fast',
+      providerName: 'Doubao',
+      isDefault: false,
+      entitlementLabel: 'Free',
+      pricingSummary: '3 credits minimum',
+    },
+    {
+      id: 'video-default',
+      code: 'video-default',
+      name: 'Default',
+      providerName: 'Doubao',
+      isDefault: true,
+      entitlementLabel: 'Free',
+      pricingSummary: '5 credits minimum',
+    },
+  ];
+
+  assert.equal(selectChatModelId(models, 'missing-video-model'), 'video-default');
 });
 
 test('selectImageModelId falls back to default compatible model', () => {
