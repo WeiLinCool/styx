@@ -5,6 +5,7 @@ import {
   addMembershipPeriod,
   assertSubscriptionWorkOrderTransition,
   getEntitlementWindow,
+  getSubscriptionApprovalOrderAction,
 } from './subscription-work-orders';
 
 test('subscription work order transitions follow queue lifecycle', () => {
@@ -63,5 +64,17 @@ test('unsupported one-time membership period is rejected', () => {
   assert.throws(
     () => addMembershipPeriod(new Date('2026-06-02T00:00:00.000Z'), 'one_time'),
     /Unsupported membership billing period/,
+  );
+});
+
+test('subscription approval accepts already-paid linked orders without requiring another paid transition', () => {
+  assert.deepEqual(getSubscriptionApprovalOrderAction('pending'), { shouldMarkPaid: true });
+  assert.deepEqual(getSubscriptionApprovalOrderAction('paid'), { shouldMarkPaid: false });
+});
+
+test('subscription approval rejects linked orders outside pending/paid states', () => {
+  assert.throws(
+    () => getSubscriptionApprovalOrderAction('cancelled'),
+    /Linked subscription order cannot be approved from status cancelled/,
   );
 });

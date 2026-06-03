@@ -17,6 +17,22 @@ export type SubscriptionWorkOrderStatus = 'pending' | 'processing' | 'closed' | 
 export type SubscriptionWorkOrderResult = 'approved' | 'rejected';
 export type MembershipBillingPeriod = 'month' | 'year' | 'one_time';
 
+export function getSubscriptionApprovalOrderAction(status: string) {
+  if (status === 'pending') {
+    return { shouldMarkPaid: true };
+  }
+
+  if (status === 'paid') {
+    return { shouldMarkPaid: false };
+  }
+
+  throw new AccountDomainError(
+    'invalid_subscription_work_order_transition',
+    `Linked subscription order cannot be approved from status ${status}.`,
+    409,
+  );
+}
+
 export function assertSubscriptionWorkOrderTransition(
   currentStatus: SubscriptionWorkOrderStatus,
   nextStatus: SubscriptionWorkOrderStatus,
@@ -364,35 +380,53 @@ export async function approveSubscriptionWorkOrder(input: {
       currentExpiresAt,
     });
 
-    const [order] = await tx
-      .update(schema.orders)
-      .set({
-        status: 'paid',
-        paidAt: approvalTime,
-        updatedAt: approvalTime,
-      })
-      .where(and(eq(schema.orders.id, latest.orderId), eq(schema.orders.status, 'pending')))
-      .returning();
+    const [existingOrder] = await tx
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, latest.orderId))
+      .limit(1);
+
+    if (!existingOrder) {
+      throw new AccountDomainError('account_not_found', 'Linked subscription order not found.', 404);
+    }
+
+    const approvalOrderAction = getSubscriptionApprovalOrderAction(existingOrder.status);
+
+    const order = approvalOrderAction.shouldMarkPaid
+      ? (
+          await tx
+            .update(schema.orders)
+            .set({
+              status: 'paid',
+              paidAt: approvalTime,
+              updatedAt: approvalTime,
+            })
+            .where(and(eq(schema.orders.id, latest.orderId), eq(schema.orders.status, 'pending')))
+            .returning()
+        )[0]
+      : existingOrder;
 
     if (!order) {
       throw new AccountDomainError(
         'invalid_subscription_work_order_transition',
-        'Linked subscription order is no longer pending.',
+        'Linked subscription order could not be marked paid.',
         409,
       );
     }
 
-    await tx.insert(schema.orderEvents).values({
-      orderId: order.id,
-      type: 'paid',
-      actorUserId: input.actorId,
-      message: input.decisionNote ?? 'Admin approved membership subscription payment.',
-      metadata: {
-        source: 'subscription_work_order_approval',
-        workOrderId: latest.id,
-        workOrderCode: latest.code,
-      },
-    });
+    if (approvalOrderAction.shouldMarkPaid) {
+      await tx.insert(schema.orderEvents).values({
+        orderId: order.id,
+        type: 'paid',
+        actorUserId: input.actorId,
+        message: input.decisionNote ?? 'Admin approved membership subscription payment.',
+        metadata: {
+          source: 'subscription_work_order_approval',
+          workOrderId: latest.id,
+          workOrderCode: latest.code,
+        },
+      });
+    }
 
     await tx.insert(schema.userEntitlements).values({
       userId: latest.userId,
