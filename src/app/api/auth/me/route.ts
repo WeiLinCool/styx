@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { getCreditBalance } from '@/server/billing/credits';
-import { getServerCache } from '@/server/cache/server-cache';
 import { buildInviteUrl, formatBusinessDateInShanghai } from '@/server/points/service';
 import { resolveSession } from '@/server/auth/session';
 import { createJsonResponse } from '@/server/encrypted-response';
@@ -13,30 +12,6 @@ import {
 } from '@/server/repositories/points';
 
 const RECENT_ACTIVITY_LIMIT = 5;
-const POINTS_OVERVIEW_CACHE_TTL_MS = 30 * 1000;
-
-function buildPointsOverviewCacheKey(userId: string) {
-  return `user-points-overview:${userId}`;
-}
-
-async function getUserPointsOverview(userId: string, origin: string) {
-  const cache = getServerCache();
-  const cacheKey = buildPointsOverviewCacheKey(userId);
-  const cached = await cache.getJson<Awaited<ReturnType<typeof readUserPointsOverview>>>(cacheKey);
-  if (cached) {
-    return {
-      ...cached,
-      inviteSummary: {
-        ...cached.inviteSummary,
-        inviteLink: buildInviteUrl(origin, cached.inviteSummary.inviteCode),
-      },
-    };
-  }
-
-  const overview = await readUserPointsOverview(userId, origin);
-  await cache.setJson(cacheKey, overview, POINTS_OVERVIEW_CACHE_TTL_MS);
-  return overview;
-}
 
 async function readUserPointsOverview(userId: string, origin: string) {
   const [points, inviteSummary, recentPointActivities] = await Promise.all([
@@ -79,7 +54,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const overview = await getUserPointsOverview(
+    const overview = await readUserPointsOverview(
       session.user.id,
       new URL(request.url).origin,
     );

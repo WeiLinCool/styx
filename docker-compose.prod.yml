@@ -15,6 +15,19 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: styx-redis:7-alpine
+    container_name: styx-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${STYX_REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - styx-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$STYX_REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   app:
     build:
       context: .
@@ -30,7 +43,7 @@ services:
       PORT: 5000
       NODE_ENV: production
       COZE_PROJECT_ENV: PROD
-      STYX_REDIS_HOST: ${STYX_REDIS_HOST}
+      STYX_REDIS_HOST: ${STYX_REDIS_HOST:-redis}
       STYX_REDIS_PORT: ${STYX_REDIS_PORT:-6379}
       STYX_REDIS_PASSWORD: ${STYX_REDIS_PASSWORD}
       STYX_REDIS_DB: ${STYX_REDIS_DB:-0}
@@ -40,6 +53,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   styx-postgres-data:
+  styx-redis-data:

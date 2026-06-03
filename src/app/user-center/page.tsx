@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { readJsonResponse } from '@/lib/api-response';
 import UserAvatar from '@/components/user-avatar';
@@ -9,8 +9,12 @@ import { HumanVerificationDialog } from '@/components/human-verification-dialog'
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 import { userCenterCartFixtures, userCenterPurchaseHistory } from '@/features/public/user-center-data';
-import { shouldRefreshAuthUserSnapshot } from '@/lib/auth-user';
 import { userApiRequest } from '@/lib/user-api-client';
+import { formatCredits } from '@/lib/credits';
+import {
+  shouldRefreshUserCenterOnEntry,
+  shouldRefreshUserCenterOnResume,
+} from './refresh';
 import { ArrowLeft, ShoppingBag, Clock, Star, Crown, Camera, Edit3, Check, X, ChevronRight, Trash2, Minus, Plus, Gift, Copy, CalendarCheck } from 'lucide-react';
 
 interface CartItem {
@@ -52,6 +56,7 @@ const LEVEL_MAP: Record<string, { label: string; color: string }> = {
 export default function UserCenterPage() {
   const { user, isLoggedIn, updateUser, refreshUser, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'cart' | 'history' | 'profile'>('overview');
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -68,7 +73,34 @@ export default function UserCenterPage() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const entryRefreshRef = useRef(false);
+  const refreshInFlightRef = useRef<Promise<unknown> | null>(null);
+  const lastRefreshAtRef = useRef(0);
+
+  const refreshUserCenterSnapshot = useCallback(() => {
+    if (
+      !shouldRefreshUserCenterOnEntry({
+        pathname,
+        isLoggedIn,
+        hasUser: Boolean(user),
+      })
+    ) {
+      return;
+    }
+
+    const now = Date.now();
+    if (refreshInFlightRef.current || now - lastRefreshAtRef.current < 250) {
+      return;
+    }
+
+    lastRefreshAtRef.current = now;
+    const refreshPromise = refreshUser().finally(() => {
+      if (refreshInFlightRef.current === refreshPromise) {
+        refreshInFlightRef.current = null;
+      }
+    });
+
+    refreshInFlightRef.current = refreshPromise;
+  }, [isLoggedIn, pathname, refreshUser, user]);
 
   useEffect(() => {
     setInviteSummary(user?.inviteSummary ?? null);
@@ -83,13 +115,34 @@ export default function UserCenterPage() {
   }, [isLoggedIn, router, user]);
 
   useEffect(() => {
-    if (!isLoggedIn || !user || entryRefreshRef.current || !shouldRefreshAuthUserSnapshot(user)) {
-      return;
+    refreshUserCenterSnapshot();
+  }, [refreshUserCenterSnapshot]);
+
+  useEffect(() => {
+    function handleResume() {
+      if (
+        !shouldRefreshUserCenterOnResume({
+          pathname,
+          isLoggedIn,
+          hasUser: Boolean(user),
+          visibilityState: document.visibilityState,
+          hasFocus: document.hasFocus(),
+        })
+      ) {
+        return;
+      }
+
+      refreshUserCenterSnapshot();
     }
 
-    entryRefreshRef.current = true;
-    void refreshUser();
-  }, [isLoggedIn, refreshUser, user]);
+    window.addEventListener('focus', handleResume);
+    document.addEventListener('visibilitychange', handleResume);
+
+    return () => {
+      window.removeEventListener('focus', handleResume);
+      document.removeEventListener('visibilitychange', handleResume);
+    };
+  }, [isLoggedIn, pathname, refreshUserCenterSnapshot, user]);
 
   useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user)) {
@@ -259,7 +312,7 @@ export default function UserCenterPage() {
       setActionMessage(
         payload.alreadyCheckedIn
           ? '今天已经签到过了。'
-          : `签到成功，获得 ${payload.checkin.rewardPoints ?? 0} 积分。`,
+          : `签到成功，获得 ${formatCredits(payload.checkin.rewardPoints ?? 0)} 积分。`,
       );
     } finally {
       setCheckinPending(false);
@@ -310,7 +363,7 @@ export default function UserCenterPage() {
           <div className="mt-5 grid grid-cols-3 gap-3">
             <div className="rounded-xl bg-white p-3 text-center">
               <Star className="mx-auto h-5 w-5 text-[#b45309]" />
-              <p className="mt-1 text-lg font-bold text-[#1d1d1f]">{user.points}</p>
+              <p className="mt-1 text-lg font-bold text-[#1d1d1f]">{formatCredits(user.points)}</p>
               <p className="text-[10px] text-[#86868b]">积分</p>
             </div>
             <div className="rounded-xl bg-white p-3 text-center">
@@ -392,7 +445,7 @@ export default function UserCenterPage() {
                   <Star className="h-5 w-5 text-[#b45309]" />
                   <div>
                     <p className="text-sm font-medium text-[#1d1d1f]">我的积分</p>
-                    <p className="text-xs text-[#86868b]">当前 {user.points} 积分</p>
+                    <p className="text-xs text-[#86868b]">当前 {formatCredits(user.points)} 积分</p>
                   </div>
                 </div>
               </div>
@@ -407,7 +460,7 @@ export default function UserCenterPage() {
                         邀请码 {inviteSummary?.inviteCode ?? '...'} · 已邀请 {inviteSummary?.invitedCount ?? 0} 人
                       </p>
                       <p className="mt-1 text-xs text-[#86868b]">
-                        已达标 {inviteSummary?.qualifiedCount ?? 0} 人 · 累计奖励 {inviteSummary?.rewardedPoints ?? 0} 积分
+                        已达标 {inviteSummary?.qualifiedCount ?? 0} 人 · 累计奖励 {formatCredits(inviteSummary?.rewardedPoints ?? 0)} 积分
                       </p>
                     </div>
                   </div>
@@ -436,7 +489,7 @@ export default function UserCenterPage() {
                       <p className="text-sm font-medium text-[#1d1d1f]">每日签到</p>
                       <p className="mt-1 text-xs text-[#86868b]">
                         {checkinStatus?.checkedIn
-                          ? `今日已签到${checkinStatus.rewardPoints ? `，获得 ${checkinStatus.rewardPoints} 积分` : ''}`
+                          ? `今日已签到${checkinStatus.rewardPoints ? `，获得 ${formatCredits(checkinStatus.rewardPoints)} 积分` : ''}`
                           : '每天可随机获得 1-3 积分'}
                       </p>
                       <p className="mt-1 text-xs text-[#86868b]">
@@ -478,7 +531,7 @@ export default function UserCenterPage() {
                         </div>
                         <p className={`shrink-0 text-sm font-semibold ${activity.amount >= 0 ? 'text-[#16a34a]' : 'text-[#b91c1c]'}`}>
                           {activity.amount >= 0 ? '+' : ''}
-                          {activity.amount}
+                          {formatCredits(activity.amount)}
                         </p>
                       </div>
                     ))

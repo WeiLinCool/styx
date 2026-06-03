@@ -1,0 +1,2 @@
+ALTER TABLE "credit_ledger_entries" ALTER COLUMN "amount" SET DATA TYPE numeric(12, 2);--> statement-breakpoint
+ALTER TABLE "credit_ledger_entries" ALTER COLUMN "balance_after" SET DATA TYPE numeric(12, 2);

@@ -1,4 +1,5 @@
 import type { AgentTaskType } from '@/server/agent/types';
+import { roundCreditAmount } from './amounts';
 
 export type ProviderBillingRuleConfig = {
   chat?: {
@@ -137,7 +138,7 @@ export function calculateProviderCreditCost(input: {
         rule.cacheMissInputCreditsPer1k +
       (unitAmount(input.usage, 'output_tokens') / 1000) * rule.outputCreditsPer1k;
 
-    return Math.max(rule.minimumCredits, Math.ceil(cost));
+    return roundProviderCreditCost(rule.minimumCredits, cost);
   }
 
   if (input.taskType === 'image' && input.rules.image) {
@@ -150,7 +151,7 @@ export function calculateProviderCreditCost(input: {
           : (unitAmount(input.usage, 'total_tokens') / 1000) *
             (rule.tokenCreditsPer1k ?? 0);
 
-    return Math.max(rule.minimumCredits, Math.ceil(cost));
+    return roundProviderCreditCost(rule.minimumCredits, cost);
   }
 
   if (input.taskType === 'video' && input.rules.video) {
@@ -165,10 +166,14 @@ export function calculateProviderCreditCost(input: {
           (rule.secondsCredits ?? 0) *
           multiplier;
 
-    return Math.max(rule.minimumCredits, Math.ceil(cost));
+    return roundProviderCreditCost(rule.minimumCredits, cost);
   }
 
   throw new Error(`Missing billing rule for ${input.taskType}.`);
+}
+
+function roundProviderCreditCost(minimumCredits: number, calculatedCost: number) {
+  return roundCreditAmount(Math.max(minimumCredits, calculatedCost));
 }
 
 function parseChatRule(
@@ -180,7 +185,7 @@ function parseChatRule(
     cachedInputCreditsPer1k: nonNegativeNumber(value.cachedInputCreditsPer1k),
     cacheMissInputCreditsPer1k: nonNegativeNumber(value.cacheMissInputCreditsPer1k),
     outputCreditsPer1k: nonNegativeNumber(value.outputCreditsPer1k),
-    minimumCredits: nonNegativeInteger(value.minimumCredits),
+    minimumCredits: nonNegativeNumber(value.minimumCredits),
   };
 }
 
@@ -197,7 +202,7 @@ function parseImageRule(
     ...optionalNumberEntry('fixedCredits', value.fixedCredits),
     ...optionalNumberEntry('imageCredits', value.imageCredits),
     ...optionalNumberEntry('tokenCreditsPer1k', value.tokenCreditsPer1k),
-    minimumCredits: nonNegativeInteger(value.minimumCredits),
+    minimumCredits: nonNegativeNumber(value.minimumCredits),
   };
 }
 
@@ -220,7 +225,7 @@ function parseVideoRule(
           ),
         }
       : {}),
-    minimumCredits: nonNegativeInteger(value.minimumCredits),
+    minimumCredits: nonNegativeNumber(value.minimumCredits),
   };
 }
 
@@ -253,14 +258,6 @@ function optionalNonNegativeNumber(value: unknown) {
 function optionalNumberEntry<T extends string>(key: T, value: unknown) {
   const parsed = optionalNonNegativeNumber(value);
   return typeof parsed === 'undefined' ? {} : { [key]: parsed };
-}
-
-function nonNegativeInteger(value: unknown) {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new Error('Minimum credits must be a non-negative integer.');
-  }
-
-  return value;
 }
 
 function readNumber(value: unknown) {

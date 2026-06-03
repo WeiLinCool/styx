@@ -59,6 +59,7 @@ export type ResolvedChatModel = PublicChatModelDto & {
   credentialEnvKey: string | null;
   model: string;
   pricing: AiModelPricing;
+  billingRules?: ProviderBillingRuleConfig;
   entitlement: ModelEntitlementResult;
 };
 
@@ -398,7 +399,7 @@ export type DatabaseChatModelRow = {
   >;
   provider: Pick<
     typeof schema.aiProviders.$inferSelect,
-    'id' | 'code' | 'name' | 'providerType' | 'status' | 'baseUrl' | 'credentialEnvKey'
+    'id' | 'code' | 'name' | 'providerType' | 'status' | 'baseUrl' | 'credentialEnvKey' | 'metadata'
   >;
   requirement: Pick<
     typeof schema.aiModelEntitlementRequirements.$inferSelect,
@@ -430,7 +431,7 @@ export type DatabaseImageModelRow = {
   >;
   provider: Pick<
     typeof schema.aiProviders.$inferSelect,
-    'id' | 'code' | 'name' | 'providerType' | 'status' | 'baseUrl' | 'credentialEnvKey'
+    'id' | 'code' | 'name' | 'providerType' | 'status' | 'baseUrl' | 'credentialEnvKey' | 'metadata'
   >;
   requirement: Pick<
     typeof schema.aiModelEntitlementRequirements.$inferSelect,
@@ -1656,9 +1657,45 @@ function pricingSummary(pricing: AiModelPricing) {
   return `${minimum} · prompt ${prompt}/1k · completion ${completion}/1k`;
 }
 
+function resolvePricingForTask(
+  legacyPricing: AiModelPricing,
+  billingRules: ProviderBillingRuleConfig,
+  taskType: 'chat' | 'image' | 'video',
+): AiModelPricing {
+  if (taskType === 'chat' && billingRules.chat) {
+    return {
+      unit: 'token',
+      promptCreditsPer1k: billingRules.chat.inputCreditsPer1k,
+      completionCreditsPer1k: billingRules.chat.outputCreditsPer1k,
+      minimumCredits: billingRules.chat.minimumCredits,
+    };
+  }
+
+  if (taskType === 'image' && billingRules.image) {
+    return {
+      unit: 'token',
+      promptCreditsPer1k: 0,
+      completionCreditsPer1k: 0,
+      minimumCredits: billingRules.image.minimumCredits,
+    };
+  }
+
+  if (taskType === 'video' && billingRules.video) {
+    return {
+      unit: 'token',
+      promptCreditsPer1k: 0,
+      completionCreditsPer1k: 0,
+      minimumCredits: billingRules.video.minimumCredits,
+    };
+  }
+
+  return legacyPricing;
+}
+
 function groupResolvedRows(
   rows: ChatModelRow[],
   entitlements: ActiveUserEntitlement[],
+  taskType: 'chat' | 'image' | 'video' = 'chat',
 ): ResolvedChatModel[] {
   const grouped = new Map<
     string,
@@ -1691,7 +1728,8 @@ function groupResolvedRows(
   }
 
   return Array.from(grouped.values()).map(({ model, provider, requirements }) => {
-    const pricing = parsePricing(model.pricing);
+    const billingRules = parseProviderBillingRules(provider.metadata.billingRules);
+    const pricing = resolvePricingForTask(parsePricing(model.pricing), billingRules, taskType);
     const entitlement = evaluateModelEntitlement({ requirements, entitlements });
 
     return {
@@ -1709,6 +1747,7 @@ function groupResolvedRows(
       credentialEnvKey: provider.credentialEnvKey,
       model: model.model,
       pricing,
+      billingRules,
       entitlement,
     };
   });
@@ -1761,7 +1800,7 @@ function groupResolvedImageRows(
   rows: ImageModelRow[],
   entitlements: ActiveUserEntitlement[],
 ): ResolvedImageModel[] {
-  return groupResolvedRows(rows, entitlements).map((model) => ({
+  return groupResolvedRows(rows, entitlements, 'image').map((model) => ({
     ...model,
     isDefault: rows.find((row) => row.model.id === model.id)?.model.isDefaultImage ?? false,
     supportedModes: supportedImageModesForModel(
@@ -1778,7 +1817,7 @@ function groupResolvedVideoRows(
   rows: VideoModelRow[],
   entitlements: ActiveUserEntitlement[],
 ): ResolvedVideoModel[] {
-  return groupResolvedRows(rows, entitlements).map((model) => ({
+  return groupResolvedRows(rows, entitlements, 'video').map((model) => ({
     ...model,
     isDefault: rows.find((row) => row.model.id === model.id)?.model.isDefaultVideo ?? false,
     supportsVideoGeneration: true,
@@ -1800,7 +1839,7 @@ function groupResolvedDatabaseChatRows(
       row.provider.status === 'enabled',
   );
 
-  return groupResolvedRows(availableRows as ChatModelRow[], entitlements);
+  return groupResolvedRows(availableRows as ChatModelRow[], entitlements, 'chat');
 }
 
 function groupResolvedDatabaseImageRows(

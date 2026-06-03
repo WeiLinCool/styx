@@ -54,7 +54,7 @@ test('hasUserPointsOverview requires check-in status and recent activity fields'
   );
 });
 
-test('shouldRefreshAuthUserSnapshot refreshes stale activation or incomplete overview snapshots', () => {
+test('shouldRefreshAuthUserSnapshot refreshes active snapshots so user-center points data does not stay stale', () => {
   const completeActiveUser = {
     ...baseUser,
     checkinStatus: {
@@ -67,7 +67,7 @@ test('shouldRefreshAuthUserSnapshot refreshes stale activation or incomplete ove
     recentPointActivities: [],
   };
 
-  assert.equal(shouldRefreshAuthUserSnapshot(completeActiveUser), false);
+  assert.equal(shouldRefreshAuthUserSnapshot(completeActiveUser), true);
   assert.equal(
     shouldRefreshAuthUserSnapshot({
       ...completeActiveUser,

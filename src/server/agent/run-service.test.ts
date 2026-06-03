@@ -1093,6 +1093,71 @@ test('createAndRunAgentRun routes chat through selected model adapter and bills 
   assert.equal(debits[0].modelCode, 'dev-free-chat');
 });
 
+test('createAndRunAgentRun prefers provider billing rules over legacy model pricing for chat usage', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const debits: number[] = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveChatModelForUser: async () =>
+      resolvedChatModel({
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 99,
+          completionCreditsPer1k: 99,
+          minimumCredits: 9,
+        },
+        billingRules: {
+          chat: {
+            mode: 'token_breakdown',
+            inputCreditsPer1k: 8,
+            cachedInputCreditsPer1k: 0.5,
+            cacheMissInputCreditsPer1k: 1,
+            outputCreditsPer1k: 0,
+            minimumCredits: 1,
+          },
+        },
+      }),
+    assertCanAffordMinimum: async () => {},
+    createChatProviderAdapter: () => ({
+      kind: 'development',
+      async runChat() {
+        return {
+          finalMessage: 'provider response',
+          usage: { promptTokens: 1000, completionTokens: 0, totalTokens: 1000 },
+          rawMetadata: {
+            usage: {
+              prompt_tokens: 1000,
+              prompt_cache_hit_tokens: 400,
+              prompt_cache_miss_tokens: 600,
+              completion_tokens: 0,
+              total_tokens: 1000,
+            },
+          },
+        };
+      },
+    }),
+    debitForAgentRun: async (input) => {
+      debits.push(input.amount);
+      return { entryId: 'ledger-provider-rule', balanceAfter: 88 };
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'chat',
+    prompt: 'hello',
+    modelId: 'seed-model-free',
+    input: {},
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const completed = await repository.getRunForUser(result.run.id, 'user-1');
+
+  assert.deepEqual(debits, [1]);
+  assert.equal(completed?.billing?.creditCost, 1);
+});
+
 test('createAndRunAgentRun returns running chat run immediately and persists stream events', async () => {
   const repository = createMemoryAgentRunRepository();
   let unblockFinal: (() => void) | null = null;

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
+import { useForm, type UseFormReturn } from 'react-hook-form';
 import { Loader2, Pencil, Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,11 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { readJsonResponse } from '@/lib/api-response';
 import { adminApiRequest } from '@/lib/admin-api-client';
 import {
@@ -39,6 +44,10 @@ import type {
   AdminAiModelRow,
   AdminAiProviderRow,
 } from '@/server/repositories/ai-models';
+import type { ProviderBillingRuleConfig } from '@/server/billing/provider-rules';
+import { formatAdminAiLabel } from './admin-ai-labels';
+
+export { formatAdminAiLabel } from './admin-ai-labels';
 
 type ProviderFormValues = {
   code: string;
@@ -47,7 +56,27 @@ type ProviderFormValues = {
   baseUrl: string;
   credentialEnvKey: string;
   status: 'enabled' | 'disabled';
-  billingRulesJson: string;
+} & ProviderBillingFormValues;
+
+type ProviderBillingFormValues = {
+  billingChatEnabled: boolean;
+  billingChatInputCreditsPer1k: number;
+  billingChatCachedInputCreditsPer1k: number;
+  billingChatCacheMissInputCreditsPer1k: number;
+  billingChatOutputCreditsPer1k: number;
+  billingChatMinimumCredits: number;
+  billingImageEnabled: boolean;
+  billingImageMode: 'fixed' | 'per_image' | 'provider_usage_tokens';
+  billingImageFixedCredits: number;
+  billingImageImageCredits: number;
+  billingImageTokenCreditsPer1k: number;
+  billingImageMinimumCredits: number;
+  billingVideoEnabled: boolean;
+  billingVideoMode: 'provider_usage_tokens' | 'video_seconds';
+  billingVideoTokenCreditsPer1k: number;
+  billingVideoSecondsCredits: number;
+  billingVideoMinimumCredits: number;
+  billingVideoResolutionMultipliersJson: string;
 };
 
 type ModelFormValues = {
@@ -80,12 +109,400 @@ async function postJson(url: string, body: Record<string, unknown>) {
   return payload;
 }
 
-function formatBillingRulesJson(value: unknown) {
+function formatJson(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readNumber(value: unknown, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function parseResolutionMultipliers(value: string) {
+  const parsed = JSON.parse(value.trim() || '{}') as unknown;
+  const record = readRecord(parsed);
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+      .map(([key, item]) => [key, item]),
+  );
+}
+
+function BillingSection({
+  title,
+  description,
+  enabled,
+  onEnabledChange,
+  children,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  onEnabledChange: (value: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-neutral-950">{title}</div>
+          <div className="mt-1 text-xs leading-5 text-neutral-600">{description}</div>
+        </div>
+        <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+      </div>
+      {enabled ? <div className="mt-3 grid gap-3">{children}</div> : null}
+    </div>
+  );
+}
+
+function BillingNumberField({
+  form,
+  name,
+  label,
+  step = '1',
+}: {
+  form: UseFormReturn<ProviderFormValues>;
+  name: keyof ProviderBillingFormValues;
+  label: string;
+  step?: string;
+}) {
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <Input
+              type="number"
+              min="0"
+              step={step}
+              value={typeof field.value === 'number' ? field.value : 0}
+              onChange={(event) => field.onChange(Number(event.target.value))}
+              onBlur={field.onBlur}
+              name={field.name}
+              ref={field.ref}
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+function ProviderBillingRulesFields({
+  form,
+}: {
+  form: UseFormReturn<ProviderFormValues>;
+}) {
+  const imageMode = form.watch('billingImageMode');
+  const videoMode = form.watch('billingVideoMode');
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-sm font-medium text-neutral-950">计费规则</div>
+        <div className="mt-1 text-xs leading-5 text-neutral-600">
+          按供应商返回的用量换算积分。关闭某一类后，该供应商不会保存对应任务类型的计费规则。
+        </div>
+      </div>
+
+      <FormField
+        control={form.control}
+        name="billingChatEnabled"
+        render={({ field }) => (
+          <BillingSection
+            title="对话计费"
+            description="适配 DeepSeek 等返回缓存命中/未命中输入 token 的模型。"
+            enabled={field.value}
+            onEnabledChange={field.onChange}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <BillingNumberField
+                form={form}
+                name="billingChatInputCreditsPer1k"
+                label="普通输入 / 千 token"
+                step="0.01"
+              />
+              <BillingNumberField
+                form={form}
+                name="billingChatCachedInputCreditsPer1k"
+                label="缓存命中输入 / 千 token"
+                step="0.01"
+              />
+              <BillingNumberField
+                form={form}
+                name="billingChatCacheMissInputCreditsPer1k"
+                label="缓存未命中输入 / 千 token"
+                step="0.01"
+              />
+              <BillingNumberField
+                form={form}
+                name="billingChatOutputCreditsPer1k"
+                label="输出 / 千 token"
+                step="0.01"
+              />
+              <BillingNumberField
+                form={form}
+                name="billingChatMinimumCredits"
+                label="最低扣费积分"
+                step="0.01"
+              />
+            </div>
+          </BillingSection>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="billingImageEnabled"
+        render={({ field }) => (
+          <BillingSection
+            title="图像计费"
+            description="适配固定扣费、按图片张数扣费，或按上游 token 用量扣费。"
+            enabled={field.value}
+            onEnabledChange={field.onChange}
+          >
+            <FormField
+              control={form.control}
+              name="billingImageMode"
+              render={({ field: modeField }) => (
+                <FormItem>
+                  <FormLabel>计费模式</FormLabel>
+                  <Select value={modeField.value} onValueChange={modeField.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="fixed">{formatAdminAiLabel('fixed')}</SelectItem>
+                      <SelectItem value="per_image">{formatAdminAiLabel('per_image')}</SelectItem>
+                      <SelectItem value="provider_usage_tokens">
+                        {formatAdminAiLabel('provider_usage_tokens')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {imageMode === 'fixed' ? (
+                <BillingNumberField
+                  form={form}
+                  name="billingImageFixedCredits"
+                  label="固定扣费积分"
+                />
+              ) : null}
+              {imageMode === 'per_image' ? (
+                <BillingNumberField
+                  form={form}
+                  name="billingImageImageCredits"
+                  label="每张图片积分"
+                />
+              ) : null}
+              {imageMode === 'provider_usage_tokens' ? (
+                <BillingNumberField
+                  form={form}
+                  name="billingImageTokenCreditsPer1k"
+                  label="每千 token 积分"
+                  step="0.01"
+                />
+              ) : null}
+              <BillingNumberField
+                form={form}
+                name="billingImageMinimumCredits"
+                label="最低扣费积分"
+                step="0.01"
+              />
+            </div>
+          </BillingSection>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="billingVideoEnabled"
+        render={({ field }) => (
+          <BillingSection
+            title="视频计费"
+            description="适配 Doubao Seedance 等视频模型，可按上游 token 或视频秒数计费。"
+            enabled={field.value}
+            onEnabledChange={field.onChange}
+          >
+            <FormField
+              control={form.control}
+              name="billingVideoMode"
+              render={({ field: modeField }) => (
+                <FormItem>
+                  <FormLabel>计费模式</FormLabel>
+                  <Select value={modeField.value} onValueChange={modeField.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="provider_usage_tokens">
+                        {formatAdminAiLabel('provider_usage_tokens')}
+                      </SelectItem>
+                      <SelectItem value="video_seconds">
+                        {formatAdminAiLabel('video_seconds')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {videoMode === 'provider_usage_tokens' ? (
+                <BillingNumberField
+                  form={form}
+                  name="billingVideoTokenCreditsPer1k"
+                  label="每千 token 积分"
+                  step="0.01"
+                />
+              ) : null}
+              {videoMode === 'video_seconds' ? (
+                <BillingNumberField
+                  form={form}
+                  name="billingVideoSecondsCredits"
+                  label="每秒积分"
+                  step="0.01"
+                />
+              ) : null}
+              <BillingNumberField
+                form={form}
+                name="billingVideoMinimumCredits"
+                label="最低扣费积分"
+                step="0.01"
+              />
+            </div>
+            {videoMode === 'video_seconds' ? (
+              <FormField
+                control={form.control}
+                name="billingVideoResolutionMultipliersJson"
+                render={({ field: multipliersField }) => (
+                  <FormItem>
+                    <FormLabel>分辨率倍率 JSON</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...multipliersField}
+                        className="min-h-24 font-mono text-xs"
+                        spellCheck={false}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
+          </BillingSection>
+        )}
+      />
+    </div>
+  );
+}
+
+export function providerBillingRulesToFormValues(
+  value: unknown,
+): ProviderBillingFormValues {
+  const rules = readRecord(value);
+  const chat = readRecord(rules.chat);
+  const image = readRecord(rules.image);
+  const video = readRecord(rules.video);
+  const imageMode =
+    image.mode === 'per_image' || image.mode === 'provider_usage_tokens'
+      ? image.mode
+      : 'fixed';
+  const videoMode = video.mode === 'video_seconds' ? video.mode : 'provider_usage_tokens';
+
+  return {
+    billingChatEnabled: Object.keys(chat).length > 0,
+    billingChatInputCreditsPer1k: readNumber(chat.inputCreditsPer1k, 0),
+    billingChatCachedInputCreditsPer1k: readNumber(chat.cachedInputCreditsPer1k, 0),
+    billingChatCacheMissInputCreditsPer1k: readNumber(chat.cacheMissInputCreditsPer1k, 0),
+    billingChatOutputCreditsPer1k: readNumber(chat.outputCreditsPer1k, 0),
+    billingChatMinimumCredits: readNumber(chat.minimumCredits, 1),
+    billingImageEnabled: Object.keys(image).length > 0,
+    billingImageMode: imageMode,
+    billingImageFixedCredits: readNumber(image.fixedCredits, 0),
+    billingImageImageCredits: readNumber(image.imageCredits, 0),
+    billingImageTokenCreditsPer1k: readNumber(image.tokenCreditsPer1k, 0),
+    billingImageMinimumCredits: readNumber(image.minimumCredits, 1),
+    billingVideoEnabled: Object.keys(video).length > 0,
+    billingVideoMode: videoMode,
+    billingVideoTokenCreditsPer1k: readNumber(video.tokenCreditsPer1k, 0),
+    billingVideoSecondsCredits: readNumber(video.secondsCredits, 0),
+    billingVideoMinimumCredits: readNumber(video.minimumCredits, 3),
+    billingVideoResolutionMultipliersJson: formatJson(readRecord(video.resolutionMultipliers)),
+  };
+}
+
+export function providerBillingRulesFromFormValues(
+  values: ProviderBillingFormValues,
+): ProviderBillingRuleConfig {
+  const rules: ProviderBillingRuleConfig = {};
+
+  if (values.billingChatEnabled) {
+    rules.chat = {
+      mode: 'token_breakdown',
+      inputCreditsPer1k: values.billingChatInputCreditsPer1k,
+      cachedInputCreditsPer1k: values.billingChatCachedInputCreditsPer1k,
+      cacheMissInputCreditsPer1k: values.billingChatCacheMissInputCreditsPer1k,
+      outputCreditsPer1k: values.billingChatOutputCreditsPer1k,
+      minimumCredits: values.billingChatMinimumCredits,
+    };
+  }
+
+  if (values.billingImageEnabled) {
+    rules.image = {
+      mode: values.billingImageMode,
+      ...(values.billingImageMode === 'fixed'
+        ? { fixedCredits: values.billingImageFixedCredits }
+        : {}),
+      ...(values.billingImageMode === 'per_image'
+        ? { imageCredits: values.billingImageImageCredits }
+        : {}),
+      ...(values.billingImageMode === 'provider_usage_tokens'
+        ? { tokenCreditsPer1k: values.billingImageTokenCreditsPer1k }
+        : {}),
+      minimumCredits: values.billingImageMinimumCredits,
+    };
+  }
+
+  if (values.billingVideoEnabled) {
+    const resolutionMultipliers = parseResolutionMultipliers(
+      values.billingVideoResolutionMultipliersJson,
+    );
+    rules.video = {
+      mode: values.billingVideoMode,
+      ...(values.billingVideoMode === 'provider_usage_tokens'
+        ? { tokenCreditsPer1k: values.billingVideoTokenCreditsPer1k }
+        : {}),
+      ...(values.billingVideoMode === 'video_seconds'
+        ? { secondsCredits: values.billingVideoSecondsCredits }
+        : {}),
+      ...(Object.keys(resolutionMultipliers).length > 0 ? { resolutionMultipliers } : {}),
+      minimumCredits: values.billingVideoMinimumCredits,
+    };
+  }
+
+  return rules;
 }
 
 function ProviderDialog({
   trigger,
+  triggerTooltip,
   title,
   description,
   submitLabel,
@@ -93,6 +510,7 @@ function ProviderDialog({
   initialValues,
 }: {
   trigger: React.ReactNode;
+  triggerTooltip?: string;
   title: string;
   description: string;
   submitLabel: string;
@@ -114,10 +532,13 @@ function ProviderDialog({
   async function onSubmit(values: ProviderFormValues) {
     setError(null);
     try {
-      const billingRules = JSON.parse(values.billingRulesJson.trim() || '{}');
+      const billingRules = providerBillingRulesFromFormValues(values);
 
       await postJson(submitUrl, {
-        ...values,
+        code: values.code,
+        name: values.name,
+        providerType: values.providerType,
+        status: values.status,
         baseUrl: values.baseUrl.trim() || null,
         credentialEnvKey: values.credentialEnvKey.trim() || null,
         billingRules,
@@ -127,7 +548,7 @@ function ProviderDialog({
     } catch (submitError) {
       setError(
         submitError instanceof SyntaxError
-          ? '计费规则 JSON 格式无效。'
+          ? '分辨率倍率 JSON 格式无效。'
           : submitError instanceof Error
             ? submitError.message
             : '提交失败。',
@@ -137,7 +558,18 @@ function ProviderDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {triggerTooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>{trigger}</DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            {triggerTooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -149,10 +581,10 @@ function ProviderDialog({
               <FormField
                 control={form.control}
                 name="code"
-                rules={{ required: '请输入 provider code。' }}
+                rules={{ required: '请输入供应商编码。' }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Code</FormLabel>
+                    <FormLabel>编码</FormLabel>
                     <FormControl>
                       <Input {...field} placeholder="siliconflow" />
                     </FormControl>
@@ -190,8 +622,12 @@ function ProviderDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="openai_compatible">openai_compatible</SelectItem>
-                        <SelectItem value="development">development</SelectItem>
+                        <SelectItem value="openai_compatible">
+                          {formatAdminAiLabel('openai_compatible')}
+                        </SelectItem>
+                        <SelectItem value="development">
+                          {formatAdminAiLabel('development')}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -211,8 +647,12 @@ function ProviderDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="disabled">disabled</SelectItem>
-                        <SelectItem value="enabled">enabled</SelectItem>
+                        <SelectItem value="disabled">
+                          {formatAdminAiLabel('disabled')}
+                        </SelectItem>
+                        <SelectItem value="enabled">
+                          {formatAdminAiLabel('enabled')}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -226,7 +666,7 @@ function ProviderDialog({
               name="baseUrl"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Base URL</FormLabel>
+                  <FormLabel>接口地址</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="https://api.example.com/v1" />
                   </FormControl>
@@ -240,7 +680,7 @@ function ProviderDialog({
               name="credentialEnvKey"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Credential Env Key</FormLabel>
+                  <FormLabel>凭据环境变量</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="OPENAI_API_KEY" />
                   </FormControl>
@@ -249,23 +689,7 @@ function ProviderDialog({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="billingRulesJson"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>计费规则 JSON</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      className="min-h-40 font-mono text-xs"
-                      spellCheck={false}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <ProviderBillingRulesFields form={form} />
 
             {error ? <p className="text-sm text-red-700">{error}</p> : null}
             <DialogFooter>
@@ -283,6 +707,7 @@ function ProviderDialog({
 
 function ModelDialog({
   trigger,
+  triggerTooltip,
   title,
   description,
   submitLabel,
@@ -291,6 +716,7 @@ function ModelDialog({
   initialValues,
 }: {
   trigger: React.ReactNode;
+  triggerTooltip?: string;
   title: string;
   description: string;
   submitLabel: string;
@@ -327,7 +753,18 @@ function ModelDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {triggerTooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>{trigger}</DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            {triggerTooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -365,10 +802,10 @@ function ModelDialog({
               <FormField
                 control={form.control}
                 name="code"
-                rules={{ required: '请输入模型 code。' }}
+                rules={{ required: '请输入模型编码。' }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Code</FormLabel>
+                    <FormLabel>编码</FormLabel>
                     <FormControl>
                       <Input {...field} placeholder="sf-deepseek-v3" />
                     </FormControl>
@@ -421,8 +858,12 @@ function ModelDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="disabled">disabled</SelectItem>
-                        <SelectItem value="enabled">enabled</SelectItem>
+                        <SelectItem value="disabled">
+                          {formatAdminAiLabel('disabled')}
+                        </SelectItem>
+                        <SelectItem value="enabled">
+                          {formatAdminAiLabel('enabled')}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -434,7 +875,7 @@ function ModelDialog({
                 name="supportsChat"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>支持 Chat</FormLabel>
+                    <FormLabel>支持对话</FormLabel>
                     <FormControl>
                       <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -533,7 +974,7 @@ export function CreateAiProviderDialog() {
         </Button>
       }
       title="新增供应商"
-      description="录入 OpenAI-compatible endpoint 与凭据环境变量引用。"
+      description="录入 OpenAI 兼容接口地址、凭据环境变量引用与供应商计费规则。"
       submitLabel="保存供应商"
       submitUrl="/api/admin/ai-providers"
       initialValues={{
@@ -543,7 +984,7 @@ export function CreateAiProviderDialog() {
         baseUrl: '',
         credentialEnvKey: '',
         status: 'disabled',
-        billingRulesJson: formatBillingRulesJson({}),
+        ...providerBillingRulesToFormValues({}),
       }}
     />
   );
@@ -551,19 +992,30 @@ export function CreateAiProviderDialog() {
 
 export function EditAiProviderDialog({
   provider,
+  compact = false,
 }: {
   provider: AdminAiProviderRow;
+  compact?: boolean;
 }) {
+  const trigger = (
+    <Button
+      type="button"
+      size={compact ? 'icon-sm' : 'sm'}
+      variant="outline"
+      title="编辑供应商"
+      aria-label="编辑供应商"
+    >
+      <Pencil className="h-3.5 w-3.5" />
+      {compact ? null : '编辑'}
+    </Button>
+  );
+
   return (
     <ProviderDialog
-      trigger={
-        <Button type="button" size="sm" variant="outline">
-          <Pencil className="h-3.5 w-3.5" />
-          编辑
-        </Button>
-      }
+      trigger={trigger}
+      triggerTooltip={compact ? '编辑供应商' : undefined}
       title="编辑供应商"
-      description="更新 endpoint、凭据引用和状态。"
+      description="更新接口地址、凭据引用、状态与供应商计费规则。"
       submitLabel="保存修改"
       submitUrl={`/api/admin/ai-providers/${provider.id}`}
       initialValues={{
@@ -573,7 +1025,7 @@ export function EditAiProviderDialog({
         baseUrl: provider.baseUrlLabel === 'not configured' ? '' : provider.baseUrlLabel,
         credentialEnvKey: provider.credential.label === 'not required' ? '' : provider.credential.label,
         status: provider.status === 'archived' ? 'disabled' : provider.status,
-        billingRulesJson: formatBillingRulesJson(provider.billingRules),
+        ...providerBillingRulesToFormValues(provider.billingRules),
       }}
     />
   );
@@ -596,7 +1048,7 @@ export function CreateAiModelDialog({
         </Button>
       }
       title="新增模型"
-      description="绑定供应商、模型名与 chat / image 能力。"
+      description="绑定供应商、上游模型名与对话、图像、视频能力。"
       submitLabel="保存模型"
       submitUrl="/api/admin/ai-models"
       providers={providers}
@@ -619,20 +1071,31 @@ export function CreateAiModelDialog({
 export function EditAiModelDialog({
   model,
   providers,
+  compact = false,
 }: {
   model: AdminAiModelRow;
   providers: AdminAiProviderRow[];
+  compact?: boolean;
 }) {
+  const trigger = (
+    <Button
+      type="button"
+      size={compact ? 'icon-sm' : 'sm'}
+      variant="outline"
+      title="编辑模型"
+      aria-label="编辑模型"
+    >
+      <Pencil className="h-3.5 w-3.5" />
+      {compact ? null : '编辑'}
+    </Button>
+  );
+
   return (
     <ModelDialog
-      trigger={
-        <Button type="button" size="sm" variant="outline">
-          <Pencil className="h-3.5 w-3.5" />
-          编辑
-        </Button>
-      }
+      trigger={trigger}
+      triggerTooltip={compact ? '编辑模型' : undefined}
       title="编辑模型"
-      description="更新供应商绑定、模型标识和 chat / image 能力。"
+      description="更新供应商绑定、上游模型标识和对话、图像、视频能力。"
       submitLabel="保存修改"
       submitUrl={`/api/admin/ai-models/${model.id}`}
       providers={providers}

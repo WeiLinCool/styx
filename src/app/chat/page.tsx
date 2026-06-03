@@ -7,6 +7,7 @@ import {
   Send, Bot, Menu, X, Lightbulb, Code, PenTool, Globe, ArrowLeft, Trash2,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { formatCredits } from '@/lib/credits';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
@@ -764,7 +765,7 @@ function formatBillingLabel(run: AgentRunDto) {
   }
 
   if (typeof run.billing.creditCost === 'number') {
-    return `消耗：${run.billing.creditCost} 积分`;
+    return `消耗：${formatCredits(run.billing.creditCost)} 积分`;
   }
 
   return `计费：${run.billing.status}`;

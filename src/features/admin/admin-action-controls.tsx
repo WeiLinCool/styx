@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState, useTransition } from 'react';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, MoreHorizontal, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -14,11 +14,23 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { readJsonResponse } from '@/lib/api-response';
 import { adminApiRequest } from '@/lib/admin-api-client';
+import { formatCredits } from '@/lib/credits';
 import { cn } from '@/lib/utils';
 import type { AdminWorkOrderQueueStatus } from '@/server/repositories/admin-activation-work-orders';
 import type {
@@ -34,6 +46,14 @@ import {
 type ActionState = {
   tone: 'success' | 'error';
   message: string;
+};
+
+type AdminInlineAction = {
+  label: string;
+  url: string;
+  body: Record<string, unknown>;
+  successMessage: string;
+  variant?: 'outline' | 'destructive';
 };
 
 type AdminPointAdjustmentState = {
@@ -63,13 +83,7 @@ async function postAdminAction(url: string, body: Record<string, unknown>) {
 function ActionButtons({
   actions,
 }: {
-  actions: {
-    label: string;
-    url: string;
-    body: Record<string, unknown>;
-    successMessage: string;
-    variant?: 'outline' | 'destructive';
-  }[];
+  actions: AdminInlineAction[];
 }) {
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -129,6 +143,89 @@ function ActionButtons({
             <XCircle className="h-3.5 w-3.5 shrink-0" />
           )}
           <span>{state.message}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CompactActionMenu({ actions }: { actions: AdminInlineAction[] }) {
+  const router = useRouter();
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [state, setState] = useState<ActionState | null>(null);
+  const [, startTransition] = useTransition();
+
+  async function runAction(action: AdminInlineAction) {
+    setPendingAction(action.label);
+    setState(null);
+
+    try {
+      await postAdminAction(action.url, action.body);
+      setState({ tone: 'success', message: action.successMessage });
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setState({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '后台操作失败。',
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="更多操作"
+                title="更多操作"
+                disabled={pendingAction !== null || actions.length === 0}
+              >
+                {pendingAction ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            更多操作
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="min-w-32">
+          {actions.map((action) => (
+            <DropdownMenuItem
+              key={action.label}
+              variant={action.variant === 'destructive' ? 'destructive' : 'default'}
+              disabled={pendingAction !== null}
+              onSelect={(event) => {
+                event.preventDefault();
+                void runAction(action);
+              }}
+            >
+              {pendingAction === action.label ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              {action.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {state ? (
+        <div
+          className={cn(
+            'max-w-44 text-right text-[11px]',
+            state.tone === 'success' ? 'text-emerald-700' : 'text-red-700',
+          )}
+        >
+          {state.message}
         </div>
       ) : null}
     </div>
@@ -215,7 +312,7 @@ export function AdminUserActions({
             <DialogDescription>支持正负调整，变更原因必填，写入真实积分账本与审计日志。</DialogDescription>
           </DialogHeader>
           <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-            当前积分：{currentPoints}
+            当前积分：{formatCredits(currentPoints)}
           </div>
           <form className="space-y-4" onSubmit={(event) => void handlePointAdjustmentSubmit(event)}>
             <div className="space-y-2">
@@ -223,8 +320,8 @@ export function AdminUserActions({
               <Input
                 id={`admin-points-amount-${userId}`}
                 type="number"
-                step="1"
-                placeholder="例如 100 或 -50"
+                step="0.01"
+                placeholder="例如 100、-50、0.5"
                 value={formState.amount}
                 onChange={(event) =>
                   setFormState((current) => ({ ...current, amount: event.target.value }))
@@ -575,26 +672,27 @@ export function AdminAiModelActions({
         ];
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      <EditAiModelDialog model={model} providers={providers} />
-      <ActionButtons actions={actions} />
-      <AdminAiConfigTestDialog
-        title="测试模型"
-        description="对当前模型发起最小测试请求，确认 provider 与 model 可用。"
-        triggerLabel="测试模型"
-        url={`/api/admin/ai-models/${model.id}/test`}
-        body={{}}
-      />
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center justify-end gap-1">
+        <EditAiModelDialog model={model} providers={providers} compact />
+        <AdminAiConfigTestDialog
+          title="测试模型"
+          description="对当前模型发起最小测试请求，确认供应商、上游模型名与真实扣费闭环可用。"
+          triggerLabel="测试模型"
+          url={`/api/admin/ai-models/${model.id}/test`}
+          body={{}}
+          compact
+        />
+        <CompactActionMenu actions={actions} />
+      </div>
     </div>
   );
 }
 
 export function AdminAiProviderActions({
   provider,
-  fallbackModelId,
 }: {
   provider: AdminAiProviderRow;
-  fallbackModelId: string | null;
 }) {
   const actions =
     provider.status === 'enabled'
@@ -617,18 +715,9 @@ export function AdminAiProviderActions({
         ];
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      <EditAiProviderDialog provider={provider} />
-      <ActionButtons actions={actions} />
-      {fallbackModelId ? (
-        <AdminAiConfigTestDialog
-          title="测试供应商"
-          description="使用一个关联模型发送最小请求，验证 endpoint 与凭据引用。"
-          triggerLabel="测试供应商"
-          url={`/api/admin/ai-providers/${provider.id}/test`}
-          body={{ modelId: fallbackModelId }}
-        />
-      ) : null}
+    <div className="flex items-start justify-end gap-1">
+      <EditAiProviderDialog provider={provider} compact />
+      <CompactActionMenu actions={actions} />
     </div>
   );
 }

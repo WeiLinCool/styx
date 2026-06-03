@@ -18,6 +18,16 @@ test('summarizeReferralStats totals invited, qualified, and rewarded points', ()
   );
 });
 
+test('summarizeReferralStats normalizes numeric reward strings from ledger rows', () => {
+  assert.deepEqual(
+    summarizeReferralStats([
+      { qualifiedAt: '2026-05-30T00:00:00.000Z', rewardAmount: '3.00' },
+      { qualifiedAt: null, rewardAmount: '-0.50' },
+    ]),
+    { invitedCount: 2, qualifiedCount: 1, rewardedPoints: 2.5 },
+  );
+});
+
 test('shouldSkipReferralQualification returns true when referral is already qualified', () => {
   assert.equal(
     shouldSkipReferralQualification({
@@ -76,14 +86,14 @@ test('formatRecentPointActivity normalizes ledger rows for recent activity', () 
       {
         id: 'entry-1',
         entryType: 'grant',
-        amount: 3,
+        amount: '3.00',
         reason: 'daily check-in',
         createdAt: '2026-05-30T08:00:00.000Z',
       },
       {
         id: 'entry-2',
         entryType: 'debit',
-        amount: -2,
+        amount: '-0.50',
         reason: 'chat usage',
         createdAt: new Date('2026-05-29T08:00:00.000Z'),
       },
@@ -99,7 +109,7 @@ test('formatRecentPointActivity normalizes ledger rows for recent activity', () 
       {
         id: 'entry-2',
         entryType: 'debit',
-        amount: -2,
+        amount: -0.5,
         reason: 'chat usage',
         createdAt: '2026-05-29T08:00:00.000Z',
       },

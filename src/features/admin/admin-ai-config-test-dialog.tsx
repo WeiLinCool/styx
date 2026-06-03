@@ -13,10 +13,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { adminApiRequest } from '@/lib/admin-api-client';
 import { readJsonResponse } from '@/lib/api-response';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { formatAdminAiLabel } from './admin-ai-labels';
+import { formatCredits } from '@/lib/credits';
 
 type ConfigTestResult = {
   ok?: boolean;
@@ -52,18 +59,30 @@ type ConfigTestResult = {
   };
 };
 
+function formatUsage(totalTokens: number | undefined) {
+  return typeof totalTokens === 'number' ? `${totalTokens} token` : formatAdminAiLabel('unknown');
+}
+
+function formatBilling(status: string | undefined, creditCost: number | null | undefined) {
+  const statusLabel = formatAdminAiLabel(status ?? 'unknown');
+
+  return typeof creditCost === 'number' ? `${statusLabel} · ${formatCredits(creditCost)} 积分` : statusLabel;
+}
+
 export function AdminAiConfigTestDialog({
   title,
   description,
   triggerLabel,
   url,
   body,
+  compact = false,
 }: {
   title: string;
   description: string;
   triggerLabel: string;
   url: string;
   body: Record<string, unknown>;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -90,21 +109,40 @@ export function AdminAiConfigTestDialog({
     }
   }
 
+  const trigger = (
+    <Button
+      type="button"
+      size={compact ? 'icon-sm' : 'sm'}
+      variant="outline"
+      title={triggerLabel}
+      aria-label={triggerLabel}
+    >
+      <TestTube2 className="h-3.5 w-3.5" />
+      {compact ? null : triggerLabel}
+    </Button>
+  );
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="outline">
-          <TestTube2 className="h-3.5 w-3.5" />
-          {triggerLabel}
-        </Button>
-      </DialogTrigger>
+      {compact ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>{trigger}</DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            {triggerLabel}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <Label htmlFor="admin-ai-config-test-prompt">测试 Prompt</Label>
+          <Label htmlFor="admin-ai-config-test-prompt">测试提示词</Label>
           <Textarea
             id="admin-ai-config-test-prompt"
             value={prompt}
@@ -119,11 +157,17 @@ export function AdminAiConfigTestDialog({
             result.ok ? (
               <div className="space-y-2">
                 <p className="font-medium text-emerald-700">闭环测试成功。</p>
-                <p>状态：{result.result?.run?.status ?? 'succeeded'}</p>
+                <p>状态：{formatAdminAiLabel(result.result?.run?.status ?? 'succeeded')}</p>
                 <p>耗时：{result.result?.elapsedMs ?? 0} ms</p>
                 <p>模型：{result.result?.providerLabel} / {result.result?.modelLabel}</p>
-                <p>计费：{result.result?.run?.billing?.status ?? 'unknown'}{typeof result.result?.run?.billing?.creditCost === 'number' ? ` · ${result.result.run.billing.creditCost} credits` : ''}</p>
-                <p>用量：{typeof result.result?.run?.usage?.totalTokens === 'number' ? `${result.result.run.usage.totalTokens} tokens` : 'unknown'}</p>
+                <p>
+                  计费：
+                  {formatBilling(
+                    result.result?.run?.billing?.status,
+                    result.result?.run?.billing?.creditCost,
+                  )}
+                </p>
+                <p>用量：{formatUsage(result.result?.run?.usage?.totalTokens)}</p>
                 <div className="space-y-1">
                   <p className="font-medium text-neutral-900">回复</p>
                   <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-neutral-200 bg-white p-2 text-xs text-neutral-800">
@@ -136,10 +180,16 @@ export function AdminAiConfigTestDialog({
                 <p className="font-medium text-red-700">
                   {result.result?.run?.finalMessage ? '供应商已回复，但闭环后续失败。' : '闭环测试失败。'}
                 </p>
-                <p>状态：{result.result?.run?.status ?? 'failed'}</p>
+                <p>状态：{formatAdminAiLabel(result.result?.run?.status ?? 'failed')}</p>
                 <p>{result.error?.message ?? result.result?.error ?? result.result?.run?.errorMessage ?? '请求未通过。'}</p>
-                <p>计费：{result.result?.run?.billing?.status ?? 'unknown'}{typeof result.result?.run?.billing?.creditCost === 'number' ? ` · ${result.result.run.billing.creditCost} credits` : ''}</p>
-                <p>用量：{typeof result.result?.run?.usage?.totalTokens === 'number' ? `${result.result.run.usage.totalTokens} tokens` : 'unknown'}</p>
+                <p>
+                  计费：
+                  {formatBilling(
+                    result.result?.run?.billing?.status,
+                    result.result?.run?.billing?.creditCost,
+                  )}
+                </p>
+                <p>用量：{formatUsage(result.result?.run?.usage?.totalTokens)}</p>
                 {result.result?.run?.finalMessage ? (
                   <div className="space-y-1">
                     <p className="font-medium text-neutral-900">供应商回复</p>
@@ -152,7 +202,7 @@ export function AdminAiConfigTestDialog({
               </div>
             )
           ) : (
-            <p>输入接近用户真实请求的 prompt，点击开始测试后返回完整闭环结果。</p>
+            <p>输入接近用户真实请求的提示词，点击开始测试后返回完整闭环结果。</p>
           )}
         </div>
         <DialogFooter>

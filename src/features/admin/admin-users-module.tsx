@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { formatAccountStateLabel } from '@/features/account/account-state';
+import { formatCredits } from '@/lib/credits';
 import {
   Table,
   TableBody,
@@ -87,7 +88,7 @@ const columns: AdminColumn<AdminUserRow>[] = [
     render: (user) => (
       <div>
         <div className="text-sm text-neutral-900">{user.membership}</div>
-        <div className="text-xs text-neutral-500">{user.points} 积分</div>
+        <div className="text-xs text-neutral-500">{formatCredits(user.points)} 积分</div>
       </div>
     ),
   },

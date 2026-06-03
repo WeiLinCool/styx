@@ -10,7 +10,7 @@ import { createJsonResponse } from '@/server/encrypted-response';
 const bodySchema = z.object({
   amount: z
     .number()
-    .int()
+    .refine((value) => Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) < 1e-9, 'Amount must use at most two decimal places.')
     .refine((value) => value !== 0, 'Amount must be non-zero.'),
   reason: z.string().trim().min(1).max(500),
 });

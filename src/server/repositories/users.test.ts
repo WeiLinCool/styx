@@ -13,7 +13,7 @@ test('adjustUserPointsByAdmin writes signed ledger adjustment and audit event', 
     {
       userId: 'user-1',
       actorId: 'admin-1',
-      amount: -25,
+      amount: -25.5,
       reason: ' Manual correction ',
     },
     {
@@ -27,7 +27,7 @@ test('adjustUserPointsByAdmin writes signed ledger adjustment and audit event', 
         ledgerCalls.push(input);
         return {
           entryId: 'ledger-1',
-          balanceAfter: 75,
+          balanceAfter: 74.5,
         };
       },
       async recordAuditEvent(input) {
@@ -43,14 +43,14 @@ test('adjustUserPointsByAdmin writes signed ledger adjustment and audit event', 
   assert.deepEqual(result, {
     userId: 'user-1',
     entryId: 'ledger-1',
-    amount: -25,
-    balanceAfter: 75,
+    amount: -25.5,
+    balanceAfter: 74.5,
     reason: 'Manual correction',
   });
   assert.deepEqual(ledgerCalls, [
     {
       userId: 'user-1',
-      amount: -25,
+      amount: -25.5,
       idempotencyKey: 'admin-points-adjustment:test',
       reason: 'Manual correction',
       metadata: {
@@ -69,8 +69,8 @@ test('adjustUserPointsByAdmin writes signed ledger adjustment and audit event', 
       entityType: 'credit_ledger_entry',
       entityId: 'ledger-1',
       metadata: {
-        amount: -25,
-        balanceAfter: 75,
+        amount: -25.5,
+        balanceAfter: 74.5,
         reason: 'Manual correction',
       },
     },

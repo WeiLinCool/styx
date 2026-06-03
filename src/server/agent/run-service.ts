@@ -6,6 +6,10 @@ import {
   debitForImageAgentRun as defaultDebitForImageAgentRun,
 } from '@/server/billing/credits';
 import {
+  calculateProviderCreditCost,
+  normalizeProviderUsage,
+} from '@/server/billing/provider-rules';
+import {
   createChatProviderAdapter as defaultCreateChatProviderAdapter,
   type ChatProviderResult,
   type ChatProviderAdapter,
@@ -300,6 +304,81 @@ function toSelectedModelSnapshot(model: ResolvedChatModel | ResolvedImageModel) 
     providerName: model.providerName,
     entitlementLabel: model.entitlement.label,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function buildProviderRawUsage(
+  rawMetadata: Record<string, unknown>,
+  usage?: AiUsage,
+): Record<string, unknown> {
+  const providerUsage = isRecord(rawMetadata.usage) ? rawMetadata.usage : {};
+
+  return {
+    ...(typeof usage?.promptTokens === 'number' ? { prompt_tokens: usage.promptTokens } : {}),
+    ...(typeof usage?.completionTokens === 'number'
+      ? { completion_tokens: usage.completionTokens }
+      : {}),
+    ...(typeof usage?.totalTokens === 'number' ? { total_tokens: usage.totalTokens } : {}),
+    ...providerUsage,
+  };
+}
+
+function calculateChatRunCreditCost(input: {
+  model: ResolvedChatModel;
+  usage: AiUsage;
+  rawMetadata: Record<string, unknown>;
+}) {
+  if (input.model.billingRules?.chat) {
+    const normalizedUsage = normalizeProviderUsage({
+      providerType: input.model.providerType,
+      taskType: 'chat',
+      rawUsage: buildProviderRawUsage(input.rawMetadata, input.usage),
+      runInput: {},
+    });
+
+    return calculateProviderCreditCost({
+      taskType: 'chat',
+      usage: normalizedUsage,
+      rules: input.model.billingRules,
+    });
+  }
+
+  return calculateChatCreditCost({
+    usage: input.usage,
+    pricing: input.model.pricing,
+  });
+}
+
+function calculateMediaRunCreditCost(input: {
+  taskType: 'image' | 'video';
+  model: ResolvedImageModel;
+  rawMetadata: Record<string, unknown>;
+  runInput: Record<string, unknown>;
+}) {
+  const providerRule =
+    input.taskType === 'video'
+      ? input.model.billingRules?.video
+      : input.model.billingRules?.image;
+
+  if (providerRule) {
+    const normalizedUsage = normalizeProviderUsage({
+      providerType: input.model.providerType,
+      taskType: input.taskType,
+      rawUsage: buildProviderRawUsage(input.rawMetadata),
+      runInput: input.runInput,
+    });
+
+    return calculateProviderCreditCost({
+      taskType: input.taskType,
+      usage: normalizedUsage,
+      rules: input.model.billingRules ?? {},
+    });
+  }
+
+  return calculateImageCreditCost({ pricing: input.model.pricing });
 }
 
 function toImageMode(value: unknown): ImageModelMode {
@@ -909,7 +988,12 @@ async function runImageProviderOrchestration(input: {
     throw new Error('Provider response did not include image output.');
   }
 
-  const creditCost = calculateImageCreditCost({ pricing: input.model.pricing });
+  const creditCost = calculateMediaRunCreditCost({
+    taskType: input.request.taskType === 'video' ? 'video' : 'image',
+    model: input.model,
+    rawMetadata: providerResult.rawMetadata,
+    runInput: input.runInput,
+  });
   let debit: { entryId: string; balanceAfter: number };
   try {
     debit = await input.debitForImageAgentRun({
@@ -1062,9 +1146,10 @@ async function runChatOrchestration(input: {
     },
   ]);
 
-  const creditCost = calculateChatCreditCost({
+  const creditCost = calculateChatRunCreditCost({
+    model: input.model,
     usage: providerResult.usage,
-    pricing: input.model.pricing,
+    rawMetadata: providerResult.rawMetadata,
   });
   let debit: { entryId: string; balanceAfter: number };
   try {

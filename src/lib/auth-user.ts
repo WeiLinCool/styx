@@ -14,7 +14,9 @@ export function shouldRefreshAuthUserSnapshot(user: {
   checkinStatus?: unknown;
   recentPointActivities?: unknown;
 }): boolean {
-  return user.accountState !== 'active' || !hasUserPointsOverview(user);
+  // Points, recent activity, and daily check-in state can change outside the current view,
+  // so the client snapshot should always revalidate after hydration.
+  return true;
 }
 
 export function canSubmitPasswordRegistration(input: {

@@ -13,6 +13,7 @@ import {
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import { adjustCredits } from '@/server/billing/credits';
 import { db, schema } from '@/server/db';
+import { formatCredits } from '@/lib/credits';
 import {
   type AdminFilter,
   type AdminMetric,
@@ -504,7 +505,7 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
           select sum(
             case
               when jsonb_typeof(u.metadata -> 'credits') = 'number'
-                then (u.metadata ->> 'credits')::int
+                then (u.metadata ->> 'credits')::numeric
               else 0
             end
           )
@@ -516,7 +517,7 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
           from ${schema.creditLedgerEntries}
           where ${schema.creditLedgerEntries.userId} = ${schema.users.id}
         ), 0)
-      )::int`,
+      )::numeric`,
       lastAuditAction: sql<string>`coalesce(max(${schema.auditEvents.action}), 'none')`,
     })
     .from(schema.users)
@@ -567,7 +568,7 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
     { label: '总账号', value: String(records.length), hint: '数据库', tone: 'info' },
     { label: '待激活', value: String(pendingCount), hint: '激活队列', tone: 'warning' },
     { label: '活跃账号', value: String(activeCount), hint: '已激活生命周期', tone: 'success' },
-    { label: '可用积分', value: String(totalPoints), hint: '真实 ledger 余额', tone: 'default' },
+    { label: '可用积分', value: formatCredits(totalPoints), hint: '真实 ledger 余额', tone: 'default' },
   ];
 
   const filters: AdminFilter[] = [

@@ -44,6 +44,7 @@ function buildDatabaseImageModelRow(input: {
   code: string;
   status?: 'enabled' | 'disabled' | 'archived';
   providerStatus?: 'enabled' | 'disabled' | 'archived';
+  providerMetadata?: Record<string, unknown>;
   supportsImageGeneration?: boolean;
   supportsImageEdit?: boolean;
   supportsImageUpscale?: boolean;
@@ -79,6 +80,7 @@ function buildDatabaseImageModelRow(input: {
       status: input.providerStatus ?? 'enabled',
       baseUrl: null,
       credentialEnvKey: null,
+      metadata: input.providerMetadata ?? {},
     },
     requirement: input.requirement ?? null,
   };
@@ -89,6 +91,7 @@ function buildDatabaseChatModelRow(input: {
   code: string;
   status?: 'enabled' | 'disabled' | 'archived';
   providerStatus?: 'enabled' | 'disabled' | 'archived';
+  providerMetadata?: Record<string, unknown>;
   supportsImageGeneration?: boolean;
   supportsImageEdit?: boolean;
   supportsImageUpscale?: boolean;
@@ -126,6 +129,7 @@ function buildDatabaseChatModelRow(input: {
       status: input.providerStatus ?? 'enabled',
       baseUrl: null,
       credentialEnvKey: null,
+      metadata: input.providerMetadata ?? {},
     },
     requirement: input.requirement ?? null,
   };
@@ -136,6 +140,7 @@ function buildDatabaseVideoModelRow(input: {
   code: string;
   status?: 'enabled' | 'disabled' | 'archived';
   providerStatus?: 'enabled' | 'disabled' | 'archived';
+  providerMetadata?: Record<string, unknown>;
   supportsVideoGeneration?: boolean;
   isDefaultVideo?: boolean;
   requirement?: DatabaseVideoModelRow['requirement'];
@@ -171,6 +176,7 @@ function buildDatabaseVideoModelRow(input: {
       status: input.providerStatus ?? 'enabled',
       baseUrl: null,
       credentialEnvKey: null,
+      metadata: input.providerMetadata ?? {},
     },
     requirement: input.requirement ?? null,
   };
@@ -240,6 +246,39 @@ test('resolveDatabaseChatModelForUserFromRows rejects multimodal model ids', () 
     () => resolveDatabaseChatModelForUserFromRows(rows, 'model-multimodal', []),
     /Model is not available/,
   );
+});
+
+test('resolveDatabaseChatModelForUserFromRows carries provider billing rules into runtime pricing', () => {
+  const rows: DatabaseChatModelRow[] = [
+    buildDatabaseChatModelRow({
+      id: 'model-chat',
+      code: 'db-chat',
+      providerMetadata: {
+        billingRules: {
+          chat: {
+            mode: 'token_breakdown',
+            inputCreditsPer1k: 9,
+            cachedInputCreditsPer1k: 0.5,
+            cacheMissInputCreditsPer1k: 3,
+            outputCreditsPer1k: 4,
+            minimumCredits: 7,
+          },
+        },
+      },
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+  ];
+
+  const model = resolveDatabaseChatModelForUserFromRows(rows, 'model-chat', []);
+
+  assert.equal(model.pricing.minimumCredits, 7);
+  assert.equal(model.pricing.promptCreditsPer1k, 9);
+  assert.equal(model.pricing.completionCreditsPer1k, 4);
+  assert.equal(model.billingRules?.chat?.cacheMissInputCreditsPer1k, 3);
 });
 
 test('getSeedImageModelsForUser returns entitled models for the requested image mode', async () => {

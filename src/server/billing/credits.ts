@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import type { AiUsage } from '@/server/agent/types';
 import { db, schema } from '@/server/db';
+import { coerceCreditAmount, hasCreditPrecision, roundCreditAmount } from './amounts';
 import type {
   AiModelPricing,
   ResolvedChatModel,
@@ -39,9 +40,9 @@ export function calculateChatCreditCost(input: {
   usage: AiUsage;
   pricing: AiModelPricing;
 }) {
-  return Math.max(
-    input.pricing.minimumCredits,
-    Math.ceil(
+  return roundCreditAmount(
+    Math.max(
+      input.pricing.minimumCredits,
       (input.usage.promptTokens / 1000) * input.pricing.promptCreditsPer1k +
         (input.usage.completionTokens / 1000) * input.pricing.completionCreditsPer1k,
     ),
@@ -56,16 +57,16 @@ export function calculateCreditBalance(input: {
   legacyCredits: number;
   ledgerAmount: number;
 }): number {
-  return input.legacyCredits + input.ledgerAmount;
+  return roundCreditAmount(input.legacyCredits + input.ledgerAmount);
 }
 
 function isValidCreditAmount(amount: number): boolean {
-  return Number.isFinite(amount) && Number.isInteger(amount);
+  return Number.isFinite(amount) && hasCreditPrecision(amount);
 }
 
 export function validateGrantCreditsInput(input: Pick<CreditLedgerMutationInput, 'amount'>): void {
   if (!isValidCreditAmount(input.amount)) {
-    throw new Error('Grant amount must be a finite integer.');
+    throw new Error('Grant amount must be a finite number with at most two decimal places.');
   }
 
   if (input.amount <= 0) {
@@ -77,7 +78,7 @@ export function validateAdjustCreditsInput(
   input: Pick<CreditLedgerMutationInput, 'amount'>,
 ): void {
   if (!isValidCreditAmount(input.amount)) {
-    throw new Error('Adjustment amount must be a finite integer.');
+    throw new Error('Adjustment amount must be a finite number with at most two decimal places.');
   }
 
   if (input.amount === 0) {
@@ -96,7 +97,7 @@ export function createMemoryCreditLedger(initialBalances: Record<string, number>
     }
 
     const balance = balances.get(input.userId) ?? 0;
-    const balanceAfter = balance + input.amount;
+    const balanceAfter = roundCreditAmount(balance + input.amount);
     if (balanceAfter < 0) {
       throw new InsufficientCreditsError();
     }
@@ -154,9 +155,11 @@ export async function debitForAgentRun(input: {
   usage: AiUsage;
   pricing: AiModelPricing;
   modelSnapshot: ResolvedChatModel | Record<string, unknown>;
+  amount?: number;
 }): Promise<CreditLedgerDebitResult & { amount: number }> {
+  const amount = input.amount ?? calculateChatCreditCost({ usage: input.usage, pricing: input.pricing });
+
   if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
-    const amount = calculateChatCreditCost({ usage: input.usage, pricing: input.pricing });
     return {
       entryId: `dev-ledger:${input.runId}`,
       balanceAfter: 0,
@@ -174,13 +177,14 @@ export async function debitForAgentRun(input: {
     if (existing) {
       return {
         entryId: existing.id,
-        balanceAfter:
-          existing.balanceAfter ?? (await getCreditBalanceWithExecutor(tx, input.userId)),
-        amount: Math.abs(existing.amount),
+        balanceAfter: coerceCreditAmount(
+          existing.balanceAfter,
+          await getCreditBalanceWithExecutor(tx, input.userId),
+        ),
+        amount: roundCreditAmount(Math.abs(coerceCreditAmount(existing.amount))),
       };
     }
 
-    const amount = calculateChatCreditCost({ usage: input.usage, pricing: input.pricing });
     const result = await insertCreditLedgerEntry(tx, {
       userId: input.userId,
       runId: input.runId,
@@ -195,7 +199,7 @@ export async function debitForAgentRun(input: {
       },
     });
 
-    return { ...result, amount: Math.abs(amount) };
+    return { ...result, amount: roundCreditAmount(Math.abs(amount)) };
   });
 }
 
@@ -205,8 +209,9 @@ export async function debitForImageAgentRun(input: {
   pricing: AiModelPricing;
   modelSnapshot: ResolvedImageModel | Record<string, unknown>;
   metadata: Record<string, unknown>;
+  amount?: number;
 }): Promise<CreditLedgerDebitResult & { amount: number }> {
-  const amount = calculateImageCreditCost({ pricing: input.pricing });
+  const amount = input.amount ?? calculateImageCreditCost({ pricing: input.pricing });
 
   if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
     return {
@@ -226,9 +231,11 @@ export async function debitForImageAgentRun(input: {
     if (existing) {
       return {
         entryId: existing.id,
-        balanceAfter:
-          existing.balanceAfter ?? (await getCreditBalanceWithExecutor(tx, input.userId)),
-        amount: Math.abs(existing.amount),
+        balanceAfter: coerceCreditAmount(
+          existing.balanceAfter,
+          await getCreditBalanceWithExecutor(tx, input.userId),
+        ),
+        amount: roundCreditAmount(Math.abs(coerceCreditAmount(existing.amount))),
       };
     }
 
@@ -246,7 +253,7 @@ export async function debitForImageAgentRun(input: {
       },
     });
 
-    return { ...result, amount: Math.abs(amount) };
+    return { ...result, amount: roundCreditAmount(Math.abs(amount)) };
   });
 }
 
@@ -311,12 +318,12 @@ async function getLegacyCreditBalance(executor: CreditExecutor, userId: string) 
 async function getLedgerAmount(executor: CreditExecutor, userId: string) {
   const [ledgerBalance] = await executor
     .select({
-      amount: sql<number>`coalesce(sum(${schema.creditLedgerEntries.amount}), 0)::int`,
+      amount: sql<number>`coalesce(sum(${schema.creditLedgerEntries.amount}), 0)::numeric`,
     })
     .from(schema.creditLedgerEntries)
     .where(eq(schema.creditLedgerEntries.userId, userId));
 
-  return ledgerBalance?.amount ?? 0;
+  return coerceCreditAmount(ledgerBalance?.amount);
 }
 
 async function findLedgerEntryByKey(executor: CreditExecutor, idempotencyKey: string) {
@@ -341,12 +348,15 @@ async function insertCreditLedgerEntry(
   if (existing) {
     return {
       entryId: existing.id,
-      balanceAfter: existing.balanceAfter ?? (await getCreditBalanceWithExecutor(executor, input.userId)),
+      balanceAfter: coerceCreditAmount(
+        existing.balanceAfter,
+        await getCreditBalanceWithExecutor(executor, input.userId),
+      ),
     };
   }
 
   const balance = await getCreditBalanceWithExecutor(executor, input.userId);
-  const balanceAfter = balance + input.amount;
+  const balanceAfter = roundCreditAmount(balance + input.amount);
   if (balanceAfter < 0) {
     throw new InsufficientCreditsError();
   }
@@ -380,7 +390,10 @@ async function insertCreditLedgerEntry(
 
   return {
     entryId: raced.id,
-    balanceAfter: raced.balanceAfter ?? (await getCreditBalanceWithExecutor(executor, input.userId)),
+    balanceAfter: coerceCreditAmount(
+      raced.balanceAfter,
+      await getCreditBalanceWithExecutor(executor, input.userId),
+    ),
   };
 }
 
@@ -391,6 +404,6 @@ function readLegacyCreditBalance(metadata: Record<string, unknown> | undefined) 
 
   const credits = metadata.credits;
   return typeof credits === 'number' && Number.isFinite(credits) && credits > 0
-    ? Math.floor(credits)
+    ? roundCreditAmount(credits)
     : 0;
 }

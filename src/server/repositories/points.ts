@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { AccountDomainError } from '@/server/auth/account-types';
+import { coerceCreditAmount } from '@/server/billing/amounts';
 import { db, schema } from '@/server/db';
 
 function requireDb() {
@@ -19,7 +20,7 @@ function requireDb() {
 
 type ReferralStatsRow = {
   qualifiedAt: string | Date | null;
-  rewardAmount: number | null;
+  rewardAmount: number | string | null;
 };
 
 type ReferralQualificationRow = {
@@ -30,7 +31,7 @@ type ReferralQualificationRow = {
 type RecentPointActivityRow = {
   id: string;
   entryType: 'grant' | 'debit' | 'adjustment';
-  amount: number;
+  amount: number | string;
   reason: string;
   createdAt: string | Date;
 };
@@ -59,7 +60,7 @@ export function summarizeReferralStats(rows: ReferralStatsRow[]) {
     (summary, row) => ({
       invitedCount: summary.invitedCount + 1,
       qualifiedCount: summary.qualifiedCount + (row.qualifiedAt ? 1 : 0),
-      rewardedPoints: summary.rewardedPoints + (row.rewardAmount ?? 0),
+      rewardedPoints: coerceCreditAmount(summary.rewardedPoints + coerceCreditAmount(row.rewardAmount)),
     }),
     {
       invitedCount: 0,
@@ -77,7 +78,7 @@ export function formatRecentPointActivity(rows: RecentPointActivityRow[]) {
   return rows.map((row) => ({
     id: row.id,
     entryType: row.entryType,
-    amount: row.amount,
+    amount: coerceCreditAmount(row.amount),
     reason: row.reason,
     createdAt: toIsoString(row.createdAt),
   }));
