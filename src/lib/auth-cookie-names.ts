@@ -4,6 +4,11 @@ const LEGACY_SESSION_COOKIE_KEY = 'styx_session';
 const ADMIN_SESSION_COOKIE_KEY = 'styx_admin_session';
 const DEV_AUTH_BYPASS_COOKIE_KEY = 'styx_dev_auth_disabled';
 
+function readForwardedHost(forwardedHost: string | null | undefined) {
+  const firstValue = forwardedHost?.split(',')[0]?.trim();
+  return firstValue || null;
+}
+
 function normalizeCookieScopeHost(host: string | null | undefined) {
   const value = host?.trim().toLowerCase() ?? '';
   if (!value) {
@@ -16,6 +21,32 @@ function normalizeCookieScopeHost(host: string | null | undefined) {
 export function buildScopedCookieName(baseName: string, host: string | null | undefined) {
   const normalizedHost = normalizeCookieScopeHost(host);
   return normalizedHost ? `${baseName}__${normalizedHost}` : baseName;
+}
+
+export function resolveCookieScopeHost(input: {
+  forwardedHost?: string | null | undefined;
+  host?: string | null | undefined;
+  requestUrl?: string | URL | null | undefined;
+}) {
+  const forwardedHost = readForwardedHost(input.forwardedHost);
+  if (forwardedHost) {
+    return forwardedHost;
+  }
+
+  const host = input.host?.trim();
+  if (host) {
+    return host;
+  }
+
+  if (!input.requestUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(input.requestUrl).host;
+  } catch {
+    return null;
+  }
 }
 
 export function getScopedUserCookieName(host: string | null | undefined) {

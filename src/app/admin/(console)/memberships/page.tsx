@@ -12,6 +12,7 @@ import {
 import {
   getAdminMembershipWorkspacePageData,
 } from '@/server/repositories/membership-plan-versions';
+import { AdminModuleGuide } from '@/features/admin/admin-module-guide';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,11 @@ const subscriptionWorkOrderColumns: AdminColumn<AdminSubscriptionWorkOrderRow>[]
     render: (record) => (
       <div>
         <div className="font-medium text-foreground">{record.code}</div>
-        <div className="text-xs text-muted-foreground">{record.orderNumber}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{record.orderNumber}</div>
+        <div className="mt-1">
+          <StatusBadge value={record.orderStatus} />
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground">{record.relationSummary}</div>
       </div>
     ),
   },
@@ -80,6 +85,7 @@ const subscriptionWorkOrderColumns: AdminColumn<AdminSubscriptionWorkOrderRow>[]
       <AdminSubscriptionWorkOrderActions
         workOrderId={record.id}
         queueStatus={record.queueStatus}
+        orderStatus={record.orderStatus}
       />
     ),
   },
@@ -97,6 +103,21 @@ export default async function AdminMembershipsPage() {
       <AdminModulePage
         title="会员订阅工单"
         description="用户提交的会员付款核销队列，审批通过后开通或顺延会员权益。"
+        guide={
+          <AdminModuleGuide
+            title="会员订阅处理新手单行"
+            description="先核对工单金额与订单金额，再确认订单状态，最后执行通过并开通。页面已经直接展示工单、订单和会员权益之间的关联说明。"
+            steps={[
+              '先看工单号与订单号是否对应，确认付款金额、支付方式和流水号。',
+              '先去订单页把关联订单标记为已支付，只有订单已支付后，工单页才允许“通过并开通”。',
+              '审批通过后，会员权益会立即开通或在原到期时间基础上顺延。',
+            ]}
+            risks={[
+              '若订单金额与工单提交金额不一致，先核实支付凭证再审批。',
+              '若提示幂等处理中，通常是前一次请求失败后锁未释放；当前版本已允许失败后同键重试。',
+            ]}
+          />
+        }
         source={subscriptionWorkOrders.source}
         metrics={subscriptionWorkOrders.metrics}
         filters={subscriptionWorkOrders.filters}

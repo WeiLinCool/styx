@@ -56,6 +56,8 @@ type AdminInlineAction = {
   variant?: 'outline' | 'destructive';
 };
 
+type AdminOrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled' | 'refunded';
+
 type SplitActions = {
   primary: AdminInlineAction[];
   secondary: AdminInlineAction[];
@@ -505,84 +507,144 @@ export function AdminPasswordResetWorkOrderActions({
 export function AdminSubscriptionWorkOrderActions({
   workOrderId,
   queueStatus,
+  orderStatus,
 }: {
   workOrderId: string;
   queueStatus: 'pending' | 'processing' | 'closed' | 'archived';
+  orderStatus: string;
 }) {
-  const actions =
-    queueStatus === 'pending'
-      ? [
-          {
-            label: '开始核销',
-            url: `/api/admin/subscription-work-orders/${workOrderId}/processing`,
-            body: {},
-            successMessage: '会员订阅工单已进入处理中。',
-          },
-        ]
-      : queueStatus === 'processing'
-        ? [
-            {
-              label: '通过并开通',
-              url: `/api/admin/subscription-work-orders/${workOrderId}/approve`,
-              body: { decisionNote: '付款信息核销通过。' },
-              successMessage: '会员订阅工单已通过，会员权益已开通或顺延。',
-            },
-            {
-              label: '拒绝并取消订单',
-              url: `/api/admin/subscription-work-orders/${workOrderId}/reject`,
-              body: { decisionNote: '付款信息未通过核销。' },
-              successMessage: '会员订阅工单已拒绝，订单已取消。',
-              variant: 'destructive' as const,
-            },
-          ]
-        : queueStatus === 'closed'
-          ? [
-              {
-                label: '归档',
-                url: `/api/admin/subscription-work-orders/${workOrderId}/archive`,
-                body: {},
-                successMessage: '会员订阅工单已归档。',
-              },
-            ]
-          : [];
+  const actions = getAdminSubscriptionWorkOrderActions(workOrderId, queueStatus, orderStatus);
+  const blockingMessage = getAdminSubscriptionWorkOrderBlockingMessage(queueStatus, orderStatus);
 
-  return actions.length > 0 ? <ActionButtons actions={actions} /> : null;
+  if (actions.length === 0 && !blockingMessage) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      {actions.length > 0 ? <ActionButtons actions={actions} /> : null}
+      {blockingMessage ? (
+        <div className="max-w-64 text-right text-[11px] text-amber-700">{blockingMessage}</div>
+      ) : null}
+    </div>
+  );
 }
 
-export function AdminOrderActions({ orderId }: { orderId: string }) {
+export function getAdminSubscriptionWorkOrderBlockingMessage(
+  queueStatus: 'pending' | 'processing' | 'closed' | 'archived',
+  orderStatus: string,
+) {
+  if ((queueStatus === 'pending' || queueStatus === 'processing') && orderStatus === 'pending') {
+    return '请先到订单管理将关联订单标记为已支付，再回来通过并开通会员。';
+  }
+
+  return null;
+}
+
+export function getAdminSubscriptionWorkOrderActions(
+  workOrderId: string,
+  queueStatus: 'pending' | 'processing' | 'closed' | 'archived',
+  orderStatus: string,
+): AdminInlineAction[] {
+  if (queueStatus === 'pending' || queueStatus === 'processing') {
+    const actions: AdminInlineAction[] = [];
+
+    if (orderStatus === 'paid' || orderStatus === 'fulfilled') {
+      actions.push({
+        label: '通过并开通',
+        url: `/api/admin/subscription-work-orders/${workOrderId}/approve`,
+        body: { decisionNote: '付款信息核销通过。' },
+        successMessage: '会员订阅工单已通过，会员权益已开通或顺延。',
+      });
+    }
+
+    actions.push({
+      label: '拒绝并取消订单',
+      url: `/api/admin/subscription-work-orders/${workOrderId}/reject`,
+      body: { decisionNote: '付款信息未通过核销。' },
+      successMessage: '会员订阅工单已拒绝，订单已取消。',
+      variant: 'destructive' as const,
+    });
+
+    return actions;
+  }
+
+  if (queueStatus === 'closed') {
+    return [
+      {
+        label: '归档',
+        url: `/api/admin/subscription-work-orders/${workOrderId}/archive`,
+        body: {},
+        successMessage: '会员订阅工单已归档。',
+      },
+    ];
+  }
+
+  return [];
+}
+
+export function getAdminOrderActions(
+  orderId: string,
+  status: AdminOrderStatus,
+  isMembershipSubscription = false,
+): AdminInlineAction[] {
+  const actions: AdminInlineAction[] = [];
+  const membershipSubscriptionOrder = isMembershipSubscription;
+
+  if (status === 'pending') {
+    actions.push({
+      label: '标记已支付',
+      url: `/api/admin/orders/${orderId}/status`,
+      body: { action: 'update_status', status: 'paid', note: '客服标记为已支付。' },
+      successMessage: '订单已标记为已支付。',
+    });
+  }
+
+  if (status === 'paid' && !membershipSubscriptionOrder) {
+    actions.push({
+      label: '标记履约',
+      url: `/api/admin/orders/${orderId}/status`,
+      body: {
+        action: 'update_status',
+        status: 'fulfilled',
+        note: '客服标记为已履约。',
+      },
+      successMessage: '订单已标记为已履约。',
+    });
+  }
+
+  if ((status === 'pending' || status === 'paid') && !membershipSubscriptionOrder) {
+    actions.push({
+      label: '取消',
+      url: `/api/admin/orders/${orderId}/status`,
+      body: { action: 'update_status', status: 'cancelled', note: '客服取消订单。' },
+      successMessage: '订单已取消。',
+      variant: 'destructive',
+    });
+  }
+
+  actions.push({
+    label: '备注',
+    url: `/api/admin/orders/${orderId}/status`,
+    body: { action: 'add_note', note: '客服已复核。' },
+    successMessage: '订单备注已添加。',
+  });
+
+  return actions;
+}
+
+export function AdminOrderActions({
+  orderId,
+  status,
+  isMembershipSubscription,
+}: {
+  orderId: string;
+  status: AdminOrderStatus;
+  isMembershipSubscription: boolean;
+}) {
   return (
     <ActionButtons
-      actions={[
-        {
-          label: '标记已支付',
-          url: `/api/admin/orders/${orderId}/status`,
-          body: { action: 'update_status', status: 'paid', note: '客服标记为已支付。' },
-          successMessage: '订单已标记为已支付。',
-        },
-        {
-          label: '标记履约',
-          url: `/api/admin/orders/${orderId}/status`,
-          body: {
-            action: 'update_status',
-            status: 'fulfilled',
-            note: '客服标记为已履约。',
-          },
-          successMessage: '订单已标记为已履约。',
-        },
-        {
-          label: '取消',
-          url: `/api/admin/orders/${orderId}/status`,
-          body: { action: 'update_status', status: 'cancelled', note: '客服取消订单。' },
-          successMessage: '订单已取消。',
-          variant: 'destructive',
-        },
-        {
-          label: '备注',
-          url: `/api/admin/orders/${orderId}/status`,
-          body: { action: 'add_note', note: '客服已复核。' },
-          successMessage: '订单备注已添加。',
-        },
-      ]}
+      actions={getAdminOrderActions(orderId, status, isMembershipSubscription)}
     />
   );
 }

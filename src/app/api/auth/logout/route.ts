@@ -5,11 +5,16 @@ import {
   getScopedAuthCookieName,
   getScopedDevAuthBypassCookieName,
   legacyAuthCookieNames,
+  resolveCookieScopeHost,
 } from '@/lib/auth-cookie-names';
 
 export async function POST(request: Request) {
   const response = NextResponse.json({ ok: true });
-  const host = new URL(request.url).host;
+  const host = resolveCookieScopeHost({
+    forwardedHost: request.headers.get('x-forwarded-host'),
+    host: request.headers.get('host'),
+    requestUrl: request.url,
+  });
 
   response.cookies.set(getScopedAuthCookieName(host), '', {
     expires: new Date(0),

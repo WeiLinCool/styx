@@ -6,25 +6,23 @@ import { parseMembershipDraftBody } from './plans/[planId]/draft/route';
 import { parseMembershipScheduleBody } from './plans/[planId]/schedule/route';
 
 test('parseMembershipDraftBody accepts pricing, benefits, and permission fields', async () => {
-  const body = await parseMembershipDraftBody({
-    json: async () => ({
-      displayName: 'Pro Monthly',
-      description: 'updated',
-      billingPeriod: 'month',
-      priceCents: 12900,
-      currency: 'CNY',
-      changeSummary: 'price update',
-      permissionCodes: ['page.user_center'],
-      benefits: [
-        {
-          code: 'image-credits',
-          name: 'Image credits',
-          kind: 'quota',
-          quantity: 600,
-          unit: 'credit',
-        },
-      ],
-    }),
+  const body = parseMembershipDraftBody({
+    displayName: 'Pro Monthly',
+    description: 'updated',
+    billingPeriod: 'month',
+    priceCents: 12900,
+    currency: 'CNY',
+    changeSummary: 'price update',
+    permissionCodes: ['page.user_center'],
+    benefits: [
+      {
+        code: 'image-credits',
+        name: 'Image credits',
+        kind: 'quota',
+        quantity: 600,
+        unit: 'credit',
+      },
+    ],
   });
 
   assert.equal(body.priceCents, 12900);
@@ -32,18 +30,40 @@ test('parseMembershipDraftBody accepts pricing, benefits, and permission fields'
   assert.equal(body.benefits[0]?.code, 'image-credits');
 });
 
+test('parseMembershipDraftBody coerces numeric strings from simplified admin forms', async () => {
+  const body = parseMembershipDraftBody({
+    displayName: 'Team Yearly',
+    description: 'updated',
+    billingPeriod: 'year',
+    priceCents: '99900',
+    currency: 'CNY',
+    changeSummary: '',
+    permissionCodes: [],
+    benefits: [
+      {
+        code: 'seats',
+        name: 'Seats',
+        kind: 'quota',
+        quantity: '10',
+        unit: 'seat',
+      },
+    ],
+  });
+
+  assert.equal(body.priceCents, 99900);
+  assert.equal(body.benefits[0]?.quantity, 10);
+});
+
 test('parseMembershipDraftBody rejects missing display name', async () => {
   await assert.rejects(
     () =>
       parseMembershipDraftBody({
-        json: async () => ({
-          displayName: '',
-          billingPeriod: 'month',
-          priceCents: 12900,
-          currency: 'CNY',
-          permissionCodes: [],
-          benefits: [],
-        }),
+        displayName: '',
+        billingPeriod: 'month',
+        priceCents: 12900,
+        currency: 'CNY',
+        permissionCodes: [],
+        benefits: [],
       }),
     ZodError,
   );

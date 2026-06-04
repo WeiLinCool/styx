@@ -24,11 +24,11 @@ export type MembershipBillingPeriod = 'month' | 'year' | 'one_time';
 
 export function getSubscriptionApprovalOrderAction(status: string) {
   if (status === 'pending') {
-    return { shouldMarkPaid: true };
+    return { nextStatus: 'fulfilled' as const, shouldRecordPaidEvent: true };
   }
 
-  if (status === 'paid') {
-    return { shouldMarkPaid: false };
+  if (status === 'paid' || status === 'fulfilled') {
+    return { nextStatus: 'fulfilled' as const, shouldRecordPaidEvent: false };
   }
 
   throw new AccountDomainError(
@@ -479,34 +479,58 @@ export async function approveSubscriptionWorkOrder(input: {
 
     const approvalOrderAction = getSubscriptionApprovalOrderAction(existingOrder.status);
 
-    const order = approvalOrderAction.shouldMarkPaid
-      ? (
-          await tx
-            .update(schema.orders)
-            .set({
-              status: 'paid',
-              paidAt: approvalTime,
-              updatedAt: approvalTime,
-            })
-            .where(and(eq(schema.orders.id, latest.orderId), eq(schema.orders.status, 'pending')))
-            .returning()
-        )[0]
-      : existingOrder;
+    const order =
+      existingOrder.status === approvalOrderAction.nextStatus
+        ? existingOrder
+        : (
+            await tx
+              .update(schema.orders)
+              .set({
+                status: approvalOrderAction.nextStatus,
+                paidAt: existingOrder.paidAt ?? approvalTime,
+                metadata: {
+                  ...(existingOrder.metadata ?? {}),
+                  fulfillmentNote: '会员订阅工单核销通过后自动履约。',
+                },
+                updatedAt: approvalTime,
+              })
+              .where(
+                and(
+                  eq(schema.orders.id, latest.orderId),
+                  inArray(schema.orders.status, ['pending', 'paid']),
+                ),
+              )
+              .returning()
+          )[0];
 
     if (!order) {
       throw new AccountDomainError(
         'invalid_subscription_work_order_transition',
-        'Linked subscription order could not be marked paid.',
+        'Linked subscription order could not be fulfilled automatically.',
         409,
       );
     }
 
-    if (approvalOrderAction.shouldMarkPaid) {
+    if (approvalOrderAction.shouldRecordPaidEvent) {
       await tx.insert(schema.orderEvents).values({
         orderId: order.id,
         type: 'paid',
         actorUserId: input.actorId,
         message: input.decisionNote ?? 'Admin approved membership subscription payment.',
+        metadata: {
+          source: 'subscription_work_order_approval',
+          workOrderId: latest.id,
+          workOrderCode: latest.code,
+        },
+      });
+    }
+
+    if (existingOrder.status !== 'fulfilled') {
+      await tx.insert(schema.orderEvents).values({
+        orderId: order.id,
+        type: 'fulfilled',
+        actorUserId: input.actorId,
+        message: 'Admin approved membership subscription and fulfilled order automatically.',
         metadata: {
           source: 'subscription_work_order_approval',
           workOrderId: latest.id,

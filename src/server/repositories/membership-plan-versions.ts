@@ -399,6 +399,14 @@ export async function resolvePlanVersionForEntitlement(
 
   const current = eligible[0];
   if (!current) {
+    const fallbackDraft = versions
+      .filter((version) => version.status === 'draft')
+      .sort((left, right) => right.versionNumber - left.versionNumber)[0];
+
+    if (fallbackDraft) {
+      return fallbackDraft;
+    }
+
     throw new Error(`No published membership version found for ${planCode}`);
   }
 

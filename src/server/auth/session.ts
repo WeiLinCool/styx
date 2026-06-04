@@ -2,6 +2,7 @@ import { cookies, headers } from 'next/headers';
 import {
   listDevAuthBypassCookieNames,
   listSessionCookieNames,
+  resolveCookieScopeHost,
 } from '@/lib/auth-cookie-names';
 
 import {
@@ -52,7 +53,10 @@ function getExplicitDevelopmentUserId(devAuthBlocked: boolean) {
 export async function resolveSession(): Promise<SessionContext> {
   const cookieStore = await cookies();
   const requestHeaders = await headers();
-  const host = requestHeaders.get('host');
+  const host = resolveCookieScopeHost({
+    forwardedHost: requestHeaders.get('x-forwarded-host'),
+    host: requestHeaders.get('host'),
+  });
   const sessionToken = listSessionCookieNames(host).map((name) => cookieStore.get(name)?.value).find(
     Boolean,
   );

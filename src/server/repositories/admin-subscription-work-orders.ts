@@ -24,6 +24,7 @@ export type AdminSubscriptionWorkOrderRow = {
   orderNumber: string;
   orderStatus: string;
   orderTotal: string;
+  relationSummary: string;
   submittedAmount: string;
   amountMismatch: boolean;
   paymentMethod: string;
@@ -46,6 +47,7 @@ function getSeedSubscriptionWorkOrders(): AdminModuleData<AdminSubscriptionWorkO
       orderNumber: 'MS-20260602-SEED0001',
       orderStatus: 'pending',
       orderTotal: '¥99',
+      relationSummary: '工单待核销，订单待支付，会员权益未开通',
       submittedAmount: '¥99',
       amountMismatch: false,
       paymentMethod: '微信转账',
@@ -60,16 +62,16 @@ function getSeedSubscriptionWorkOrders(): AdminModuleData<AdminSubscriptionWorkO
   return {
     source: 'seed',
     metrics: [
-      { label: '订阅工单', value: '1', hint: 'seed', tone: 'info' },
-      { label: '待处理', value: '1', hint: 'pending', tone: 'warning' },
-      { label: '处理中', value: '0', hint: 'processing', tone: 'default' },
-      { label: '已办结', value: '0', hint: 'closed', tone: 'default' },
+      { label: '订阅工单', value: '1', hint: '示例数据', tone: 'info' },
+      { label: '待处理', value: '1', hint: '待核销', tone: 'warning' },
+      { label: '处理中', value: '0', hint: '人工核验中', tone: 'default' },
+      { label: '已办结', value: '0', hint: '已完成审批', tone: 'default' },
     ],
     filters: [
-      { label: 'All', value: 'all', count: 1 },
-      { label: 'Pending', value: 'pending', count: 1 },
-      { label: 'Processing', value: 'processing', count: 0 },
-      { label: 'Closed', value: 'closed', count: 0 },
+      { label: '全部', value: 'all', count: 1 },
+      { label: '待处理', value: 'pending', count: 1 },
+      { label: '处理中', value: 'processing', count: 0 },
+      { label: '已办结', value: 'closed', count: 0 },
     ],
     records,
   };
@@ -109,6 +111,18 @@ export async function getAdminSubscriptionWorkOrders(): Promise<
   const countByStatus = Object.fromEntries(counts.map((row) => [row.status, row.count]));
   const records = rows.map(({ workOrder, order, plan, user }) => {
     const amountMismatch = workOrder.submittedAmountCents !== order.totalCents;
+    const relationSummary =
+      workOrder.result === 'approved'
+        ? '审批已通过，会员权益已开通或顺延'
+        : workOrder.result === 'rejected'
+          ? '审批已拒绝，订单已取消'
+          : workOrder.status === 'processing'
+            ? '工单处理中，等待运营完成核销并开通会员'
+            : order.status === 'fulfilled'
+              ? '订单已履约，待同步完成会员开通'
+              : order.status === 'paid'
+                ? '订单已支付，待核销通过后开通会员'
+                : '工单待核销，订单待支付，会员权益未开通';
 
     return {
       id: workOrder.id,
@@ -120,6 +134,7 @@ export async function getAdminSubscriptionWorkOrders(): Promise<
       orderNumber: order.orderNumber,
       orderStatus: order.status,
       orderTotal: formatCurrency(order.totalCents, order.currency),
+      relationSummary,
       submittedAmount: formatCurrency(workOrder.submittedAmountCents, order.currency),
       amountMismatch,
       paymentMethod: workOrder.submittedPaymentMethod,
@@ -138,28 +153,28 @@ export async function getAdminSubscriptionWorkOrders(): Promise<
       {
         label: '待处理',
         value: String(countByStatus.pending ?? 0),
-        hint: 'pending',
+        hint: '待核销',
         tone: 'warning',
       },
       {
         label: '处理中',
         value: String(countByStatus.processing ?? 0),
-        hint: 'processing',
+        hint: '人工核验中',
         tone: 'default',
       },
       {
         label: '已办结',
         value: String((countByStatus.closed ?? 0) + (countByStatus.archived ?? 0)),
-        hint: 'closed',
+        hint: '已完成审批',
         tone: 'success',
       },
     ],
     filters: [
-      { label: 'All', value: 'all', count: records.length },
-      { label: 'Pending', value: 'pending', count: countByStatus.pending ?? 0 },
-      { label: 'Processing', value: 'processing', count: countByStatus.processing ?? 0 },
-      { label: 'Closed', value: 'closed', count: countByStatus.closed ?? 0 },
-      { label: 'Archived', value: 'archived', count: countByStatus.archived ?? 0 },
+      { label: '全部', value: 'all', count: records.length },
+      { label: '待处理', value: 'pending', count: countByStatus.pending ?? 0 },
+      { label: '处理中', value: 'processing', count: countByStatus.processing ?? 0 },
+      { label: '已办结', value: 'closed', count: countByStatus.closed ?? 0 },
+      { label: '已归档', value: 'archived', count: countByStatus.archived ?? 0 },
     ],
     records,
   };

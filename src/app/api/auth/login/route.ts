@@ -11,6 +11,7 @@ import {
   getScopedAuthCookieName,
   getScopedDevAuthBypassCookieName,
   legacyAuthCookieNames,
+  resolveCookieScopeHost,
 } from '@/lib/auth-cookie-names';
 
 type RegisterOrLoginUserInput = Parameters<typeof registerOrLoginUser>[0];
@@ -99,7 +100,11 @@ export function createLoginHandler(
             },
           });
 
-          const host = new URL(request.url).host;
+          const host = resolveCookieScopeHost({
+            forwardedHost: request.headers.get('x-forwarded-host'),
+            host: request.headers.get('host'),
+            requestUrl: request.url,
+          });
           response.cookies.set(getScopedAuthCookieName(host), result.token, {
             expires: result.expiresAt,
             httpOnly: true,

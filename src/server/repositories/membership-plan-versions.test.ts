@@ -71,6 +71,39 @@ test('resolvePlanVersionForEntitlement uses scheduled version after its effectiv
   assert.equal(version.versionNumber, 2);
 });
 
+test('resolvePlanVersionForEntitlement falls back to the latest draft when no published version exists', async () => {
+  const harness = createMembershipPlanVersionHarness({
+    versions: [
+      {
+        id: 'draft-v1',
+        planId: 'plan-1',
+        planCode: 'team-yearly',
+        versionNumber: 3,
+        status: 'draft',
+        effectiveFrom: null,
+        publishedAt: null,
+        displayName: 'Team Yearly Draft',
+        description: 'draft only',
+        billingPeriod: 'year',
+        priceCents: 99900,
+        currency: 'CNY',
+        changeSummary: null,
+        benefits: [],
+        permissionCodes: [],
+      },
+    ],
+    plans: [{ id: 'plan-1', code: 'team-yearly', name: 'Team Yearly' }],
+  });
+
+  const version = await resolvePlanVersionForEntitlement('team-yearly', {
+    now: new Date('2026-06-04T00:00:00.000Z'),
+    loader: harness,
+  });
+
+  assert.equal(version.id, 'draft-v1');
+  assert.equal(version.status, 'draft');
+});
+
 test('saveMembershipPlanDraftWithLoader creates or updates a draft version', async () => {
   const harness = createMembershipPlanVersionHarness();
 

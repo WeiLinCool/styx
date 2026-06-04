@@ -59,6 +59,7 @@ export async function POST(
       );
     }
 
+    console.error('[admin-subscription-work-order-approve] unexpected error', error);
     const response = accountErrorToResponse(error);
     return NextResponse.json(response.body, { status: response.status });
   }

@@ -5,6 +5,7 @@ import {
   buildRawRequestBodyHash,
   buildProtectionHeaders,
 } from '@/server/request-security';
+import { getScopedAuthCookieName } from '@/lib/auth-cookie-names';
 import { createUserApiClient } from '@/lib/user-api-client';
 import { AccountDomainError } from '@/server/auth/account-types';
 import { createHumanVerificationToken } from '@/server/points/checkin-challenge';
@@ -126,4 +127,62 @@ test('POST returns account domain errors raised inside protected login operation
 
   assert.equal(response.status, 403);
   assert.equal(body.error?.code, 'password_setup_required');
+});
+
+test('POST scopes auth cookie from request Host header so proxied production logins stay readable', async () => {
+  const POST = createLoginHandler(async (input) => {
+    const now = new Date('2026-01-01T00:00:00.000Z');
+    return {
+      user: {
+        id: 'user-1',
+        displayName: 'Test User',
+        phone: input.phone,
+        email: input.email ?? null,
+        avatarUrl: null,
+        accountState: 'active',
+        activatedAt: now,
+        suspendedAt: null,
+        archivedAt: null,
+        storageQuotaBytes: 0,
+        storageUsedBytes: 0,
+        metadata: {},
+        createdAt: now,
+        updatedAt: now,
+      },
+      token: 'token-1',
+      expiresAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+  });
+
+  const verificationToken = await createHumanVerificationToken({
+    userId: '13800000000',
+    createId: () => 'login-token-3',
+  });
+
+  const requestBody = JSON.stringify({
+    phone: '13800000000',
+    password: 'secret123',
+    verificationToken,
+  });
+  const headers = buildProtectionHeaders({
+    body: null,
+    fingerprint: 'route-test-fingerprint',
+  });
+  headers.set('content-type', 'application/json');
+  headers.set('host', 'app.example.com');
+  headers.set('x-request-body-hash', buildRawRequestBodyHash(requestBody));
+
+  const response = await POST(
+    new Request('http://internal-auth:3000/api/auth/login', {
+      method: 'POST',
+      headers,
+      body: requestBody,
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get('set-cookie') ?? '',
+    new RegExp(`${getScopedAuthCookieName('app.example.com')}=token-1`),
+  );
 });

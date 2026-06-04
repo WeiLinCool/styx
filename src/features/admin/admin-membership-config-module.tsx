@@ -20,9 +20,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { adminApiRequest } from '@/lib/admin-api-client';
 import { readJsonResponse } from '@/lib/api-response';
 import { AdminModuleGuide } from './admin-module-guide';
@@ -159,6 +171,8 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
   const [duplicatingVersionId, setDuplicatingVersionId] = useState<string | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleValue, setScheduleValue] = useState('');
+  const [advancedBenefitsOpen, setAdvancedBenefitsOpen] = useState(false);
+  const [advancedPermissionsOpen, setAdvancedPermissionsOpen] = useState(false);
 
   const editableVersion = workspace.draftVersion ?? workspace.currentVersion;
   const [formState, setFormState] = useState<DraftFormState>(buildFormState(editableVersion));
@@ -412,13 +426,13 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
               <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="gap-4">
                 <TabsList className="h-auto w-full flex-wrap justify-start gap-2 bg-transparent p-0">
                   <TabsTrigger value="pricing" className="h-8 px-3">
-                    基础信息与价格
+                    基础设置
                   </TabsTrigger>
                   <TabsTrigger value="benefits" className="h-8 px-3">
-                    权益规则
+                    高级权益
                   </TabsTrigger>
                   <TabsTrigger value="permissions" className="h-8 px-3">
-                    权限绑定
+                    高级权限
                   </TabsTrigger>
                 </TabsList>
 
@@ -451,27 +465,28 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-muted-foreground">计费周期</label>
-                      <Input
+                      <Select
                         value={formState.billingPeriod}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           setFormState((currentState) => ({
                             ...currentState,
-                            billingPeriod: event.target.value as DraftFormState['billingPeriod'],
+                            billingPeriod: value as DraftFormState['billingPeriod'],
                           }))
                         }
-                      />
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="month">月付</SelectItem>
+                          <SelectItem value="year">年付</SelectItem>
+                          <SelectItem value="one_time">一次性</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-muted-foreground">币种</label>
-                      <Input
-                        value={formState.currency}
-                        onChange={(event) =>
-                          setFormState((currentState) => ({
-                            ...currentState,
-                            currency: event.target.value,
-                          }))
-                        }
-                      />
+                      <Input value={formState.currency} disabled />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <label className="text-xs font-medium text-muted-foreground">方案描述</label>
@@ -488,6 +503,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                     <div className="space-y-2 md:col-span-2">
                       <label className="text-xs font-medium text-muted-foreground">版本说明</label>
                       <Textarea
+                        placeholder="可不填，例如：价格调整、权益变更"
                         value={formState.changeSummary}
                         onChange={(event) =>
                           setFormState((currentState) => ({
@@ -501,98 +517,138 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                 </TabsContent>
 
                 <TabsContent value="benefits" className="mt-0">
-                  <div className="space-y-3">
-                    {formState.benefits.map((benefit, index) => (
-                      <div key={`${benefit.code}-${index}`} className="rounded-md border border-border bg-card p-3">
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <Input
-                            value={benefit.name}
-                            onChange={(event) => updateBenefit(index, { name: event.target.value })}
-                            placeholder="权益名称"
-                          />
-                          <Input
-                            value={benefit.code}
-                            onChange={(event) => updateBenefit(index, { code: event.target.value })}
-                            placeholder="权益编码"
-                          />
-                          <Input
-                            value={benefit.kind}
-                            onChange={(event) =>
-                              updateBenefit(index, {
-                                kind: event.target.value as BenefitDraft['kind'],
-                              })
-                            }
-                            placeholder="权益类型"
-                          />
-                          <Input
-                            type="number"
-                            value={benefit.quantity ?? ''}
-                            onChange={(event) =>
-                              updateBenefit(index, {
-                                quantity: event.target.value ? Number(event.target.value) : null,
-                              })
-                            }
-                            placeholder="数量"
-                          />
-                          <Input
-                            value={benefit.unit ?? ''}
-                            onChange={(event) => updateBenefit(index, { unit: event.target.value || null })}
-                            placeholder="单位"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() =>
-                              setFormState((currentState) => ({
-                                ...currentState,
-                                benefits: currentState.benefits.filter((_, benefitIndex) => benefitIndex !== index),
-                              }))
-                            }
-                          >
-                            删除权益
-                          </Button>
-                        </div>
+                  <Collapsible open={advancedBenefitsOpen} onOpenChange={setAdvancedBenefitsOpen} className="space-y-3">
+                    <div className="flex items-center justify-between rounded-md border border-border bg-card p-3">
+                      <div className="text-xs text-muted-foreground">
+                        仅在需要自定义权益明细时编辑。只调整方案名称、价格、周期时，可直接保存基础设置。
                       </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        setFormState((currentState) => ({
-                          ...currentState,
-                          benefits: [
-                            ...currentState.benefits,
-                            {
-                              code: '',
-                              name: '',
-                              kind: 'quota',
-                              quantity: null,
-                              unit: null,
-                            },
-                          ],
-                        }))
-                      }
-                    >
-                      新增权益
-                    </Button>
-                  </div>
+                      <CollapsibleTrigger asChild>
+                        <Button type="button" variant="outline" size="sm">
+                          {advancedBenefitsOpen ? '收起高级权益' : '展开高级权益'}
+                        </Button>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CollapsibleContent className="space-y-3">
+                      {formState.benefits.map((benefit, index) => (
+                        <div key={`${benefit.code}-${index}`} className="rounded-md border border-border bg-card p-3">
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <Input
+                              value={benefit.name}
+                              onChange={(event) => updateBenefit(index, { name: event.target.value })}
+                              placeholder="权益名称"
+                            />
+                            <Input
+                              value={benefit.code}
+                              onChange={(event) => updateBenefit(index, { code: event.target.value })}
+                              placeholder="权益编码"
+                            />
+                            <Input
+                              value={benefit.kind}
+                              readOnly
+                              className="hidden"
+                            />
+                            <Select
+                              value={benefit.kind}
+                              onValueChange={(value) =>
+                                updateBenefit(index, {
+                                  kind: value as BenefitDraft['kind'],
+                                })
+                              }
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="权益类型" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="quota">额度</SelectItem>
+                                <SelectItem value="feature">功能</SelectItem>
+                                <SelectItem value="discount">折扣</SelectItem>
+                                <SelectItem value="support">支持</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              type="number"
+                              value={benefit.quantity ?? ''}
+                              onChange={(event) =>
+                                updateBenefit(index, {
+                                  quantity: event.target.value ? Number(event.target.value) : null,
+                                })
+                              }
+                              placeholder="数量"
+                            />
+                            <Input
+                              value={benefit.unit ?? ''}
+                              onChange={(event) => updateBenefit(index, { unit: event.target.value || null })}
+                              placeholder="单位"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() =>
+                                setFormState((currentState) => ({
+                                  ...currentState,
+                                  benefits: currentState.benefits.filter((_, benefitIndex) => benefitIndex !== index),
+                                }))
+                              }
+                            >
+                              删除权益
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() =>
+                          setFormState((currentState) => ({
+                            ...currentState,
+                            benefits: [
+                              ...currentState.benefits,
+                              {
+                                code: '',
+                                name: '',
+                                kind: 'quota',
+                                quantity: null,
+                                unit: null,
+                              },
+                            ],
+                          }))
+                        }
+                      >
+                        新增权益
+                      </Button>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </TabsContent>
 
                 <TabsContent value="permissions" className="mt-0">
-                  <AdminPermissionsModule
-                    mode="embedded"
-                    selectedCodes={formState.permissionCodes}
-                    onSelectedCodesChange={(codes) =>
-                      setFormState((currentState) => ({
-                        ...currentState,
-                        permissionCodes: codes,
-                      }))
-                    }
-                    data={{
-                      overview: data.permissionOverview,
-                      workspace: permissionWorkspace,
-                    }}
-                  />
+                  <Collapsible open={advancedPermissionsOpen} onOpenChange={setAdvancedPermissionsOpen} className="space-y-3">
+                    <div className="flex items-center justify-between rounded-md border border-border bg-card p-3">
+                      <div className="text-xs text-muted-foreground">
+                        仅在需要控制前台菜单、页面或接口权限时调整。普通价格更新无需改这里。
+                      </div>
+                      <CollapsibleTrigger asChild>
+                        <Button type="button" variant="outline" size="sm">
+                          {advancedPermissionsOpen ? '收起高级权限' : '展开高级权限'}
+                        </Button>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CollapsibleContent>
+                      <AdminPermissionsModule
+                        mode="embedded"
+                        selectedCodes={formState.permissionCodes}
+                        onSelectedCodesChange={(codes) =>
+                          setFormState((currentState) => ({
+                            ...currentState,
+                            permissionCodes: codes,
+                          }))
+                        }
+                        data={{
+                          overview: data.permissionOverview,
+                          workspace: permissionWorkspace,
+                        }}
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
                 </TabsContent>
               </Tabs>
 

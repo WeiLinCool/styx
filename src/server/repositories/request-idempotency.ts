@@ -97,6 +97,18 @@ export function createMemoryRequestIdempotencyStore(options: { maxRecords?: numb
       if (existing.status === 'completed' && existing.responseSummary) {
         return existing;
       }
+      if (existing.status === 'failed') {
+        const retriedRecord: RequestIdempotencyRecord = {
+          ...existing,
+          status: 'processing',
+          responseSummary: null,
+          updatedAt: now,
+          expiresAt: new Date(now.getTime() + (input.ttlMs ?? DEFAULT_TTL_MS)),
+        };
+        records.set(key, retriedRecord);
+        prune(now);
+        return retriedRecord;
+      }
       throw new RequestIdempotencyError(
         'idempotency_request_processing',
         409,
@@ -209,6 +221,24 @@ export function createDatabaseRequestIdempotencyStore(): RequestIdempotencyStore
       assertCompatibleBody(existing, input);
       if (existing.status === 'completed' && existing.responseSummary) {
         return fromDbRecord(existing);
+      }
+      if (existing.status === 'failed') {
+        await db!
+          .update(schema.requestIdempotencyRecords)
+          .set({
+            bodyHash: input.bodyHash,
+            status: 'processing',
+            responseSummary: null,
+            updatedAt: now,
+            expiresAt: new Date(now.getTime() + (input.ttlMs ?? DEFAULT_TTL_MS)),
+          })
+          .where(eq(schema.requestIdempotencyRecords.id, existing.id));
+
+        const retried = await findRecord(input);
+        if (!retried) {
+          throw new Error('Failed to resume failed request idempotency record.');
+        }
+        return fromDbRecord(retried);
       }
       throw new RequestIdempotencyError(
         'idempotency_request_processing',

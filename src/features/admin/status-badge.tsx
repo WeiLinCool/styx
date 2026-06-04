@@ -16,6 +16,9 @@ const statusTone: Record<string, DashboardTone> = {
   pending_activation: 'warning',
   suspended: 'danger',
   archived: 'default',
+  approved: 'success',
+  rejected: 'danger',
+  processing: 'info',
   paid: 'success',
   fulfilled: 'success',
   pending: 'warning',
@@ -32,22 +35,51 @@ const statusTone: Record<string, DashboardTone> = {
   closed: 'default',
 };
 
+const statusLabels: Record<string, string> = {
+  active: '已激活',
+  pending_activation: '待激活',
+  suspended: '已停用',
+  archived: '已归档',
+  approved: '已通过',
+  rejected: '已拒绝',
+  processing: '处理中',
+  paid: '已支付',
+  fulfilled: '已履约',
+  pending: '待处理',
+  cancelled: '已取消',
+  refunded: '已退款',
+  queued: '排队中',
+  running: '进行中',
+  succeeded: '已完成',
+  failed: '失败',
+  new: '新建',
+  contacted: '已联系',
+  qualified: '已达标',
+  converted: '已转化',
+  closed: '已关闭',
+};
+
 type StatusBadgeProps = {
   value: string;
+  label?: string;
   tone?: DashboardTone;
   className?: string;
 };
 
-export function StatusBadge({ value, tone, className }: StatusBadgeProps) {
+export function StatusBadge({ value, label, tone, className }: StatusBadgeProps) {
   const resolvedTone = tone ?? statusTone[value] ?? 'default';
-  const label = value in statusTone ? formatAccountStateLabel(value) : value;
+  const accountStateLabel = formatAccountStateLabel(value);
+  const resolvedLabel =
+    label ??
+    statusLabels[value] ??
+    (accountStateLabel === '未知状态' ? value : accountStateLabel);
 
   return (
     <Badge
       variant="outline"
       className={cn('rounded-md border px-1.5 py-0 text-[11px]', toneClassName[resolvedTone], className)}
     >
-      {label === '未知状态' ? value : label}
+      {resolvedLabel}
     </Badge>
   );
 }

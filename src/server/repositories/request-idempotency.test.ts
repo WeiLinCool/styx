@@ -103,6 +103,36 @@ test('processing duplicates conflict predictably', async () => {
   );
 });
 
+test('failed requests can retry with the same idempotency key and body hash', async () => {
+  const store = createMemoryRequestIdempotencyStore();
+  let calls = 0;
+  const input = {
+    actorType: 'admin' as const,
+    actorId: 'admin-1',
+    operation: 'POST /api/admin/subscription-work-orders/1/approve',
+    key: 'key-1',
+    bodyHash: 'hash-1',
+  };
+
+  await assert.rejects(
+    () =>
+      runIdempotentRequest(store, input, async () => {
+        calls += 1;
+        throw new Error('boom');
+      }),
+    /boom/,
+  );
+
+  const retry = await runIdempotentRequest(store, input, async () => {
+    calls += 1;
+    return { status: 200, body: { ok: true } };
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(retry.replayed, false);
+  assert.deepEqual(retry.response, { status: 200, body: { ok: true } });
+});
+
 test('memory store is bounded and evicts oldest completed records', async () => {
   const store = createMemoryRequestIdempotencyStore({ maxRecords: 1 });
 

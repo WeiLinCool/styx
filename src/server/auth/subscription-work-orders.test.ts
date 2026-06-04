@@ -70,8 +70,18 @@ test('unsupported one-time membership period is rejected', () => {
 });
 
 test('subscription approval accepts already-paid linked orders without requiring another paid transition', () => {
-  assert.deepEqual(getSubscriptionApprovalOrderAction('pending'), { shouldMarkPaid: true });
-  assert.deepEqual(getSubscriptionApprovalOrderAction('paid'), { shouldMarkPaid: false });
+  assert.deepEqual(getSubscriptionApprovalOrderAction('pending'), {
+    nextStatus: 'fulfilled',
+    shouldRecordPaidEvent: true,
+  });
+  assert.deepEqual(getSubscriptionApprovalOrderAction('paid'), {
+    nextStatus: 'fulfilled',
+    shouldRecordPaidEvent: false,
+  });
+  assert.deepEqual(getSubscriptionApprovalOrderAction('fulfilled'), {
+    nextStatus: 'fulfilled',
+    shouldRecordPaidEvent: false,
+  });
 });
 
 test('subscription approval can claim pending work orders before closing them', () => {
