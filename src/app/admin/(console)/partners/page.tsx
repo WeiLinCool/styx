@@ -17,8 +17,8 @@ const columns: AdminColumn<AdminPartnerRow>[] = [
     label: '公司',
     render: (lead) => (
       <div>
-        <div className="font-medium text-neutral-950">{lead.companyName}</div>
-        <div className="text-xs text-neutral-500">{lead.contact}</div>
+        <div className="font-medium text-foreground">{lead.companyName}</div>
+        <div className="text-xs text-muted-foreground">{lead.contact}</div>
       </div>
     ),
   },
@@ -32,23 +32,23 @@ const columns: AdminColumn<AdminPartnerRow>[] = [
     label: '来源 / 负责人',
     render: (lead) => (
       <div>
-        <div className="text-sm text-neutral-900">{lead.source}</div>
-        <div className="text-xs text-neutral-500">{lead.owner}</div>
+        <div className="text-sm text-foreground">{lead.source}</div>
+        <div className="text-xs text-muted-foreground">{lead.owner}</div>
       </div>
     ),
   },
   {
     key: 'interest',
     label: '权益兴趣',
-    render: (lead) => <div className="max-w-xs text-xs text-neutral-700">{lead.benefitInterest}</div>,
+    render: (lead) => <div className="max-w-xs text-xs text-muted-foreground">{lead.benefitInterest}</div>,
   },
   {
     key: 'next',
     label: '下一步',
     render: (lead) => (
       <div>
-        <div className="text-xs font-medium text-neutral-800">{lead.nextAction}</div>
-        <div className="mt-1 text-xs text-neutral-500">{lead.notes}</div>
+        <div className="text-xs font-medium text-foreground">{lead.nextAction}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{lead.notes}</div>
       </div>
     ),
   },

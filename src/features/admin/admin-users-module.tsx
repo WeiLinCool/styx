@@ -34,11 +34,11 @@ import type {
 import type { AdminUserRow } from '@/server/repositories/users';
 
 const metricToneClassName: Record<AdminMetricTone, string> = {
-  default: 'border-neutral-200 bg-white',
-  success: 'border-emerald-200 bg-emerald-50',
-  warning: 'border-amber-200 bg-amber-50',
-  danger: 'border-red-200 bg-red-50',
-  info: 'border-blue-200 bg-blue-50',
+  default: 'border-border bg-card',
+  success: 'border-success/30 bg-success-surface',
+  warning: 'border-warning/30 bg-warning-surface',
+  danger: 'border-destructive/30 bg-destructive/10',
+  info: 'border-info/30 bg-info-surface',
 };
 
 function DetailList({ items }: { items: string[] }) {
@@ -47,7 +47,7 @@ function DetailList({ items }: { items: string[] }) {
       {items.map((item) => (
         <span
           key={item}
-          className="rounded-md border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[11px] text-neutral-600"
+          className="rounded-md border border-border bg-secondary/70 px-1.5 py-0.5 text-[11px] text-muted-foreground"
         >
           {item}
         </span>
@@ -62,8 +62,8 @@ const columns: AdminColumn<AdminUserRow>[] = [
     label: '用户',
     render: (user) => (
       <div>
-        <div className="font-medium text-neutral-950">{user.displayName}</div>
-        <div className="text-xs text-neutral-500">{user.primaryContact}</div>
+        <div className="font-medium text-foreground">{user.displayName}</div>
+        <div className="text-xs text-muted-foreground">{user.primaryContact}</div>
       </div>
     ),
   },
@@ -77,7 +77,7 @@ const columns: AdminColumn<AdminUserRow>[] = [
     label: '身份绑定',
     render: (user) => (
       <div className="space-y-1">
-        <div className="text-xs font-medium text-neutral-700">{user.bindingState}</div>
+        <div className="text-xs font-medium text-muted-foreground">{user.bindingState}</div>
         <DetailList items={user.identities} />
       </div>
     ),
@@ -87,8 +87,8 @@ const columns: AdminColumn<AdminUserRow>[] = [
     label: '会员 / 积分',
     render: (user) => (
       <div>
-        <div className="text-sm text-neutral-900">{user.membership}</div>
-        <div className="text-xs text-neutral-500">{formatCredits(user.points)} 积分</div>
+        <div className="text-sm text-foreground">{user.membership}</div>
+        <div className="text-xs text-muted-foreground">{formatCredits(user.points)} 积分</div>
       </div>
     ),
   },
@@ -97,8 +97,8 @@ const columns: AdminColumn<AdminUserRow>[] = [
     label: '活动 / 审计',
     render: (user) => (
       <div>
-        <div className="text-xs text-neutral-700">{user.activity}</div>
-        <div className="mt-1 text-xs text-neutral-500">{user.auditSummary}</div>
+        <div className="text-xs text-muted-foreground">{user.activity}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{user.auditSummary}</div>
       </div>
     ),
   },
@@ -163,10 +163,10 @@ export function AdminUsersModule({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-neutral-950">用户管理</h2>
-          <p className="mt-1 text-sm text-neutral-600">账号生命周期、身份绑定、真实积分余额、活动与审计摘要。</p>
+          <h2 className="text-base font-semibold text-foreground">用户管理</h2>
+          <p className="mt-1 text-sm text-muted-foreground">账号生命周期、身份绑定、真实积分余额、活动与审计摘要。</p>
         </div>
         <StatusBadge
           value={source === 'database' ? '数据库' : '种子数据'}
@@ -181,28 +181,28 @@ export function AdminUsersModule({
             className={`rounded-lg border p-4 shadow-sm ${metricToneClassName[metric.tone]}`}
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium uppercase text-neutral-500">{metric.label}</p>
+              <p className="text-xs font-medium uppercase text-muted-foreground">{metric.label}</p>
               <StatusBadge value={metric.hint} tone={metric.tone} />
             </div>
-            <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
               {metric.value}
             </p>
           </div>
         ))}
       </div>
 
-      <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
-        <CardHeader className="gap-3 border-b border-neutral-200 px-4 py-3">
+      <Card className="gap-0 rounded-lg border-border bg-card py-0 shadow-sm">
+        <CardHeader className="gap-3 border-b border-border px-4 py-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <CardTitle className="text-sm font-semibold">用户队列</CardTitle>
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="relative w-full md:w-80">
-                <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-neutral-400" />
+                <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="搜索姓名、邮箱、手机或身份信息..."
-                  className="h-9 rounded-md border-neutral-200 pl-8 text-sm"
+                  className="h-9 rounded-md border-input bg-background pl-8 text-sm"
                 />
               </div>
               <Button type="button" variant="outline" className="h-9 rounded-md" disabled>
@@ -245,7 +245,7 @@ export function AdminUsersModule({
             <TableBody>
               {visibleRecords.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center text-neutral-500">
+                  <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
                     当前筛选条件下暂无用户记录
                   </TableCell>
                 </TableRow>

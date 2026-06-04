@@ -144,7 +144,7 @@ function FieldHelp({ children }: { children?: string }) {
     return null;
   }
 
-  return <p className="text-xs leading-5 text-neutral-500">{children}</p>;
+  return <p className="text-xs leading-5 text-muted-foreground">{children}</p>;
 }
 
 function VisualField({
@@ -158,8 +158,8 @@ function VisualField({
 }) {
   if (field.kind === 'object') {
     return (
-      <fieldset className="rounded-lg border border-neutral-200 p-3">
-        <legend className="px-1 text-sm font-medium text-neutral-950">{field.label}</legend>
+      <fieldset className="rounded-lg border border-border bg-card p-3">
+        <legend className="px-1 text-sm font-medium text-foreground">{field.label}</legend>
         <FieldHelp>{field.help}</FieldHelp>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {field.fields.map((child) => (
@@ -181,14 +181,14 @@ function VisualField({
     const canAdd = typeof field.maxItems !== 'number' || items.length < field.maxItems;
 
     return (
-      <fieldset className="rounded-lg border border-neutral-200 p-3">
-        <legend className="px-1 text-sm font-medium text-neutral-950">{field.label}</legend>
+      <fieldset className="rounded-lg border border-border bg-card p-3">
+        <legend className="px-1 text-sm font-medium text-foreground">{field.label}</legend>
         <FieldHelp>{field.help}</FieldHelp>
         <div className="mt-3 space-y-3">
           {items.map((item, index) => (
-            <div key={index} className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
+            <div key={index} className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-xs font-medium text-neutral-600">
+                <p className="text-xs font-medium text-muted-foreground">
                   {field.itemLabel} {index + 1}
                 </p>
                 <Button
@@ -365,7 +365,7 @@ function ContentDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs leading-5 text-neutral-500">{schema.description}</p>
+              <p className="text-xs leading-5 text-muted-foreground">{schema.description}</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor={`content-title-${content?.id ?? 'new'}`}>后台标题</Label>
@@ -403,10 +403,10 @@ function ContentDialog({
             />
           </div>
 
-          <div className="rounded-lg border border-neutral-200 p-3">
+          <div className="rounded-lg border border-border bg-card p-3">
             <div className="mb-3">
-              <p className="text-sm font-medium text-neutral-950">{schema.label}字段</p>
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="text-sm font-medium text-foreground">{schema.label}字段</p>
+              <p className="mt-1 text-xs text-muted-foreground">
                 这里填写的内容会生成 metadata，并由用户端 /home 动态渲染。
               </p>
             </div>
@@ -427,17 +427,17 @@ function ContentDialog({
             </div>
           </div>
 
-          <div className="rounded-lg border border-neutral-200">
+          <div className="rounded-lg border border-border bg-card">
             <button
               type="button"
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-neutral-950"
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-foreground"
               onClick={() => setShowJson((current) => !current)}
             >
               高级 JSON 预览
               {showJson ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
             {showJson ? (
-              <pre className="max-h-72 overflow-auto border-t border-neutral-200 bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">
+              <pre className="max-h-72 overflow-auto border-t border-border bg-secondary/50 p-3 text-xs leading-5 text-muted-foreground">
                 {metadataJson}
               </pre>
             ) : null}

@@ -125,19 +125,19 @@ export function AdminAuthActions({ authenticated }: AdminAuthActionsProps) {
   }
 
   return (
-    <div className="space-y-3 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+    <div className="space-y-3 rounded-md border border-border bg-secondary/40 p-3">
       <div className="grid gap-2 sm:grid-cols-2">
         <Input
           value={phone}
           onChange={(event) => setPhone(event.target.value)}
           placeholder="手机号"
-          className="bg-white"
+          className="bg-card"
         />
         <Input
           value={nickname}
           onChange={(event) => setNickname(event.target.value)}
           placeholder="显示名称"
-          className="bg-white"
+          className="bg-card"
         />
       </div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -155,7 +155,7 @@ export function AdminAuthActions({ authenticated }: AdminAuthActionsProps) {
             {state.message}
           </p>
         ) : (
-          <p className="text-xs text-neutral-500">开发环境下可复用现有手机号登录接口进入后台。</p>
+          <p className="text-xs text-muted-foreground">开发环境下可复用现有手机号登录接口进入后台。</p>
         )}
       </div>
     </div>

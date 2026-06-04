@@ -53,7 +53,7 @@ function kindLabel(kind: GeneratedMediaAssetDto['kind']) {
 
 function AssetPlaceholder({ kind }: { kind: GeneratedMediaAssetDto['kind'] }) {
   return (
-    <div className="flex aspect-[4/3] items-center justify-center rounded-2xl bg-[#f5f5f7] text-[#6e6e73]">
+    <div className="flex aspect-[4/3] items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
       {kind === 'video' ? <Video className="h-10 w-10" /> : <ImageIcon className="h-10 w-10" />}
     </div>
   );
@@ -195,13 +195,13 @@ export function MyAssetsPageClient() {
 
   if (requiresActivation(user)) {
     return (
-      <div className="min-h-screen bg-white">
-        <div className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur-xl">
+      <div className="min-h-screen bg-background">
+        <div className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
           <div className="mx-auto flex h-14 max-w-6xl items-center px-4">
-            <button onClick={() => router.back()} className="mr-3 rounded-full p-1.5 hover:bg-[#f5f5f7]">
-              <ArrowLeft className="h-5 w-5 text-[#1d1d1f]" />
+            <button onClick={() => router.back()} className="mr-3 rounded-full p-1.5 hover:bg-secondary">
+              <ArrowLeft className="h-5 w-5 text-foreground" />
             </button>
-            <h1 className="text-base font-semibold text-[#1d1d1f]">我的资料</h1>
+            <h1 className="text-base font-semibold text-foreground">我的资料</h1>
           </div>
         </div>
         <ProtectedAccountPanel accountState={user.accountState} title="激活账号后进入我的资料" />
@@ -210,42 +210,42 @@ export function MyAssetsPageClient() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fcfcfd] text-[#1d1d1f]">
-      <header className="sticky top-0 z-40 border-b border-black/[0.05] bg-white/90 backdrop-blur-xl">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            <Link href="/home" className="flex items-center gap-1 text-[#555555] transition-colors hover:text-[#1d1d1f]">
+            <Link href="/home" className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground">
               <ArrowLeft size={16} />
               <span className="text-xs">返回</span>
             </Link>
             <div>
               <h1 className="text-base font-semibold">我的资料</h1>
-              <p className="text-[11px] text-[#6e6e73]">管理你已保存到云端的图片与视频</p>
+              <p className="text-[11px] text-muted-foreground">管理你已保存到云端的图片与视频</p>
             </div>
           </div>
-          <div className="rounded-full bg-black/[0.04] px-3 py-1 text-xs text-[#444444]">
+          <div className="rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">
             {assets.length} 个文件
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
-        <section className="mb-5 rounded-3xl border border-black/[0.06] bg-white p-4 shadow-sm">
+        <section className="mb-5 rounded-3xl border border-border bg-card p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <label className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#86868b]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="搜索资料标题"
-                className="w-full rounded-2xl border border-black/[0.08] bg-[#fafafb] py-2.5 pl-10 pr-3 text-sm outline-none transition-colors focus:border-black/[0.16]"
+                className="w-full rounded-2xl border border-border bg-background py-2.5 pl-10 pr-3 text-sm text-foreground outline-none transition-colors focus:border-ring"
               />
             </label>
 
             <select
               value={kind}
               onChange={(event) => setKind(event.target.value as AssetKindFilter)}
-              className="rounded-2xl border border-black/[0.08] bg-[#fafafb] px-3 py-2.5 text-sm outline-none"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none"
             >
               <option value="all">全部类型</option>
               <option value="image">图片</option>
@@ -255,7 +255,7 @@ export function MyAssetsPageClient() {
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as AssetSort)}
-              className="rounded-2xl border border-black/[0.08] bg-[#fafafb] px-3 py-2.5 text-sm outline-none"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none"
             >
               <option value="newest">最新优先</option>
               <option value="oldest">最早优先</option>
@@ -264,43 +264,43 @@ export function MyAssetsPageClient() {
         </section>
 
         {actionMessage ? (
-          <div className="mb-4 rounded-2xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-[#444444]">
+          <div className="mb-4 rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
             {actionMessage}
           </div>
         ) : null}
 
         {loading ? (
-          <div className="flex min-h-[280px] items-center justify-center rounded-3xl border border-black/[0.06] bg-white">
-            <div className="flex items-center gap-2 text-sm text-[#6e6e73]">
+          <div className="flex min-h-[280px] items-center justify-center rounded-3xl border border-border bg-card">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               正在加载资料...
             </div>
           </div>
         ) : errorMessage ? (
-          <div className="rounded-3xl border border-black/[0.06] bg-white px-5 py-8 text-center">
-            <p className="text-sm text-[#1d1d1f]">{errorMessage}</p>
+          <div className="rounded-3xl border border-border bg-card px-5 py-8 text-center">
+            <p className="text-sm text-foreground">{errorMessage}</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 rounded-full border border-black/[0.08] px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-black/[0.03]"
+              className="mt-4 rounded-full border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-secondary"
             >
               重新加载
             </button>
           </div>
         ) : visibleAssets.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-black/[0.08] bg-white px-5 py-14 text-center">
-            <h2 className="text-base font-semibold text-[#1d1d1f]">
+          <div className="rounded-3xl border border-dashed border-border bg-card px-5 py-14 text-center">
+            <h2 className="text-base font-semibold text-foreground">
               {assets.length === 0 ? '还没有已保存的资料' : '没有符合条件的资料'}
             </h2>
-            <p className="mt-2 text-sm text-[#6e6e73]">
+            <p className="mt-2 text-sm text-muted-foreground">
               {assets.length === 0
                 ? '先去 AI 生图或 AI 视频中把满意的结果保存到云端。'
                 : '试试调整搜索词、类型筛选或排序方式。'}
             </p>
             <div className="mt-5 flex justify-center gap-3">
-              <Link href="/image-gen" className="rounded-full bg-[#1d1d1f] px-4 py-2 text-sm text-white transition-colors hover:bg-[#333]">
+              <Link href="/image-gen" className="rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/85">
                 去 AI 生图
               </Link>
-              <Link href="/video-gen" className="rounded-full border border-black/[0.08] px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-black/[0.03]">
+              <Link href="/video-gen" className="rounded-full border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-secondary">
                 去 AI 视频
               </Link>
             </div>
@@ -310,7 +310,7 @@ export function MyAssetsPageClient() {
             {visibleAssets.map((asset) => (
               <article
                 key={asset.id}
-                className="overflow-hidden rounded-3xl border border-black/[0.06] bg-white p-4 shadow-sm"
+                className="overflow-hidden rounded-3xl border border-border bg-card p-4 shadow-sm"
               >
                 <button
                   type="button"
@@ -323,17 +323,17 @@ export function MyAssetsPageClient() {
                 <div className="mt-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="line-clamp-1 text-sm font-semibold text-[#1d1d1f]">{asset.title}</h2>
-                      <p className="mt-1 text-xs text-[#6e6e73]">
+                      <h2 className="line-clamp-1 text-sm font-semibold text-foreground">{asset.title}</h2>
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {kindLabel(asset.kind)} · {formatBytes(asset.byteSize)}
                       </p>
                     </div>
-                    <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] text-[#444444]">
+                    <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground">
                       {kindLabel(asset.kind)}
                     </span>
                   </div>
 
-                  <p className="mt-3 text-xs text-[#6e6e73]">
+                  <p className="mt-3 text-xs text-muted-foreground">
                     保存于 {formatSavedAt(asset.savedAt)}
                   </p>
 
@@ -341,13 +341,13 @@ export function MyAssetsPageClient() {
                     <button
                       type="button"
                       onClick={() => void handlePreviewAsset(asset)}
-                      className="rounded-2xl border border-black/[0.08] px-3 py-2 text-xs text-[#1d1d1f] transition-colors hover:bg-black/[0.03]"
+                      className="rounded-2xl border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-secondary"
                     >
                       预览
                     </button>
                     <Link
                       href={`/chat?assetId=${asset.id}`}
-                      className="flex items-center justify-center gap-1 rounded-2xl border border-black/[0.08] px-3 py-2 text-xs text-[#1d1d1f] transition-colors hover:bg-black/[0.03]"
+                      className="flex items-center justify-center gap-1 rounded-2xl border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-secondary"
                     >
                       <MessageSquarePlus className="h-3.5 w-3.5" />
                       继续对话
@@ -355,7 +355,7 @@ export function MyAssetsPageClient() {
                     <button
                       type="button"
                       onClick={() => void handleDownloadAsset(asset)}
-                      className="flex items-center justify-center gap-1 rounded-2xl border border-black/[0.08] px-3 py-2 text-xs text-[#1d1d1f] transition-colors hover:bg-black/[0.03]"
+                      className="flex items-center justify-center gap-1 rounded-2xl border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-secondary"
                     >
                       <Download className="h-3.5 w-3.5" />
                       下载
@@ -388,22 +388,22 @@ export function MyAssetsPageClient() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl rounded-3xl border-black/[0.08] bg-white p-0" showCloseButton={false}>
-          <DialogHeader className="border-b border-black/[0.06] px-6 py-5">
-            <DialogTitle className="text-base text-[#1d1d1f]">{previewAsset?.title ?? '资料预览'}</DialogTitle>
-            <DialogDescription className="text-xs text-[#6e6e73]">
+        <DialogContent className="max-w-4xl rounded-3xl border-border bg-popover p-0" showCloseButton={false}>
+          <DialogHeader className="border-b border-border px-6 py-5">
+            <DialogTitle className="text-base text-foreground">{previewAsset?.title ?? '资料预览'}</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
               {previewAsset ? `${kindLabel(previewAsset.kind)} · ${formatBytes(previewAsset.byteSize)}` : '加载中'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="px-6 py-5">
             {previewLoading ? (
-              <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6e6e73]">
+              <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 正在加载预览...
               </div>
             ) : previewError ? (
-              <div className="flex min-h-[240px] items-center justify-center text-sm text-[#1d1d1f]">
+              <div className="flex min-h-[240px] items-center justify-center text-sm text-foreground">
                 {previewError}
               </div>
             ) : previewAsset && previewUrl ? (
@@ -416,17 +416,17 @@ export function MyAssetsPageClient() {
           </div>
 
           {previewAsset ? (
-            <div className="flex items-center justify-end gap-2 border-t border-black/[0.06] px-6 py-4">
+            <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
               <Link
                 href={`/chat?assetId=${previewAsset.id}`}
-                className="rounded-full border border-black/[0.08] px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-black/[0.03]"
+                className="rounded-full border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-secondary"
               >
                 继续对话
               </Link>
               <button
                 type="button"
                 onClick={() => void handleDownloadAsset(previewAsset)}
-                className="rounded-full bg-[#1d1d1f] px-4 py-2 text-sm text-white transition-colors hover:bg-[#333]"
+                className="rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/85"
               >
                 下载
               </button>

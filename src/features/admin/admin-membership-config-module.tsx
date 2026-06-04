@@ -69,12 +69,12 @@ function MembershipMetricCards({
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric) => (
-        <div key={metric.label} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+        <div key={metric.label} className="rounded-lg border border-border bg-card p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-medium uppercase text-neutral-500">{metric.label}</p>
+            <p className="text-xs font-medium uppercase text-muted-foreground">{metric.label}</p>
             <StatusBadge value={metric.hint} tone={metric.tone} />
           </div>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">{metric.value}</p>
+          <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{metric.value}</p>
         </div>
       ))}
     </div>
@@ -325,13 +325,13 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
       <MembershipMetricCards metrics={data.metrics} />
 
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+        <aside className="rounded-lg border border-border bg-card p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold text-neutral-950">会员方案</h3>
-              <p className="mt-1 text-xs text-neutral-500">选择要维护的版本化会员方案。</p>
+              <h3 className="text-sm font-semibold text-foreground">会员方案</h3>
+              <p className="mt-1 text-xs text-muted-foreground">选择要维护的版本化会员方案。</p>
             </div>
-            {loadingPlan ? <Loader2 className="h-4 w-4 animate-spin text-neutral-500" /> : null}
+            {loadingPlan ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
           </div>
           <div className="space-y-2">
             {data.plans.map((plan) => (
@@ -341,8 +341,8 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                 onClick={() => void loadPlan(plan.id)}
                 className={`w-full rounded-md border px-3 py-3 text-left ${
                   selectedPlanId === plan.id
-                    ? 'border-neutral-950 bg-neutral-950 text-white'
-                    : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card text-muted-foreground hover:bg-secondary'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -360,12 +360,12 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
         </aside>
 
         <section className="space-y-4">
-          <Card className="rounded-lg border-neutral-200 shadow-sm">
+          <Card className="rounded-lg border-border bg-card shadow-sm">
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle>{workspace.plan.name}</CardTitle>
-                  <CardDescription className="mt-1 text-xs leading-5 text-neutral-600">
+                  <CardDescription className="mt-1 text-xs leading-5 text-muted-foreground">
                     方案编码：{workspace.plan.code}
                   </CardDescription>
                 </div>
@@ -387,23 +387,23 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-md border border-neutral-200 p-3">
-                  <div className="text-xs text-neutral-500">当前发布</div>
-                  <div className="mt-1 text-sm font-medium text-neutral-950">
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">当前发布</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
                     {current ? `${current.displayName} · ¥${current.priceCents / 100}` : '未发布'}
                   </div>
                 </div>
-                <div className="rounded-md border border-neutral-200 p-3">
-                  <div className="text-xs text-neutral-500">草稿</div>
-                  <div className="mt-1 text-sm font-medium text-neutral-950">
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">草稿</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
                     {workspace.draftVersion
                       ? `${workspace.draftVersion.displayName} · V${workspace.draftVersion.versionNumber}`
                       : '当前直接基于已发布版本编辑'}
                   </div>
                 </div>
-                <div className="rounded-md border border-neutral-200 p-3">
-                  <div className="text-xs text-neutral-500">预定生效</div>
-                  <div className="mt-1 text-sm font-medium text-neutral-950">
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">预定生效</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
                     {scheduled?.effectiveFrom ?? '未设置'}
                   </div>
                 </div>
@@ -425,7 +425,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                 <TabsContent value="pricing" className="mt-0">
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-neutral-600">展示名称</label>
+                      <label className="text-xs font-medium text-muted-foreground">展示名称</label>
                       <Input
                         value={formState.displayName}
                         onChange={(event) =>
@@ -437,7 +437,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-neutral-600">价格（分）</label>
+                      <label className="text-xs font-medium text-muted-foreground">价格（分）</label>
                       <Input
                         type="number"
                         value={formState.priceCents}
@@ -450,7 +450,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-neutral-600">计费周期</label>
+                      <label className="text-xs font-medium text-muted-foreground">计费周期</label>
                       <Input
                         value={formState.billingPeriod}
                         onChange={(event) =>
@@ -462,7 +462,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-neutral-600">币种</label>
+                      <label className="text-xs font-medium text-muted-foreground">币种</label>
                       <Input
                         value={formState.currency}
                         onChange={(event) =>
@@ -474,7 +474,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                       />
                     </div>
                     <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs font-medium text-neutral-600">方案描述</label>
+                      <label className="text-xs font-medium text-muted-foreground">方案描述</label>
                       <Textarea
                         value={formState.description}
                         onChange={(event) =>
@@ -486,7 +486,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                       />
                     </div>
                     <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs font-medium text-neutral-600">版本说明</label>
+                      <label className="text-xs font-medium text-muted-foreground">版本说明</label>
                       <Textarea
                         value={formState.changeSummary}
                         onChange={(event) =>
@@ -503,7 +503,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                 <TabsContent value="benefits" className="mt-0">
                   <div className="space-y-3">
                     {formState.benefits.map((benefit, index) => (
-                      <div key={`${benefit.code}-${index}`} className="rounded-md border border-neutral-200 p-3">
+                      <div key={`${benefit.code}-${index}`} className="rounded-md border border-border bg-card p-3">
                         <div className="grid gap-3 md:grid-cols-2">
                           <Input
                             value={benefit.name}
@@ -596,7 +596,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                 </TabsContent>
               </Tabs>
 
-              <div className="flex flex-wrap gap-2 border-t border-neutral-200 pt-4">
+              <div className="flex flex-wrap gap-2 border-t border-border pt-4">
                 <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={savingDraft}>
                   {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   保存草稿
@@ -617,28 +617,28 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
             </CardContent>
           </Card>
 
-          <Card className="rounded-lg border-neutral-200 shadow-sm">
+          <Card className="rounded-lg border-border bg-card shadow-sm">
             <CardHeader>
               <CardTitle>历史版本</CardTitle>
-              <CardDescription className="text-xs leading-5 text-neutral-600">
+              <CardDescription className="text-xs leading-5 text-muted-foreground">
                 已发布、预定和历史归档版本。v1 通过复制历史版本生成新草稿进行回滚。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {workspace.history.length ? (
                 workspace.history.map((version) => (
-                  <div key={version.id} className="rounded-md border border-neutral-200 p-3">
+                  <div key={version.id} className="rounded-md border border-border bg-card p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium text-neutral-950">
+                      <div className="font-medium text-foreground">
                         V{version.versionNumber} · {version.displayName}
                       </div>
                       <StatusBadge value={version.status} tone="default" />
                     </div>
-                    <div className="mt-1 text-xs text-neutral-500">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       生效: {version.effectiveFrom ?? '未设置'} · 发布: {version.publishedAt ?? '未发布'}
                     </div>
                     {version.changeSummary ? (
-                      <div className="mt-2 text-xs text-neutral-700">{version.changeSummary}</div>
+                      <div className="mt-2 text-xs text-muted-foreground">{version.changeSummary}</div>
                     ) : null}
                     <div className="mt-3 flex justify-end">
                       <Button
@@ -657,7 +657,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                   </div>
                 ))
               ) : (
-                <div className="rounded-md border border-dashed border-neutral-200 p-4 text-sm text-neutral-500">
+                <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
                   暂无历史版本。
                 </div>
               )}
@@ -675,7 +675,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-xs font-medium text-neutral-600">生效时间</label>
+            <label className="text-xs font-medium text-muted-foreground">生效时间</label>
             <Input
               type="datetime-local"
               value={scheduleValue}

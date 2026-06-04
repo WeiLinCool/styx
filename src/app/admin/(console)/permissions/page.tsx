@@ -17,9 +17,9 @@ export default async function AdminPermissionsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-neutral-950">权限资源总览</h2>
-        <p className="mt-1 text-sm text-neutral-600">
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-foreground">权限资源总览</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           这里用于查看平台已注册的菜单、页面、按钮和接口资源，以及会员方案当前绑定结果。
           会员方案的正式编辑入口已迁移到“会员管理”工作台。
         </p>

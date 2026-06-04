@@ -36,8 +36,8 @@ const columns: AdminColumn<AdminAgentCapabilityRow>[] = [
     label: '名称',
     render: (capability) => (
       <div>
-        <div className="font-medium text-neutral-950">{capability.name}</div>
-        <div className="text-xs text-neutral-500">{capability.code}</div>
+        <div className="font-medium text-foreground">{capability.name}</div>
+        <div className="text-xs text-muted-foreground">{capability.code}</div>
       </div>
     ),
   },
@@ -49,13 +49,13 @@ const columns: AdminColumn<AdminAgentCapabilityRow>[] = [
   {
     key: 'scope',
     label: '范围',
-    render: (capability) => <div className="text-sm text-neutral-700">{capability.scope}</div>,
+    render: (capability) => <div className="text-sm text-muted-foreground">{capability.scope}</div>,
   },
   {
     key: 'config',
     label: '配置摘要',
     render: (capability) => (
-      <div className="max-w-sm text-xs text-neutral-700">{capability.configSummary}</div>
+      <div className="max-w-sm text-xs text-muted-foreground">{capability.configSummary}</div>
     ),
   },
   {
@@ -84,8 +84,8 @@ export default async function AdminAgentCapabilitiesPage() {
         searchPlaceholder="搜索能力名称、代码、类型或状态..."
       />
 
-      <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
-        <CardHeader className="border-b border-neutral-200 px-4 py-3">
+      <Card className="gap-0 rounded-lg border-border bg-card py-0 shadow-sm">
+        <CardHeader className="border-b border-border px-4 py-3">
           <CardTitle className="text-sm font-semibold">默认能力包</CardTitle>
         </CardHeader>
         <CardContent className="px-0 py-0">
@@ -105,14 +105,14 @@ export default async function AdminAgentCapabilitiesPage() {
                     <StatusBadge value={bundle.taskType} />
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium text-neutral-950">{bundle.name}</div>
-                    <div className="text-xs text-neutral-500">{bundle.code}</div>
+                    <div className="font-medium text-foreground">{bundle.name}</div>
+                    <div className="text-xs text-muted-foreground">{bundle.code}</div>
                   </TableCell>
                   <TableCell>
                     <StatusBadge value={bundle.status} />
                   </TableCell>
                   <TableCell>
-                    <div className="max-w-xl text-xs text-neutral-700">
+                    <div className="max-w-xl text-xs text-muted-foreground">
                       {bundle.capabilitySummary}
                     </div>
                   </TableCell>

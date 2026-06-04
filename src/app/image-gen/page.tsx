@@ -452,13 +452,13 @@ export default function ImageGenPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-[#1d1d1f]">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <Link href="/home" className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-white">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-card shadow-sm">
                 <svg width="12" height="12" viewBox="0 0 40 40" fill="none"><path d="M20 4L8 12V28L20 36L32 28V12L20 4Z" fill="black" /><circle cx="20" cy="20" r="4" fill="white" /></svg>
               </div>
               <span className="text-sm font-semibold">AI生图</span>
@@ -475,7 +475,7 @@ export default function ImageGenPage() {
       </header>
 
       {/* Tab Bar */}
-      <div className="border-b border-black/5">
+      <div className="border-b border-border">
         <div className="mx-auto flex max-w-7xl gap-1 px-4 py-2">
           {TABS.map((tab) => (
             <button
@@ -483,8 +483,8 @@ export default function ImageGenPage() {
               onClick={() => handleTabChange(tab.id)}
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-all ${
                 activeTab === tab.id
-                  ? 'bg-black/5 text-[#1d1d1f]'
-                  : 'text-[#444444] hover:text-[#555555]'
+                  ? 'bg-secondary text-secondary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <tab.icon size={14} />
@@ -512,7 +512,7 @@ export default function ImageGenPage() {
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder="描述你想生成的图片..."
                     rows={4}
-                    className="w-full resize-none rounded-xl border border-black/8 bg-white/[0.03] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none transition-colors focus:border-black/10"
+                    className="w-full resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-ring"
                   />
                 </div>
                 {/* Model */}
@@ -538,7 +538,7 @@ export default function ImageGenPage() {
                           },
                         }))
                       }
-                      className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                      className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
                     >
                       重新加载模型
                     </button>
@@ -553,7 +553,7 @@ export default function ImageGenPage() {
                         key={s.label}
                         onClick={() => setSelectedSize(s.label)}
                         className={`cursor-pointer rounded-lg px-4 py-2 text-sm transition-all ${
-                          selectedSize === s.label ? 'bg-white text-black' : 'border border-black/8 text-[#555555] hover:border-black/10'
+                          selectedSize === s.label ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground'
                         }`}
                       >
                         {s.label}
@@ -564,7 +564,7 @@ export default function ImageGenPage() {
                 <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
                   {isGenerating ? '生成中...' : '开始生成'}
                 </button>
-                {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
+                {submitDisabledReason ? <p className="text-xs text-muted-foreground">{submitDisabledReason}</p> : null}
               </>
             )}
 
@@ -601,7 +601,7 @@ export default function ImageGenPage() {
                           },
                         }))
                       }
-                      className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                      className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
                     >
                       重新加载模型
                     </button>
@@ -611,18 +611,18 @@ export default function ImageGenPage() {
                   <label className="mb-2 block text-sm font-medium">放大倍数</label>
                   <div className="flex gap-2">
                     {['2x', '4x'].map((s) => (
-                      <button key={s} onClick={() => setHdScale(s)} className={`cursor-pointer rounded-lg px-4 py-2 text-sm ${hdScale === s ? 'bg-white text-black' : 'border border-black/8 text-[#555555]'}`}>{s}</button>
+                      <button key={s} onClick={() => setHdScale(s)} className={`cursor-pointer rounded-lg px-4 py-2 text-sm ${hdScale === s ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">修复提示词</label>
-                  <textarea value={hdPrompt} onChange={(e) => setHdPrompt(e.target.value)} rows={2} className="w-full resize-none rounded-xl border border-black/8 bg-white/[0.03] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none focus:border-black/10" />
+                  <textarea value={hdPrompt} onChange={(e) => setHdPrompt(e.target.value)} rows={2} className="w-full resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring" />
                 </div>
                 <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
                   {isGenerating ? '修复中...' : '开始修复'}
                 </button>
-                {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
+                {submitDisabledReason ? <p className="text-xs text-muted-foreground">{submitDisabledReason}</p> : null}
               </>
             )}
 
@@ -659,7 +659,7 @@ export default function ImageGenPage() {
                           },
                         }))
                       }
-                      className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                      className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
                     >
                       重新加载模型
                     </button>
@@ -673,32 +673,32 @@ export default function ImageGenPage() {
                         key={style.id}
                         onClick={() => setSelectedStyle(style.id)}
                         className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl py-3 transition-all ${
-                          selectedStyle === style.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
+                          selectedStyle === style.id ? 'border-border bg-secondary text-secondary-foreground' : 'border border-border bg-card hover:border-ring'
                         }`}
                       >
                         <span className="text-xl">{style.preview}</span>
-                        <span className="text-[10px] text-[#555555]">{style.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{style.name}</span>
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">附加提示词</label>
-                  <textarea value={stylePrompt} onChange={(e) => setStylePrompt(e.target.value)} placeholder="可选：添加额外的风格描述..." rows={2} className="w-full resize-none rounded-xl border border-black/8 bg-white/[0.03] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none focus:border-black/10" />
+                  <textarea value={stylePrompt} onChange={(e) => setStylePrompt(e.target.value)} placeholder="可选：添加额外的风格描述..." rows={2} className="w-full resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring" />
                 </div>
                 <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
                   {isGenerating ? '转换中...' : '开始换风格'}
                 </button>
-                {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
+                {submitDisabledReason ? <p className="text-xs text-muted-foreground">{submitDisabledReason}</p> : null}
               </>
             )}
           </div>
 
           {/* Right - Preview */}
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-black/5 bg-white/[0.02] p-8">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card/70 p-8">
             {generatedImage ? (
               <div className="flex w-full flex-col items-center gap-4 text-center">
-                <div className="w-full overflow-hidden rounded-xl border border-black/5 bg-[#f5f5f7]">
+                <div className="w-full overflow-hidden rounded-xl border border-border bg-secondary/70">
                   <img
                     src={generatedImage.artifact.delivery.url}
                     alt={generatedImage.artifact.title}
@@ -711,26 +711,26 @@ export default function ImageGenPage() {
                   </button>
                   <button
                     onClick={handleSaveImage}
-                    className="cursor-pointer rounded-xl border border-black/8 px-4 py-2.5 text-sm text-[#1d1d1f] transition-colors hover:border-black/15"
+                    className="cursor-pointer rounded-xl border border-border px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring"
                   >
                     {generatedImage.artifact.metadata.saveStatus === 'saved' ? '已保存到我的媒体' : '保存到我的媒体'}
                   </button>
-                  <button onClick={handleCopyPrompt} className="cursor-pointer rounded-xl border border-black/8 px-4 py-2.5 text-sm text-[#1d1d1f] transition-colors hover:border-black/15">
+                  <button onClick={handleCopyPrompt} className="cursor-pointer rounded-xl border border-border px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring">
                     复制提示词
                   </button>
                 </div>
-                <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
+                <div className="w-full rounded-xl border border-warning/30 bg-warning-surface px-3 py-2 text-left text-xs leading-5 text-warning">
                   {generatedImage.artifact.metadata.saveStatus === 'saved'
                     ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
                     : '生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。'}
                 </div>
-                {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
-                {selectedModel ? <p className="text-xs text-[#6e6e73]">模型：{selectedModel.name}</p> : null}
+                {generationMessage ? <p className="text-xs text-muted-foreground">{generationMessage}</p> : null}
+                {selectedModel ? <p className="text-xs text-muted-foreground">模型：{selectedModel.name}</p> : null}
               </div>
             ) : isGenerating ? (
               <div className="flex flex-col items-center">
-                <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-black/8 border-t-white" />
-                <p className="text-sm text-[#444444]">AI 正在创作中...</p>
+                <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
+                <p className="text-sm text-muted-foreground">AI 正在创作中...</p>
               </div>
             ) : generationError ? (
               <div className="flex flex-col items-center text-center">
@@ -738,23 +738,23 @@ export default function ImageGenPage() {
                   <ImageIcon size={28} className="text-red-500" />
                 </div>
                 <p className="mb-1 text-sm font-medium text-red-500">生成失败</p>
-                <p className="text-xs text-[#444444]">{generationError}</p>
+                <p className="text-xs text-muted-foreground">{generationError}</p>
               </div>
             ) : generationMessage ? (
               <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
-                  <ImageIcon size={28} className="text-[#444444]" />
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+                  <ImageIcon size={28} />
                 </div>
-                <p className="mb-1 text-sm font-medium text-[#555555]">生成完成</p>
-                <p className="text-xs text-[#444444]">{generationMessage}</p>
+                <p className="mb-1 text-sm font-medium text-foreground">生成完成</p>
+                <p className="text-xs text-muted-foreground">{generationMessage}</p>
               </div>
             ) : (
               <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
-                  <ImageIcon size={28} className="text-[#444444]" />
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+                  <ImageIcon size={28} />
                 </div>
-                <p className="mb-1 text-sm font-medium text-[#555555]">预览区域</p>
-                <p className="text-xs text-[#444444]">生成的图片将在此处展示</p>
+                <p className="mb-1 text-sm font-medium text-foreground">预览区域</p>
+                <p className="text-xs text-muted-foreground">生成的图片将在此处展示</p>
               </div>
             )}
           </div>
@@ -780,19 +780,19 @@ function ModelOptions({
   onSelect: (modelId: string) => void;
 }) {
   if (!isLoggedIn) {
-    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">登录后查看可用模型</div>;
+    return <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">登录后查看可用模型</div>;
   }
 
   if (loading) {
-    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">模型加载中...</div>;
+    return <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">模型加载中...</div>;
   }
 
   if (error) {
-    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">{error}</div>;
+    return <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">{error}</div>;
   }
 
   if (models.length === 0) {
-    return <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">{buildUnavailableModelMessage()}</div>;
+    return <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">{buildUnavailableModelMessage()}</div>;
   }
 
   return (
@@ -802,25 +802,25 @@ function ModelOptions({
           key={model.id}
           onClick={() => onSelect(model.id)}
           className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 text-left transition-all ${
-            selectedModelId === model.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
+            selectedModelId === model.id ? 'border-border bg-secondary' : 'border border-border bg-card hover:border-ring'
           }`}
         >
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{model.name}</span>
-              {model.isDefault ? <span className="rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] font-medium text-[#444444]">默认</span> : null}
+              {model.isDefault ? <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">默认</span> : null}
             </div>
-            <div className="text-xs text-[#444444]">{model.providerName} · {model.entitlementLabel} · {model.pricingSummary}</div>
+            <div className="text-xs text-muted-foreground">{model.providerName} · {model.entitlementLabel} · {model.pricingSummary}</div>
           </div>
           <div className="flex h-5 w-5 items-center justify-center">
             {selectedModelId === model.id ? (
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f]">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                   <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
             ) : (
-              <div className="h-4 w-4 rounded-full border-2 border-black/10" />
+              <div className="h-4 w-4 rounded-full border-2 border-border" />
             )}
           </div>
         </button>
@@ -840,16 +840,16 @@ function SourceImagePicker({
 }) {
   if (sourceImage) {
     return (
-      <div className="rounded-xl border border-black/8 p-3">
-        <div className="mb-3 overflow-hidden rounded-lg bg-[#f5f5f7]">
+      <div className="rounded-xl border border-border bg-card p-3">
+        <div className="mb-3 overflow-hidden rounded-lg bg-secondary/70">
           <img src={sourceImage.dataUrl} alt={sourceImage.name} className="max-h-64 w-full object-contain" />
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{sourceImage.name}</p>
-            <p className="text-xs text-[#6e6e73]">{formatBytes(sourceImage.size)} · {sourceImage.type}</p>
+            <p className="text-xs text-muted-foreground">{formatBytes(sourceImage.size)} · {sourceImage.type}</p>
           </div>
-          <button type="button" onClick={onClear} className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-black/8 text-[#444444] hover:border-black/15" aria-label="清除图片">
+          <button type="button" onClick={onClear} className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border text-muted-foreground hover:border-ring hover:text-foreground" aria-label="清除图片">
             <X size={16} />
           </button>
         </div>
@@ -858,11 +858,11 @@ function SourceImagePicker({
   }
 
   return (
-    <button type="button" onClick={onPick} className="flex w-full cursor-pointer items-center justify-center rounded-xl border border-dashed border-black/8 py-12 transition-colors hover:border-black/10">
+    <button type="button" onClick={onPick} className="flex w-full cursor-pointer items-center justify-center rounded-xl border border-dashed border-border bg-card py-12 transition-colors hover:border-ring hover:bg-secondary/50">
       <div className="text-center">
-        <Upload size={24} className="mx-auto mb-2 text-[#444444]" />
-        <p className="text-sm text-[#444444]">点击上传 PNG、JPEG 或 WebP</p>
-        <p className="mt-1 text-xs text-[#6e6e73]">最大 7 MiB</p>
+        <Upload size={24} className="mx-auto mb-2 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">点击上传 PNG、JPEG 或 WebP</p>
+        <p className="mt-1 text-xs text-muted-foreground">最大 7 MiB</p>
       </div>
     </button>
   );

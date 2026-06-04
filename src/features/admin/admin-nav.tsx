@@ -46,8 +46,8 @@ export function AdminNav({ className }: AdminNavProps) {
             key={item.href}
             href={item.href}
             className={cn(
-              'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950',
-              isActive && 'bg-neutral-950 text-white hover:bg-neutral-900 hover:text-white',
+              'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              isActive && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 hover:text-sidebar-primary-foreground',
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
@@ -61,8 +61,8 @@ export function AdminNav({ className }: AdminNavProps) {
           <button
             type="button"
             className={cn(
-              'flex h-9 w-full items-center justify-between rounded-md px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950',
-              hasMoreActive && 'bg-neutral-100 text-neutral-950',
+              'flex h-9 w-full items-center justify-between rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              hasMoreActive && 'bg-sidebar-accent text-sidebar-accent-foreground',
             )}
           >
             <span>更多</span>
@@ -84,8 +84,8 @@ export function AdminNav({ className }: AdminNavProps) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950',
-                  isActive && 'bg-neutral-950 text-white hover:bg-neutral-900 hover:text-white',
+                  'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                  isActive && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 hover:text-sidebar-primary-foreground',
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -96,8 +96,8 @@ export function AdminNav({ className }: AdminNavProps) {
         </CollapsibleContent>
       </Collapsible>
 
-      <div className="mt-3 rounded-md border border-neutral-200 bg-white p-3 text-xs text-neutral-600">
-        <div className="mb-2 flex items-center gap-2 font-semibold text-neutral-950">
+      <div className="mt-3 rounded-md border border-sidebar-border bg-card/80 p-3 text-xs text-muted-foreground">
+        <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
           <Boxes className="h-3.5 w-3.5" />
           运营范围
         </div>

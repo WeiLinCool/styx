@@ -4,11 +4,11 @@ import { cn } from '@/lib/utils';
 import type { DashboardTone } from '@/server/repositories/admin-dashboard';
 
 const toneClassName: Record<DashboardTone, string> = {
-  default: 'border-neutral-200 bg-neutral-100 text-neutral-700',
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  warning: 'border-amber-200 bg-amber-50 text-amber-700',
-  danger: 'border-red-200 bg-red-50 text-red-700',
-  info: 'border-blue-200 bg-blue-50 text-blue-700',
+  default: 'border-border bg-secondary/80 text-secondary-foreground',
+  success: 'border-emerald-500/20 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
+  warning: 'border-amber-500/20 bg-amber-500/12 text-amber-700 dark:text-amber-300',
+  danger: 'border-red-500/20 bg-red-500/12 text-red-700 dark:text-red-300',
+  info: 'border-blue-500/20 bg-blue-500/12 text-blue-700 dark:text-blue-300',
 };
 
 const statusTone: Record<string, DashboardTone> = {

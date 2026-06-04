@@ -21,8 +21,8 @@ const subscriptionWorkOrderColumns: AdminColumn<AdminSubscriptionWorkOrderRow>[]
     label: '工单 / 订单',
     render: (record) => (
       <div>
-        <div className="font-medium text-neutral-950">{record.code}</div>
-        <div className="text-xs text-neutral-500">{record.orderNumber}</div>
+        <div className="font-medium text-foreground">{record.code}</div>
+        <div className="text-xs text-muted-foreground">{record.orderNumber}</div>
       </div>
     ),
   },
@@ -36,8 +36,8 @@ const subscriptionWorkOrderColumns: AdminColumn<AdminSubscriptionWorkOrderRow>[]
     label: '用户 / 方案',
     render: (record) => (
       <div>
-        <div className="text-sm text-neutral-900">{record.user}</div>
-        <div className="text-xs text-neutral-500">{record.plan}</div>
+        <div className="text-sm text-foreground">{record.user}</div>
+        <div className="text-xs text-muted-foreground">{record.plan}</div>
       </div>
     ),
   },
@@ -48,15 +48,15 @@ const subscriptionWorkOrderColumns: AdminColumn<AdminSubscriptionWorkOrderRow>[]
       <div>
         <div
           className={
-            record.amountMismatch ? 'font-medium text-red-700' : 'font-medium text-neutral-950'
+            record.amountMismatch ? 'font-medium text-red-700' : 'font-medium text-foreground'
           }
         >
           {record.submittedAmount} / 应收 {record.orderTotal}
         </div>
-        <div className="text-xs text-neutral-500">
+        <div className="text-xs text-muted-foreground">
           {record.paymentMethod} · {record.reference}
         </div>
-        <div className="mt-1 text-xs text-neutral-500">{record.submittedPaidAt}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{record.submittedPaidAt}</div>
       </div>
     ),
   },
@@ -64,10 +64,10 @@ const subscriptionWorkOrderColumns: AdminColumn<AdminSubscriptionWorkOrderRow>[]
     key: 'note',
     label: '备注',
     render: (record) => (
-      <div className="max-w-xs text-xs text-neutral-600">
+      <div className="max-w-xs text-xs text-muted-foreground">
         {record.note}
         {record.decisionNote !== '未填写' ? (
-          <div className="mt-1 text-neutral-500">{record.decisionNote}</div>
+          <div className="mt-1 text-muted-foreground">{record.decisionNote}</div>
         ) : null}
       </div>
     ),

@@ -286,12 +286,12 @@ export default function VideoGenPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-[#1d1d1f]">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4">
           <Link href="/home" className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-white">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-card shadow-sm">
               <svg width="12" height="12" viewBox="0 0 40 40" fill="none"><path d="M20 4L8 12V28L20 36L32 28V12L20 4Z" fill="black" /><circle cx="20" cy="20" r="4" fill="white" /></svg>
             </div>
             <span className="text-sm font-semibold">AI视频</span>
@@ -317,11 +317,11 @@ export default function VideoGenPage() {
             <div>
               <label className="mb-2 block text-sm font-medium">视频模型</label>
               {!isLoggedIn ? (
-                <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">登录后查看可用模型</div>
+                <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">登录后查看可用模型</div>
               ) : modelLoading ? (
-                <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">模型加载中...</div>
+                <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">模型加载中...</div>
               ) : modelMaintenanceMessage ? (
-                <div className="rounded-xl border border-black/5 px-4 py-3 text-sm text-[#444444]">
+                <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
                   <p>{modelMaintenanceMessage}</p>
                   <button
                     type="button"
@@ -331,7 +331,7 @@ export default function VideoGenPage() {
                         reloadKey: nextReloadKey(current.reloadKey),
                       }))
                     }
-                    className="mt-2 text-xs font-medium text-[#1d1d1f] transition-colors hover:text-[#555555]"
+                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
                   >
                     重新加载模型
                   </button>
@@ -343,29 +343,29 @@ export default function VideoGenPage() {
                       key={model.id}
                       onClick={() => setSelectedModel(model.id)}
                       className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 text-left transition-all ${
-                        selectedModel === model.id ? 'bg-black/5 border border-black/10' : 'border border-black/5 hover:border-black/8'
+                        selectedModel === model.id ? 'border-border bg-secondary' : 'border border-border bg-card hover:border-ring'
                       }`}
                     >
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{model.name}</span>
                           {model.isDefault ? (
-                            <span className="rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] font-medium text-[#444444]">默认</span>
+                            <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">默认</span>
                           ) : null}
                         </div>
-                        <div className="text-xs text-[#444444]">
+                        <div className="text-xs text-muted-foreground">
                           {model.providerName} · {model.entitlementLabel} · {model.pricingSummary}
                         </div>
                       </div>
                       <div className="flex h-5 w-5 items-center justify-center">
                         {selectedModel === model.id ? (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f]">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                               <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                             </svg>
                           </div>
                         ) : (
-                          <div className="h-4 w-4 rounded-full border-2 border-black/10" />
+                          <div className="h-4 w-4 rounded-full border-2 border-border" />
                         )}
                       </div>
                     </button>
@@ -382,7 +382,7 @@ export default function VideoGenPage() {
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="描述你想生成的视频..."
                 rows={3}
-                className="w-full resize-none rounded-xl border border-black/8 bg-white/[0.03] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#6e6e73] outline-none transition-colors focus:border-black/10"
+                className="w-full resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-ring"
               />
             </div>
 
@@ -395,7 +395,7 @@ export default function VideoGenPage() {
                     key={style}
                     onClick={() => setSelectedStyle(style)}
                     className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm transition-all ${
-                      selectedStyle === style ? 'bg-white text-black' : 'border border-black/8 text-[#555555] hover:border-black/10'
+                      selectedStyle === style ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground'
                     }`}
                   >
                     {style}
@@ -413,7 +413,7 @@ export default function VideoGenPage() {
                     key={d}
                     onClick={() => setSelectedDuration(d)}
                     className={`cursor-pointer rounded-lg px-4 py-2 text-sm ${
-                      selectedDuration === d ? 'bg-white text-black' : 'border border-black/8 text-[#555555]'
+                      selectedDuration === d ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground'
                     }`}
                   >
                     {d}
@@ -431,7 +431,7 @@ export default function VideoGenPage() {
                     key={c.label}
                     onClick={() => setSelectedClarity(c.label)}
                     className={`cursor-pointer rounded-lg px-4 py-2 text-sm ${
-                      selectedClarity === c.label ? 'bg-white text-black' : 'border border-black/8 text-[#555555]'
+                      selectedClarity === c.label ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground'
                     }`}
                   >
                     <div className="font-medium">{c.label}</div>
@@ -442,26 +442,26 @@ export default function VideoGenPage() {
             </div>
 
             {/* Audio */}
-            <div className="flex items-center justify-between rounded-xl border border-black/5 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
               <div className="flex items-center gap-2">
-                {audioEnabled ? <Volume2 size={16} className="text-[#555555]" /> : <VolumeX size={16} className="text-[#444444]" />}
+                {audioEnabled ? <Volume2 size={16} className="text-muted-foreground" /> : <VolumeX size={16} className="text-muted-foreground" />}
                 <span className="text-sm">音频</span>
               </div>
               <button
                 onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`relative h-6 w-11 cursor-pointer rounded-full transition-colors ${audioEnabled ? 'bg-white' : 'bg-black/5'}`}
+                className={`relative h-6 w-11 cursor-pointer rounded-full transition-colors ${audioEnabled ? 'bg-primary' : 'bg-secondary'}`}
               >
-                <div className={`absolute top-0.5 h-5 w-5 rounded-full transition-all ${audioEnabled ? 'right-0.5 bg-white' : 'left-0.5 bg-[#6e6e73]'}`} />
+                <div className={`absolute top-0.5 h-5 w-5 rounded-full transition-all ${audioEnabled ? 'right-0.5 bg-primary-foreground' : 'left-0.5 bg-muted-foreground'}`} />
               </button>
             </div>
 
             {/* Reference Image */}
             <div>
               <label className="mb-2 block text-sm font-medium">参考首帧图（可选）</label>
-              <div className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-black/8 py-8 transition-colors hover:border-black/10">
+              <div className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-border bg-card py-8 transition-colors hover:border-ring hover:bg-secondary/50">
                 <div className="text-center">
-                  <ImageIcon size={20} className="mx-auto mb-1 text-[#444444]" />
-                  <p className="text-xs text-[#444444]">上传参考图</p>
+                  <ImageIcon size={20} className="mx-auto mb-1 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">上传参考图</p>
                 </div>
               </div>
             </div>
@@ -469,14 +469,14 @@ export default function VideoGenPage() {
             <button onClick={handleGenerate} disabled={isGenerating || Boolean(submitDisabledReason)} className="apple-btn apple-btn-primary w-full cursor-pointer rounded-xl py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
               {isGenerating ? '生成中...' : '开始生成'}
             </button>
-            {submitDisabledReason ? <p className="text-xs text-[#6e6e73]">{submitDisabledReason}</p> : null}
+            {submitDisabledReason ? <p className="text-xs text-muted-foreground">{submitDisabledReason}</p> : null}
           </div>
 
           {/* Right - Preview */}
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-black/5 bg-white/[0.02] p-8">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card/70 p-8">
             {generatedVideo ? (
               <div className="flex w-full flex-col items-center gap-4 text-center">
-                <div className="aspect-video w-full overflow-hidden rounded-xl border border-black/5 bg-black">
+                <div className="aspect-video w-full overflow-hidden rounded-xl border border-border bg-black">
                   {typeof generatedVideo.metadata.mimeType === 'string' && generatedVideo.metadata.mimeType.startsWith('image/') ? (
                     <img
                       src={generatedVideo.delivery.url}
@@ -497,31 +497,31 @@ export default function VideoGenPage() {
                   </button>
                   <button
                     onClick={handleSaveVideo}
-                    className="flex-1 cursor-pointer rounded-xl border border-black/8 px-4 py-2.5 text-sm text-[#1d1d1f] transition-colors hover:border-black/15"
+                    className="flex-1 cursor-pointer rounded-xl border border-border px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring"
                   >
                     {generatedVideo.metadata.saveStatus === 'saved' ? '已保存到我的媒体' : '保存到我的媒体'}
                   </button>
                 </div>
-                <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs leading-5 text-amber-800">
+                <div className="w-full rounded-xl border border-warning/30 bg-warning-surface px-3 py-2 text-left text-xs leading-5 text-warning">
                   {generatedVideo.metadata.saveStatus === 'saved'
                     ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
                     : '生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。'}
                 </div>
                 {generationError ? (
-                  <div className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-left text-xs leading-5 text-red-700">
+                  <div className="w-full rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-xs leading-5 text-destructive">
                     {generationError}
                   </div>
                 ) : null}
-                {generationMessage ? <p className="text-xs text-[#444444]">{generationMessage}</p> : null}
+                {generationMessage ? <p className="text-xs text-muted-foreground">{generationMessage}</p> : null}
               </div>
             ) : isGenerating ? (
               <div className="flex flex-col items-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
-                  <Film size={28} className="animate-pulse text-[#444444]" />
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary">
+                  <Film size={28} className="animate-pulse text-muted-foreground" />
                 </div>
                 <p className="mb-2 text-sm font-medium">Seedance 2.0 正在造梦...</p>
-                <div className="h-1 w-32 overflow-hidden rounded-full bg-black/5">
-                  <div className="h-full animate-pulse rounded-full bg-white/40" style={{ width: '60%' }} />
+                <div className="h-1 w-32 overflow-hidden rounded-full bg-secondary">
+                  <div className="h-full animate-pulse rounded-full bg-primary/60" style={{ width: '60%' }} />
                 </div>
               </div>
             ) : generationError ? (
@@ -530,23 +530,23 @@ export default function VideoGenPage() {
                   <Play size={28} className="text-red-500" />
                 </div>
                 <p className="mb-1 text-sm font-medium text-red-500">生成失败</p>
-                <p className="text-xs text-[#444444]">{generationError}</p>
+                <p className="text-xs text-muted-foreground">{generationError}</p>
               </div>
             ) : generationMessage ? (
               <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
-                  <Play size={28} className="text-[#444444]" />
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary">
+                  <Play size={28} className="text-muted-foreground" />
                 </div>
-                <p className="mb-1 text-sm font-medium text-[#555555]">生成完成</p>
-                <p className="text-xs text-[#444444]">{generationMessage}</p>
+                <p className="mb-1 text-sm font-medium text-foreground">生成完成</p>
+                <p className="text-xs text-muted-foreground">{generationMessage}</p>
               </div>
             ) : (
               <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-black/5">
-                  <Play size={28} className="text-[#444444]" />
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary">
+                  <Play size={28} className="text-muted-foreground" />
                 </div>
-                <p className="mb-1 text-sm font-medium text-[#555555]">视频预览</p>
-                <p className="text-xs text-[#444444]">生成的视频将在此处展示</p>
+                <p className="mb-1 text-sm font-medium text-foreground">视频预览</p>
+                <p className="text-xs text-muted-foreground">生成的视频将在此处展示</p>
               </div>
             )}
           </div>

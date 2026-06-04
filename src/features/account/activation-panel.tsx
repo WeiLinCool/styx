@@ -144,24 +144,24 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
   }
 
   return (
-    <section className="w-full rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+    <section className="w-full rounded-lg border border-border bg-card p-5 shadow-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-neutral-950 text-white">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
           <ShieldCheck className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-neutral-950">账号激活</h2>
-          <p className="mt-1 text-sm leading-6 text-neutral-600">
+          <h2 className="text-lg font-semibold text-foreground">账号激活</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
             当前状态为 {formatAccountStateLabel(accountState)}。请从当前浏览器提交激活申请，后台审核通过后账号会自动激活。
           </p>
         </div>
       </div>
 
-      <div className="mt-5 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+      <div className="mt-5 rounded-lg border border-border bg-secondary/60 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-medium text-neutral-950">浏览器激活申请</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-600">
+            <p className="text-sm font-medium text-foreground">浏览器激活申请</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
               系统会记录当前浏览器的绑定摘要，审核通过后账号会自动激活。
             </p>
           </div>
@@ -175,12 +175,12 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
           </Button>
         </div>
         {workOrder ? (
-          <div className="mt-4 rounded-md border border-emerald-200 bg-white p-3">
-            <p className="text-sm font-medium text-emerald-700">激活申请已提交</p>
-            <p className="mt-1 text-xs text-neutral-500">
+          <div className="mt-4 rounded-md border border-success/30 bg-card p-3">
+            <p className="text-sm font-medium text-success-foreground">激活申请已提交</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               后台会自动处理当前浏览器的绑定申请。
             </p>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               审核有效期至 {new Date(workOrder.expiresAt).toLocaleString('zh-CN')}
             </p>
           </div>
@@ -218,7 +218,7 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
 
       {message ? (
         <p
-          className={`mt-4 text-sm ${submitState === 'error' ? 'text-red-600' : 'text-emerald-700'}`}
+          className={`mt-4 text-sm ${submitState === 'error' ? 'text-destructive' : 'text-success-foreground'}`}
           role="status"
         >
           {message}

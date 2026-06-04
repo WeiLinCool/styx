@@ -51,11 +51,11 @@ import { formatAdminAiLabel, formatAdminAiText } from './admin-ai-labels';
 import { StatusBadge } from './status-badge';
 
 const metricToneClassName: Record<AdminMetricTone, string> = {
-  default: 'border-neutral-200 bg-white',
-  success: 'border-emerald-200 bg-emerald-50',
-  warning: 'border-amber-200 bg-amber-50',
-  danger: 'border-red-200 bg-red-50',
-  info: 'border-blue-200 bg-blue-50',
+  default: 'border-border bg-card',
+  success: 'border-success/30 bg-success-surface',
+  warning: 'border-warning/30 bg-warning-surface',
+  danger: 'border-destructive/30 bg-destructive/10',
+  info: 'border-info/30 bg-info-surface',
 };
 
 const credentialTone = {
@@ -76,7 +76,7 @@ function DetailList({ items }: { items: string[] }) {
       {items.map((item) => (
         <span
           key={item}
-          className="rounded-md border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[11px] text-neutral-600"
+          className="rounded-md border border-border bg-secondary/70 px-1.5 py-0.5 text-[11px] text-muted-foreground"
         >
           {item}
         </span>
@@ -230,9 +230,9 @@ const columns: AiModelColumn[] = [
     label: '模型',
     render: (model) => (
       <div>
-        <div className="font-medium text-neutral-950">{model.name}</div>
-        <div className="text-xs text-neutral-500">{model.code}</div>
-        <div className="mt-1 text-xs text-neutral-600">{model.model}</div>
+        <div className="font-medium text-foreground">{model.name}</div>
+        <div className="text-xs text-muted-foreground">{model.code}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{model.model}</div>
       </div>
     ),
   },
@@ -241,8 +241,8 @@ const columns: AiModelColumn[] = [
     label: '供应商',
     render: (model) => (
       <div>
-        <div className="text-sm font-medium text-neutral-900">{model.providerName}</div>
-        <div className="text-xs text-neutral-500">{model.providerCode}</div>
+        <div className="text-sm font-medium text-foreground">{model.providerName}</div>
+        <div className="text-xs text-muted-foreground">{model.providerCode}</div>
         <div className="mt-1 flex flex-wrap gap-1.5">
           <StatusBadge value={formatAdminAiLabel(model.providerType)} />
           <StatusBadge
@@ -276,7 +276,7 @@ const columns: AiModelColumn[] = [
     key: 'entitlement',
     label: '权益要求',
     render: (model) => (
-      <div className="max-w-xs text-xs text-neutral-700">
+      <div className="max-w-xs text-xs text-muted-foreground">
         {formatAdminAiText(model.entitlementSummary)}
       </div>
     ),
@@ -285,7 +285,7 @@ const columns: AiModelColumn[] = [
     key: 'pricing',
     label: '价格',
     render: (model) => (
-      <div className="max-w-sm text-xs text-neutral-700">
+      <div className="max-w-sm text-xs text-muted-foreground">
         {formatAdminAiText(model.pricingSummary)}
       </div>
     ),
@@ -299,10 +299,10 @@ const columns: AiModelColumn[] = [
           value={formatAdminAiLabel(model.credential.status)}
           tone={credentialTone[model.credential.status]}
         />
-        <div className="mt-1 text-xs text-neutral-700">
+        <div className="mt-1 text-xs text-muted-foreground">
           {formatAdminAiText(model.credential.label)}
         </div>
-        <div className="mt-0.5 text-xs text-neutral-500">
+        <div className="mt-0.5 text-xs text-muted-foreground">
           {formatAdminAiText(model.credential.detail)}
         </div>
       </div>
@@ -459,10 +459,10 @@ export function AdminAiModelsModule({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-neutral-950">AI 模型</h2>
-          <p className="mt-1 text-sm text-neutral-600">
+          <h2 className="text-base font-semibold text-foreground">AI 模型</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             管理用户对话、图像、视频使用的 AI 供应商、模型、默认状态、权益门槛、价格与凭据引用检查。
           </p>
         </div>
@@ -479,35 +479,35 @@ export function AdminAiModelsModule({
             className={`rounded-lg border p-4 shadow-sm ${metricToneClassName[metric.tone]}`}
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium text-neutral-500">
+              <p className="text-xs font-medium text-muted-foreground">
                 {formatAdminAiText(metric.label)}
               </p>
               <StatusBadge value={formatAdminAiText(metric.hint)} tone={metric.tone} />
             </div>
-            <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
               {metric.value}
             </p>
           </div>
         ))}
       </div>
 
-      <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
-        <CardHeader className="gap-3 border-b border-neutral-200 px-4 py-3">
+      <Card className="gap-0 rounded-lg border-border bg-card py-0 shadow-sm">
+        <CardHeader className="gap-3 border-b border-border px-4 py-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <CardTitle className="text-sm font-semibold">供应商与模型</CardTitle>
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 当前显示 {providerGroups.length}/{providers.length} 个供应商，{visibleRecords.length}/{records.length} 个模型
               </p>
             </div>
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="relative w-full md:w-96">
-                <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-neutral-400" />
+                <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="搜索模型、供应商、状态、权益、价格或凭据..."
-                  className="h-9 rounded-md border-neutral-200 pl-8 text-sm"
+                  className="h-9 rounded-md border-input bg-background pl-8 text-sm"
                 />
               </div>
               <Button type="button" variant="outline" className="h-9 rounded-md" disabled>
@@ -518,7 +518,7 @@ export function AdminAiModelsModule({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-9 rounded-md text-neutral-600"
+                  className="h-9 rounded-md text-muted-foreground"
                   onClick={resetFilters}
                 >
                   <X className="h-4 w-4" />
@@ -550,7 +550,7 @@ export function AdminAiModelsModule({
 
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
             <Select value={providerFilter} onValueChange={setProviderFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="供应商" />
               </SelectTrigger>
               <SelectContent>
@@ -564,7 +564,7 @@ export function AdminAiModelsModule({
             </Select>
 
             <Select value={providerTypeFilter} onValueChange={setProviderTypeFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="供应商类型" />
               </SelectTrigger>
               <SelectContent>
@@ -579,7 +579,7 @@ export function AdminAiModelsModule({
             </Select>
 
             <Select value={modelStatusFilter} onValueChange={setModelStatusFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="模型状态" />
               </SelectTrigger>
               <SelectContent>
@@ -591,7 +591,7 @@ export function AdminAiModelsModule({
             </Select>
 
             <Select value={credentialFilter} onValueChange={setCredentialFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="凭据状态" />
               </SelectTrigger>
               <SelectContent>
@@ -607,7 +607,7 @@ export function AdminAiModelsModule({
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-4">
           {providerGroups.length === 0 ? (
-            <div className="rounded-md border border-dashed border-neutral-200 py-10 text-center text-sm text-neutral-500">
+            <div className="rounded-md border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
               当前筛选条件下暂无 AI 供应商或模型记录
             </div>
           ) : (
@@ -619,10 +619,10 @@ export function AdminAiModelsModule({
                   key={provider.id}
                   open={!collapsed}
                   onOpenChange={() => toggleProviderCollapsed(provider.id)}
-                  className="overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-sm ring-1 ring-neutral-100"
+                  className="overflow-hidden rounded-lg border border-border bg-card shadow-sm ring-1 ring-border/60"
                 >
-                <div className="border-l-4 border-l-neutral-700 bg-neutral-50">
-                  <div className="flex flex-col gap-3 border-b border-neutral-200 px-4 py-3 xl:flex-row xl:items-start xl:justify-between">
+                <div className="border-l-4 border-l-foreground bg-secondary/50">
+                  <div className="flex flex-col gap-3 border-b border-border px-4 py-3 xl:flex-row xl:items-start xl:justify-between">
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <Tooltip>
@@ -648,8 +648,8 @@ export function AdminAiModelsModule({
                             {collapsed ? '展开供应商模型' : '收起供应商模型'}
                           </TooltipContent>
                         </Tooltip>
-                        <h3 className="text-sm font-semibold text-neutral-950">{provider.name}</h3>
-                        <span className="text-xs text-neutral-500">{provider.code}</span>
+                        <h3 className="text-sm font-semibold text-foreground">{provider.name}</h3>
+                        <span className="text-xs text-muted-foreground">{provider.code}</span>
                         <StatusBadge value={formatAdminAiLabel(provider.providerType)} />
                         <StatusBadge
                           value={formatAdminAiLabel(provider.status)}
@@ -660,15 +660,15 @@ export function AdminAiModelsModule({
                           tone={collapsed ? 'default' : 'info'}
                         />
                       </div>
-                      <div className="grid gap-2 text-xs text-neutral-600 lg:grid-cols-3">
+                      <div className="grid gap-2 text-xs text-muted-foreground lg:grid-cols-3">
                         <div>
-                          <span className="text-neutral-500">接口地址：</span>
+                          <span className="text-muted-foreground">接口地址：</span>
                           <span className="break-all">
                             {formatAdminAiText(provider.baseUrlLabel)}
                           </span>
                         </div>
                         <div>
-                          <span className="text-neutral-500">凭据：</span>
+                          <span className="text-muted-foreground">凭据：</span>
                           <StatusBadge
                             value={formatAdminAiLabel(provider.credential.status)}
                             tone={credentialTone[provider.credential.status]}
@@ -678,7 +678,7 @@ export function AdminAiModelsModule({
                           </span>
                         </div>
                         <div>
-                          <span className="text-neutral-500">模型：</span>
+                          <span className="text-muted-foreground">模型：</span>
                           已启用 {provider.enabledModelCount}/{provider.modelCount} · 当前显示{' '}
                           {groupRecords.length} · 对话 {provider.chatModelCount} · 视频{' '}
                           {provider.videoModelCount}
@@ -690,7 +690,7 @@ export function AdminAiModelsModule({
                   </div>
                 </div>
 
-                <CollapsibleContent className="overflow-x-auto bg-white">
+                <CollapsibleContent className="overflow-x-auto bg-card">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -706,7 +706,7 @@ export function AdminAiModelsModule({
                         <TableRow>
                           <TableCell
                             colSpan={columns.length}
-                            className="h-20 text-center text-neutral-500"
+                            className="h-20 text-center text-muted-foreground"
                           >
                             当前供应商下暂无符合条件的模型
                           </TableCell>

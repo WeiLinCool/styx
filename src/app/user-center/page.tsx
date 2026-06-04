@@ -207,13 +207,13 @@ export default function UserCenterPage() {
 
   if (requiresActivation(user)) {
     return (
-      <div className="min-h-screen bg-white">
-        <div className="sticky top-0 z-50 border-b border-black/[0.06] bg-white/80 backdrop-blur-xl">
+      <div className="min-h-screen bg-background">
+        <div className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
           <div className="mx-auto flex h-14 max-w-2xl items-center px-4">
-            <button onClick={() => router.back()} className="mr-3 cursor-pointer rounded-full p-1.5 hover:bg-[#f5f5f7]">
-              <ArrowLeft className="h-5 w-5 text-[#1d1d1f]" />
+            <button onClick={() => router.back()} className="mr-3 cursor-pointer rounded-full p-1.5 hover:bg-secondary/70">
+              <ArrowLeft className="h-5 w-5 text-foreground" />
             </button>
-            <h1 className="text-base font-semibold text-[#1d1d1f]">用户中心</h1>
+            <h1 className="text-base font-semibold text-foreground">用户中心</h1>
           </div>
         </div>
         <ProtectedAccountPanel accountState={user.accountState} title="激活账号后进入用户中心" />
@@ -376,26 +376,26 @@ export default function UserCenterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 z-50 border-b border-black/[0.06] bg-white/80 backdrop-blur-xl">
+      <div className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-2xl items-center px-4">
-          <button onClick={() => router.back()} className="mr-3 cursor-pointer rounded-full p-1.5 hover:bg-[#f5f5f7]">
-            <ArrowLeft className="h-5 w-5 text-[#1d1d1f]" />
+          <button onClick={() => router.back()} className="mr-3 cursor-pointer rounded-full p-1.5 hover:bg-secondary/70">
+            <ArrowLeft className="h-5 w-5 text-foreground" />
           </button>
-          <h1 className="text-base font-semibold text-[#1d1d1f]">用户中心</h1>
+          <h1 className="text-base font-semibold text-foreground">用户中心</h1>
         </div>
       </div>
 
       <div className="mx-auto max-w-2xl px-4 pb-20">
         {/* Profile Card */}
-        <div className="mt-6 rounded-2xl bg-[#f5f5f7] p-6">
+        <div className="mt-6 rounded-2xl bg-secondary/70 p-6">
           <div className="flex items-center gap-4">
             <div className="relative">
               <UserAvatar avatar={user.avatar} size={64} userLevel={user.userLevel} />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-[#1d1d1f] text-white shadow-md"
+                className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-foreground text-background shadow-md"
               >
                 <Camera className="h-3 w-3" />
               </button>
@@ -403,7 +403,7 @@ export default function UserCenterPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-[#1d1d1f] truncate">{user.nickname}</h2>
+                <h2 className="text-lg font-bold text-foreground truncate">{user.nickname}</h2>
                 <span
                   className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
                   style={{ backgroundColor: levelInfo.color }}
@@ -411,34 +411,34 @@ export default function UserCenterPage() {
                   {levelInfo.label}
                 </span>
               </div>
-              <p className="mt-0.5 text-xs text-[#86868b]">{user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}</p>
             </div>
           </div>
 
           {/* Quick Stats */}
           <div className="mt-5 grid grid-cols-3 gap-3">
-            <div className="rounded-xl bg-white p-3 text-center">
+            <div className="rounded-xl bg-card p-3 text-center">
               <Star className="mx-auto h-5 w-5 text-[#b45309]" />
-              <p className="mt-1 text-lg font-bold text-[#1d1d1f]">{formatCredits(user.points)}</p>
-              <p className="text-[10px] text-[#86868b]">积分</p>
+              <p className="mt-1 text-lg font-bold text-foreground">{formatCredits(user.points)}</p>
+              <p className="text-[10px] text-muted-foreground">积分</p>
             </div>
-            <div className="rounded-xl bg-white p-3 text-center">
-              <ShoppingBag className="mx-auto h-5 w-5 text-[#1d1d1f]" />
-              <p className="mt-1 text-lg font-bold text-[#1d1d1f]">{cart.length}</p>
-              <p className="text-[10px] text-[#86868b]">购物车</p>
+            <div className="rounded-xl bg-card p-3 text-center">
+              <ShoppingBag className="mx-auto h-5 w-5 text-foreground" />
+              <p className="mt-1 text-lg font-bold text-foreground">{cart.length}</p>
+              <p className="text-[10px] text-muted-foreground">购物车</p>
             </div>
-            <div className="rounded-xl bg-white p-3 text-center">
+            <div className="rounded-xl bg-card p-3 text-center">
               <Crown className="mx-auto h-5 w-5 text-[#b45309]" />
-              <p className="mt-1 text-lg font-bold text-[#1d1d1f]">
+              <p className="mt-1 text-lg font-bold text-foreground">
                 {membershipLabel}
               </p>
-              <p className="text-[10px] text-[#86868b]">当前会员</p>
+              <p className="text-[10px] text-muted-foreground">当前会员</p>
             </div>
           </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="mt-6 flex gap-1 rounded-xl bg-[#f5f5f7] p-1">
+        <div className="mt-6 flex gap-1 rounded-xl bg-secondary/70 p-1">
           {[
             { key: 'overview', label: '总览' },
             { key: 'cart', label: '购物车' },
@@ -449,7 +449,7 @@ export default function UserCenterPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key as typeof activeTab)}
               className={`cursor-pointer flex-1 rounded-lg py-2 text-xs font-medium transition-all ${
-                activeTab === tab.key ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#86868b] hover:text-[#1d1d1f]'
+                activeTab === tab.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {tab.label}
@@ -458,7 +458,7 @@ export default function UserCenterPage() {
         </div>
 
         {actionMessage ? (
-          <div className="mt-4 rounded-xl border border-black/[0.08] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f]">
+          <div className="mt-4 rounded-xl border border-border bg-secondary/70 px-4 py-3 text-sm text-foreground">
             {actionMessage}
           </div>
         ) : null}
@@ -472,52 +472,52 @@ export default function UserCenterPage() {
 
               <div
                 onClick={() => setActiveTab('cart')}
-                className="flex cursor-pointer items-center justify-between rounded-xl bg-[#f5f5f7] p-4 transition-all hover:bg-[#eee]"
+                className="flex cursor-pointer items-center justify-between rounded-xl bg-secondary/70 p-4 transition-all hover:bg-secondary"
               >
                 <div className="flex items-center gap-3">
-                  <ShoppingBag className="h-5 w-5 text-[#1d1d1f]" />
+                  <ShoppingBag className="h-5 w-5 text-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-[#1d1d1f]">我的购物车</p>
-                    <p className="text-xs text-[#86868b]">{cart.length} 件商品</p>
+                    <p className="text-sm font-medium text-foreground">我的购物车</p>
+                    <p className="text-xs text-muted-foreground">{cart.length} 件商品</p>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-[#86868b]" />
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
 
               <div
                 onClick={() => setActiveTab('history')}
-                className="flex cursor-pointer items-center justify-between rounded-xl bg-[#f5f5f7] p-4 transition-all hover:bg-[#eee]"
+                className="flex cursor-pointer items-center justify-between rounded-xl bg-secondary/70 p-4 transition-all hover:bg-secondary"
               >
                 <div className="flex items-center gap-3">
-                  <Clock className="h-5 w-5 text-[#1d1d1f]" />
+                  <Clock className="h-5 w-5 text-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-[#1d1d1f]">购买记录</p>
-                    <p className="text-xs text-[#86868b]">{purchaseHistory.length} 笔订单</p>
+                    <p className="text-sm font-medium text-foreground">购买记录</p>
+                    <p className="text-xs text-muted-foreground">{purchaseHistory.length} 笔订单</p>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-[#86868b]" />
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
 
-              <div className="flex items-center justify-between rounded-xl bg-[#f5f5f7] p-4">
+              <div className="flex items-center justify-between rounded-xl bg-secondary/70 p-4">
                 <div className="flex items-center gap-3">
                   <Star className="h-5 w-5 text-[#b45309]" />
                   <div>
-                    <p className="text-sm font-medium text-[#1d1d1f]">我的积分</p>
-                    <p className="text-xs text-[#86868b]">当前 {formatCredits(user.points)} 积分</p>
+                    <p className="text-sm font-medium text-foreground">我的积分</p>
+                    <p className="text-xs text-muted-foreground">当前 {formatCredits(user.points)} 积分</p>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-xl bg-[#f5f5f7] p-4">
+              <div className="rounded-xl bg-secondary/70 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <Gift className="mt-0.5 h-5 w-5 text-[#1d1d1f]" />
+                    <Gift className="mt-0.5 h-5 w-5 text-foreground" />
                     <div>
-                      <p className="text-sm font-medium text-[#1d1d1f]">邀请有礼</p>
-                      <p className="mt-1 text-xs text-[#86868b]">
+                      <p className="text-sm font-medium text-foreground">邀请有礼</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
                         邀请码 {inviteSummary?.inviteCode ?? '...'} · 已邀请 {inviteSummary?.invitedCount ?? 0} 人
                       </p>
-                      <p className="mt-1 text-xs text-[#86868b]">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         已达标 {inviteSummary?.qualifiedCount ?? 0} 人 · 累计奖励 {formatCredits(inviteSummary?.rewardedPoints ?? 0)} 积分
                       </p>
                     </div>
@@ -532,7 +532,7 @@ export default function UserCenterPage() {
                         }
                       }}
                       disabled={inviteBusy}
-                      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-white px-3 py-1 text-[10px] font-medium text-[#1d1d1f] disabled:opacity-50"
+                      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-card px-3 py-1 text-[10px] font-medium text-foreground disabled:opacity-50"
                     >
                       <Copy className="h-3 w-3" />
                       {inviteSummary?.inviteLink ? '复制链接' : '刷新'}
@@ -541,18 +541,18 @@ export default function UserCenterPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl bg-[#f5f5f7] p-4">
+              <div className="rounded-xl bg-secondary/70 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <CalendarCheck className="mt-0.5 h-5 w-5 text-[#22c55e]" />
                     <div>
-                      <p className="text-sm font-medium text-[#1d1d1f]">每日签到</p>
-                      <p className="mt-1 text-xs text-[#86868b]">
+                      <p className="text-sm font-medium text-foreground">每日签到</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {checkinStatus?.checkedIn
                           ? `今日已签到${checkinStatus.rewardPoints ? `，获得 ${formatCredits(checkinStatus.rewardPoints)} 积分` : ''}`
                           : '每天可随机获得 1-3 积分'}
                       </p>
-                      <p className="mt-1 text-xs text-[#86868b]">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {checkinStatus?.businessDate ?? '--'} · 连续签到 {checkinStatus?.streakCount ?? 0} 天
                       </p>
                     </div>
@@ -561,7 +561,7 @@ export default function UserCenterPage() {
                     onClick={() => void handleStartDailyCheckin()}
                     disabled={!canCheckin || checkinPending || checkinStatus?.checkedIn}
                     className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-medium text-white ${
-                      !canCheckin || checkinPending || checkinStatus?.checkedIn ? 'bg-[#c7c7cc]' : 'bg-[#1d1d1f]'
+                      !canCheckin || checkinPending || checkinStatus?.checkedIn ? 'bg-muted text-muted-foreground' : 'bg-foreground text-background'
                     }`}
                   >
                     {!canCheckin ? '无权限' : checkinPending ? '签到中' : checkinStatus?.checkedIn ? '今日已签' : '立即签到'}
@@ -569,23 +569,23 @@ export default function UserCenterPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl bg-[#f5f5f7] p-4">
+              <div className="rounded-xl bg-secondary/70 p-4">
                 <div className="mb-3 flex items-center gap-3">
-                  <Clock className="h-5 w-5 text-[#1d1d1f]" />
+                  <Clock className="h-5 w-5 text-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-[#1d1d1f]">最近积分活动</p>
-                    <p className="text-xs text-[#86868b]">最近 5 条积分变动记录</p>
+                    <p className="text-sm font-medium text-foreground">最近积分活动</p>
+                    <p className="text-xs text-muted-foreground">最近 5 条积分变动记录</p>
                   </div>
                 </div>
                 <div className="space-y-2">
                   {recentPointActivities.length === 0 ? (
-                    <p className="text-xs text-[#86868b]">暂无积分记录</p>
+                    <p className="text-xs text-muted-foreground">暂无积分记录</p>
                   ) : (
                     recentPointActivities.map(activity => (
-                      <div key={activity.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2">
+                      <div key={activity.id} className="flex items-center justify-between rounded-lg bg-card px-3 py-2">
                         <div className="min-w-0">
-                          <p className="truncate text-sm text-[#1d1d1f]">{activity.reason}</p>
-                          <p className="mt-0.5 text-[10px] text-[#86868b]">
+                          <p className="truncate text-sm text-foreground">{activity.reason}</p>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">
                             {new Date(activity.createdAt).toLocaleString('zh-CN', { hour12: false })}
                           </p>
                         </div>
@@ -599,12 +599,12 @@ export default function UserCenterPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-xl bg-[#f5f5f7] p-4">
+              <div className="flex items-center justify-between rounded-xl bg-secondary/70 p-4">
                 <div className="flex items-center gap-3">
                   <Crown className="h-5 w-5 text-[#b45309]" />
                   <div>
-                    <p className="text-sm font-medium text-[#1d1d1f]">当前会员</p>
-                    <p className="text-xs text-[#86868b]">
+                    <p className="text-sm font-medium text-foreground">当前会员</p>
+                    <p className="text-xs text-muted-foreground">
                       {user.membershipLevel === 'free' ? '免费用户' : `${membershipLabel}会员`}
                       {user.membershipExpiry && ` · 到期 ${user.membershipExpiry}`}
                     </p>
@@ -612,27 +612,27 @@ export default function UserCenterPage() {
                 </div>
                 <button
                   onClick={() => router.push('/membership')}
-                  className="cursor-pointer rounded-full bg-[#1d1d1f] px-3 py-1 text-[10px] font-medium text-white"
+                  className="cursor-pointer rounded-full bg-foreground px-3 py-1 text-[10px] font-medium text-background"
                 >
                   升级
                 </button>
               </div>
 
               {subscriptionWorkOrder ? (
-                <div className="rounded-xl border border-black/[0.06] bg-white p-4 shadow-sm">
+                <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium text-[#1d1d1f]">会员订阅工单</p>
-                      <p className="mt-1 text-xs text-[#86868b]">
+                      <p className="text-sm font-medium text-foreground">会员订阅工单</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {subscriptionWorkOrder.planName} · {subscriptionWorkOrder.orderNumber}
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-[#f5f5f7] px-2.5 py-1 text-xs text-[#1d1d1f]">
+                    <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-foreground">
                       {subscriptionWorkOrderLabel}
                     </span>
                   </div>
                   {subscriptionWorkOrder.decisionNote ? (
-                    <p className="mt-3 text-xs text-[#555555]">
+                    <p className="mt-3 text-xs text-muted-foreground">
                       {subscriptionWorkOrder.decisionNote}
                     </p>
                   ) : null}
@@ -641,13 +641,13 @@ export default function UserCenterPage() {
 
               <div
                 onClick={() => setActiveTab('profile')}
-                className="flex cursor-pointer items-center justify-between rounded-xl bg-[#f5f5f7] p-4 transition-all hover:bg-[#eee]"
+                className="flex cursor-pointer items-center justify-between rounded-xl bg-secondary/70 p-4 transition-all hover:bg-secondary"
               >
                 <div className="flex items-center gap-3">
-                  <Edit3 className="h-5 w-5 text-[#1d1d1f]" />
-                  <p className="text-sm font-medium text-[#1d1d1f]">修改个人资料</p>
+                  <Edit3 className="h-5 w-5 text-foreground" />
+                  <p className="text-sm font-medium text-foreground">修改个人资料</p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-[#86868b]" />
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
 
               <button
@@ -665,10 +665,10 @@ export default function UserCenterPage() {
               {cart.length === 0 ? (
                 <div className="py-16 text-center">
                   <ShoppingBag className="mx-auto h-12 w-12 text-[#ddd]" />
-                  <p className="mt-3 text-sm text-[#86868b]">购物车是空的</p>
+                  <p className="mt-3 text-sm text-muted-foreground">购物车是空的</p>
                   <button
                     onClick={() => router.push('/shop')}
-                    className="mt-3 cursor-pointer rounded-full bg-[#1d1d1f] px-5 py-2 text-xs font-medium text-white"
+                    className="mt-3 cursor-pointer rounded-full bg-foreground px-5 py-2 text-xs font-medium text-background"
                   >
                     去商城逛逛
                   </button>
@@ -676,40 +676,40 @@ export default function UserCenterPage() {
               ) : (
                 <div className="space-y-3">
                   {cart.map(item => (
-                    <div key={item.id} className="flex items-center gap-3 rounded-xl bg-[#f5f5f7] p-3">
-                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-white">
+                    <div key={item.id} className="flex items-center gap-3 rounded-xl bg-secondary/70 p-3">
+                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-card">
                         <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-[#1d1d1f] truncate">{item.name}</p>
-                        <p className="text-xs text-[#86868b]">{item.size}</p>
-                        <p className="mt-1 text-sm font-bold text-[#1d1d1f]">¥{item.price}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{item.size}</p>
+                        <p className="mt-1 text-sm font-bold text-foreground">¥{item.price}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => updateCartQty(item.id, -1)}
-                          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-black/[0.1] bg-white"
+                          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-border bg-card"
                         >
-                          <Minus className="h-3 w-3 text-[#1d1d1f]" />
+                          <Minus className="h-3 w-3 text-foreground" />
                         </button>
-                        <span className="w-6 text-center text-sm font-medium text-[#1d1d1f]">{item.quantity}</span>
+                        <span className="w-6 text-center text-sm font-medium text-foreground">{item.quantity}</span>
                         <button
                           onClick={() => updateCartQty(item.id, 1)}
-                          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-black/[0.1] bg-white"
+                          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-border bg-card"
                         >
-                          <Plus className="h-3 w-3 text-[#1d1d1f]" />
+                          <Plus className="h-3 w-3 text-foreground" />
                         </button>
-                        <button onClick={() => removeCartItem(item.id)} className="ml-1 cursor-pointer text-[#86868b] hover:text-[#b91c1c]">
+                        <button onClick={() => removeCartItem(item.id)} className="ml-1 cursor-pointer text-muted-foreground hover:text-destructive">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between rounded-xl bg-[#f5f5f7] p-4">
-                    <p className="text-sm text-[#86868b]">合计</p>
-                    <p className="text-lg font-bold text-[#1d1d1f]">¥{totalCartPrice}</p>
+                  <div className="flex items-center justify-between rounded-xl bg-secondary/70 p-4">
+                    <p className="text-sm text-muted-foreground">合计</p>
+                    <p className="text-lg font-bold text-foreground">¥{totalCartPrice}</p>
                   </div>
-                  <button className="w-full cursor-pointer rounded-xl bg-[#1d1d1f] py-3 text-sm font-medium text-white transition-all hover:bg-[#333]">
+                  <button className="w-full cursor-pointer rounded-xl bg-foreground py-3 text-sm font-medium text-background transition-all hover:opacity-90">
                     去结算
                   </button>
                 </div>
@@ -723,17 +723,17 @@ export default function UserCenterPage() {
               {purchaseHistory.length === 0 ? (
                 <div className="py-16 text-center">
                   <Clock className="mx-auto h-12 w-12 text-[#ddd]" />
-                  <p className="mt-3 text-sm text-[#86868b]">暂无购买记录</p>
+                  <p className="mt-3 text-sm text-muted-foreground">暂无购买记录</p>
                 </div>
               ) : (
                 purchaseHistory.map(item => (
-                  <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#f5f5f7] p-4">
+                  <div key={item.id} className="flex items-center justify-between rounded-xl bg-secondary/70 p-4">
                     <div>
-                      <p className="text-sm font-medium text-[#1d1d1f]">{item.name}</p>
-                      <p className="text-xs text-[#86868b]">{item.date}</p>
+                      <p className="text-sm font-medium text-foreground">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.date}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-[#1d1d1f]">¥{item.price}</p>
+                      <p className="text-sm font-bold text-foreground">¥{item.price}</p>
                       <p className="text-[10px] text-[#22c55e]">{item.status}</p>
                     </div>
                   </div>
@@ -746,13 +746,13 @@ export default function UserCenterPage() {
           {activeTab === 'profile' && (
             <div className="space-y-3">
               {/* Avatar */}
-              <div className="rounded-xl bg-[#f5f5f7] p-4">
-                <p className="mb-3 text-xs font-medium text-[#86868b]">头像</p>
+              <div className="rounded-xl bg-secondary/70 p-4">
+                <p className="mb-3 text-xs font-medium text-muted-foreground">头像</p>
                 <div className="flex items-center gap-4">
                   <UserAvatar avatar={user.avatar} size={56} userLevel={user.userLevel} />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="cursor-pointer rounded-xl border border-black/[0.1] bg-white px-4 py-2 text-xs font-medium text-[#1d1d1f] transition-all hover:bg-[#f5f5f7]"
+                    className="cursor-pointer rounded-xl border border-border bg-card px-4 py-2 text-xs font-medium text-foreground transition-all hover:bg-secondary/70"
                   >
                     更换头像
                   </button>
@@ -761,25 +761,25 @@ export default function UserCenterPage() {
               </div>
 
               {/* Nickname */}
-              <div className="rounded-xl bg-[#f5f5f7] p-4">
+              <div className="rounded-xl bg-secondary/70 p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <p className="text-xs font-medium text-[#86868b]">昵称</p>
+                    <p className="text-xs font-medium text-muted-foreground">昵称</p>
                     {editingField === 'nickname' ? (
                       <div className="mt-1 flex items-center gap-2">
                         <input
                           value={editValue}
                           onChange={e => setEditValue(e.target.value)}
-                          className="flex-1 rounded-lg border border-black/[0.1] bg-white px-3 py-1.5 text-sm text-[#1d1d1f] outline-none"
+                          className="flex-1 rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground outline-none"
                           autoFocus
                         />
-                        <button onClick={() => handleSave('nickname')} className="cursor-pointer text-[#1d1d1f]"><Check className="h-4 w-4" /></button>
-                        <button onClick={() => setEditingField(null)} className="cursor-pointer text-[#86868b]"><X className="h-4 w-4" /></button>
+                        <button onClick={() => handleSave('nickname')} className="cursor-pointer text-foreground"><Check className="h-4 w-4" /></button>
+                        <button onClick={() => setEditingField(null)} className="cursor-pointer text-muted-foreground"><X className="h-4 w-4" /></button>
                       </div>
                     ) : (
                       <div className="mt-1 flex items-center gap-2">
-                        <p className="text-sm text-[#1d1d1f]">{user.nickname}</p>
-                        <button onClick={() => startEdit('nickname', user.nickname)} className="cursor-pointer text-[#86868b] hover:text-[#1d1d1f]">
+                        <p className="text-sm text-foreground">{user.nickname}</p>
+                        <button onClick={() => startEdit('nickname', user.nickname)} className="cursor-pointer text-muted-foreground hover:text-foreground">
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -789,23 +789,23 @@ export default function UserCenterPage() {
               </div>
 
               {/* Phone */}
-              <div className="rounded-xl bg-[#f5f5f7] p-4">
-                <p className="text-xs font-medium text-[#86868b]">手机号</p>
+              <div className="rounded-xl bg-secondary/70 p-4">
+                <p className="text-xs font-medium text-muted-foreground">手机号</p>
                 <div className="mt-1 flex items-center gap-2">
-                  <p className="text-sm text-[#1d1d1f]">{maskedPhone}</p>
+                  <p className="text-sm text-foreground">{maskedPhone}</p>
                 </div>
               </div>
 
               {/* Password */}
-              <div className="rounded-xl bg-[#f5f5f7] p-4">
+              <div className="rounded-xl bg-secondary/70 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium text-[#86868b]">密码</p>
-                    <p className="mt-1 text-sm text-[#1d1d1f]">••••••</p>
+                    <p className="text-xs font-medium text-muted-foreground">密码</p>
+                    <p className="mt-1 text-sm text-foreground">••••••</p>
                   </div>
                   <button
                     onClick={() => startEdit('password', '')}
-                    className="cursor-pointer rounded-lg border border-black/[0.1] bg-white px-3 py-1.5 text-xs font-medium text-[#1d1d1f]"
+                    className="cursor-pointer rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground"
                   >
                     修改密码
                   </button>
@@ -817,11 +817,11 @@ export default function UserCenterPage() {
                       value={editValue}
                       onChange={e => setEditValue(e.target.value)}
                       placeholder="输入新密码"
-                      className="flex-1 rounded-lg border border-black/[0.1] bg-white px-3 py-1.5 text-sm text-[#1d1d1f] outline-none"
+                      className="flex-1 rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground outline-none"
                       autoFocus
                     />
-                    <button onClick={() => { setEditingField(null); }} className="cursor-pointer text-[#1d1d1f]"><Check className="h-4 w-4" /></button>
-                    <button onClick={() => setEditingField(null)} className="cursor-pointer text-[#86868b]"><X className="h-4 w-4" /></button>
+                    <button onClick={() => { setEditingField(null); }} className="cursor-pointer text-foreground"><Check className="h-4 w-4" /></button>
+                    <button onClick={() => setEditingField(null)} className="cursor-pointer text-muted-foreground"><X className="h-4 w-4" /></button>
                   </div>
                 )}
               </div>

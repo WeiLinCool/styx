@@ -152,7 +152,7 @@ export function AdminAiConfigTestDialog({
             disabled={pending}
           />
         </div>
-        <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+        <div className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
           {result ? (
             result.ok ? (
               <div className="space-y-2">
@@ -170,7 +170,7 @@ export function AdminAiConfigTestDialog({
                 <p>用量：{formatUsage(result.result?.run?.usage?.totalTokens)}</p>
                 <div className="space-y-1">
                   <p className="font-medium text-neutral-900">回复</p>
-                  <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-neutral-200 bg-white p-2 text-xs text-neutral-800">
+                  <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-card p-2 text-xs text-foreground">
                     {result.result?.run?.finalMessage ?? '无回复内容'}
                   </div>
                 </div>
@@ -192,8 +192,8 @@ export function AdminAiConfigTestDialog({
                 <p>用量：{formatUsage(result.result?.run?.usage?.totalTokens)}</p>
                 {result.result?.run?.finalMessage ? (
                   <div className="space-y-1">
-                    <p className="font-medium text-neutral-900">供应商回复</p>
-                    <div className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-neutral-200 bg-white p-2 text-xs text-neutral-800">
+                    <p className="font-medium text-foreground">供应商回复</p>
+                    <div className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-border bg-card p-2 text-xs text-foreground">
                       {result.result.run.finalMessage}
                     </div>
                   </div>

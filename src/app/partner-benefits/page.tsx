@@ -135,10 +135,10 @@ export default function PartnerBenefitsPage() {
   useEffect(() => { setVisible(true); }, []);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <Link
         href="/home"
-        className="fixed left-4 top-4 z-40 flex items-center gap-1 rounded-full border border-black/[0.06] bg-white/80 px-3 py-2 text-xs font-medium text-[#555555] shadow-sm backdrop-blur-xl transition-colors hover:text-[#1d1d1f]"
+        className="fixed left-4 top-4 z-40 flex items-center gap-1 rounded-full border border-border bg-background/80 px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-xl transition-colors hover:text-foreground"
       >
         <ArrowLeft size={16} />
         <span>返回</span>
@@ -147,14 +147,14 @@ export default function PartnerBenefitsPage() {
         {/* Header */}
         <div className={`text-center mb-16 transition-all duration-1000 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <div className="inline-flex items-center gap-3 mb-6">
-            <div className="h-px w-16 bg-[#1d1d1f]/20" />
-            <span className="text-[#1d1d1f]/30 text-sm">◆</span>
-            <div className="h-px w-16 bg-[#1d1d1f]/20" />
+            <div className="h-px w-16 bg-foreground/20" />
+            <span className="text-sm text-foreground/30">◆</span>
+            <div className="h-px w-16 bg-foreground/20" />
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-[#1d1d1f] mb-4">
+          <h1 className="mb-4 text-4xl font-bold text-foreground md:text-5xl">
             合伙人权益
           </h1>
-          <p className="text-[#555555] text-lg">
+          <p className="text-lg text-muted-foreground">
             全流程赋能，助力合伙人轻松起步，高效变现
           </p>
         </div>
@@ -168,32 +168,32 @@ export default function PartnerBenefitsPage() {
               style={{ transitionDelay: `${i * 80}ms` }}
               onClick={() => setSelectedBenefit(b)}
             >
-              <div className="p-6 rounded-2xl bg-white border border-black/[0.06] backdrop-blur-md group-hover:-translate-y-1 group-hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] group-hover:border-black/[0.12] transition-all duration-300 h-full">
+              <div className="h-full rounded-2xl border border-border bg-card p-6 backdrop-blur-md transition-all duration-300 group-hover:-translate-y-1 group-hover:border-foreground/12 group-hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
                 {/* Number Badge */}
-                <span className="inline-block text-xs font-bold text-[#1d1d1f]/30 mb-4 tracking-wider">
+                <span className="mb-4 inline-block text-xs font-bold tracking-wider text-foreground/30">
                   {b.num}
                 </span>
 
                 {/* Emoji Icon */}
-                <div className="w-12 h-12 rounded-xl bg-[#f5f5f7] flex items-center justify-center text-2xl mb-4">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-2xl">
                   {b.emoji}
                 </div>
 
                 {/* Title */}
-                <h3 className="text-lg font-bold text-[#1d1d1f] mb-2">
+                <h3 className="mb-2 text-lg font-bold text-foreground">
                   {b.title}
                 </h3>
 
                 {/* Divider */}
-                <div className="w-8 h-0.5 bg-[#1d1d1f]/10 rounded-full mb-3" />
+                <div className="mb-3 h-0.5 w-8 rounded-full bg-foreground/10" />
 
                 {/* Description */}
-                <p className="text-[#555555] text-sm leading-relaxed mb-3">
+                <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
                   {b.desc}
                 </p>
 
                 {/* 查看详情提示 */}
-                <div className="flex items-center gap-1 text-xs font-medium text-[#1d1d1f]/40 group-hover:text-[#1d1d1f] transition-colors">
+                <div className="flex items-center gap-1 text-xs font-medium text-foreground/40 transition-colors group-hover:text-foreground">
                   <span>了解详情</span>
                   <ChevronRight size={12} className="transition-transform group-hover:translate-x-0.5" />
                 </div>
@@ -206,14 +206,14 @@ export default function PartnerBenefitsPage() {
         <div className={`text-center mt-16 transition-all duration-1000 delay-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <button
             onClick={() => setShowQRCode(true)}
-            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full bg-[#1d1d1f] text-white font-semibold text-base hover:bg-[#333] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-foreground px-8 py-3.5 text-base font-semibold text-background transition-all duration-200 hover:scale-[1.02] hover:opacity-90 active:scale-[0.98]"
           >
             成为合伙人
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
             </svg>
           </button>
-          <p className="mt-3 text-sm text-[#444444]">扫码添加官方客服，了解合伙人详情</p>
+          <p className="mt-3 text-sm text-muted-foreground">扫码添加官方客服，了解合伙人详情</p>
         </div>
       </div>
 
@@ -221,17 +221,17 @@ export default function PartnerBenefitsPage() {
       {showQRCode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowQRCode(false)}>
           <div
-            className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl"
+            className="w-full max-w-sm rounded-2xl bg-card p-8 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
-                <MessageCircle size={18} className="text-[#1d1d1f]" />
-                <h3 className="text-lg font-bold text-[#1d1d1f]">添加官方客服</h3>
+                <MessageCircle size={18} className="text-foreground" />
+                <h3 className="text-lg font-bold text-foreground">添加官方客服</h3>
               </div>
               <button
                 onClick={() => setShowQRCode(false)}
-                className="cursor-pointer text-[#555555] hover:text-[#1d1d1f]"
+                className="cursor-pointer text-muted-foreground hover:text-foreground"
               >
                 <X size={20} />
               </button>
@@ -239,19 +239,19 @@ export default function PartnerBenefitsPage() {
 
             {/* 二维码区域 */}
             <div className="flex flex-col items-center">
-              <div className="mb-4 flex h-52 w-52 items-center justify-center rounded-2xl border-2 border-dashed border-black/10 bg-[#f5f5f7]">
+              <div className="mb-4 flex h-52 w-52 items-center justify-center rounded-2xl border-2 border-dashed border-border bg-secondary">
                 <div className="flex flex-col items-center gap-3">
-                  <QrCode size={48} className="text-[#1d1d1f]/20" />
-                  <span className="text-xs text-[#444444]">二维码即将上线</span>
+                  <QrCode size={48} className="text-foreground/20" />
+                  <span className="text-xs text-muted-foreground">二维码即将上线</span>
                 </div>
               </div>
-              <p className="text-center text-sm text-[#555555]">
+              <p className="text-center text-sm text-muted-foreground">
                 请使用微信扫描上方二维码<br />添加官方客服了解合伙人详情
               </p>
             </div>
 
-            <div className="mt-6 rounded-xl bg-[#f5f5f7] p-4">
-              <p className="text-center text-xs text-[#444444]">
+            <div className="mt-6 rounded-xl bg-secondary p-4">
+              <p className="text-center text-xs text-muted-foreground">
                 客服工作时间：9:00 - 21:00<br />
                 咨询请注明「合伙人」
               </p>
@@ -264,21 +264,21 @@ export default function PartnerBenefitsPage() {
       {selectedBenefit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setSelectedBenefit(null)}>
           <div
-            className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl"
+            className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 头部 */}
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-black/[0.06] bg-white/90 px-6 py-4 backdrop-blur-sm">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/90 px-6 py-4 backdrop-blur-sm">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{selectedBenefit.emoji}</span>
                 <div>
-                  <h3 className="text-lg font-bold text-[#1d1d1f]">{selectedBenefit.title}</h3>
-                  <span className="text-xs text-[#1d1d1f]/30">{selectedBenefit.num}</span>
+                  <h3 className="text-lg font-bold text-foreground">{selectedBenefit.title}</h3>
+                  <span className="text-xs text-foreground/30">{selectedBenefit.num}</span>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedBenefit(null)}
-                className="cursor-pointer text-[#555555] hover:text-[#1d1d1f]"
+                className="cursor-pointer text-muted-foreground hover:text-foreground"
               >
                 <X size={20} />
               </button>
@@ -287,21 +287,21 @@ export default function PartnerBenefitsPage() {
             {/* 内容 */}
             <div className="p-6">
               {/* 概述 */}
-              <p className="mb-6 text-sm leading-relaxed text-[#555555]">
+              <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
                 {selectedBenefit.detail.overview}
               </p>
 
               {/* 分项详情 */}
               <div className="space-y-4">
                 {selectedBenefit.detail.sections.map((section, i) => (
-                  <div key={i} className="rounded-xl bg-[#f5f5f7] p-4">
+                  <div key={i} className="rounded-xl bg-secondary p-4">
                     <div className="mb-2 flex items-center gap-2">
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d1d1f] text-[10px] font-bold text-white">
                         {i + 1}
                       </span>
-                      <h4 className="text-sm font-semibold text-[#1d1d1f]">{section.title}</h4>
+                      <h4 className="text-sm font-semibold text-foreground">{section.title}</h4>
                     </div>
-                    <p className="pl-7 text-sm leading-relaxed text-[#555555]">{section.content}</p>
+                    <p className="pl-7 text-sm leading-relaxed text-muted-foreground">{section.content}</p>
                   </div>
                 ))}
               </div>

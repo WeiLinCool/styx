@@ -17,8 +17,8 @@ const columns: AdminColumn<AdminBenefitRow>[] = [
     label: '权益',
     render: (benefit) => (
       <div>
-        <div className="font-medium text-neutral-950">{benefit.name}</div>
-        <div className="text-xs text-neutral-500">{benefit.code}</div>
+        <div className="font-medium text-foreground">{benefit.name}</div>
+        <div className="text-xs text-muted-foreground">{benefit.code}</div>
       </div>
     ),
   },
@@ -30,15 +30,15 @@ const columns: AdminColumn<AdminBenefitRow>[] = [
   {
     key: 'plan',
     label: '方案',
-    render: (benefit) => <span className="text-sm text-neutral-800">{benefit.plan}</span>,
+    render: (benefit) => <span className="text-sm text-foreground">{benefit.plan}</span>,
   },
   {
     key: 'quantity',
     label: '额度',
     render: (benefit) => (
       <div>
-        <div className="font-medium text-neutral-950">{benefit.quantity}</div>
-        <div className="text-xs text-neutral-500">{benefit.unit}</div>
+        <div className="font-medium text-foreground">{benefit.quantity}</div>
+        <div className="text-xs text-muted-foreground">{benefit.unit}</div>
       </div>
     ),
   },
@@ -47,8 +47,8 @@ const columns: AdminColumn<AdminBenefitRow>[] = [
     label: '规则 / 授权',
     render: (benefit) => (
       <div>
-        <div className="text-xs text-neutral-700">{benefit.ruleSummary}</div>
-        <div className="mt-1 text-xs text-neutral-500">{benefit.entitlementSummary}</div>
+        <div className="text-xs text-muted-foreground">{benefit.ruleSummary}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{benefit.entitlementSummary}</div>
       </div>
     ),
   },

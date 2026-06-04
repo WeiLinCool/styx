@@ -29,11 +29,11 @@ import {
 } from '@/server/repositories/admin-dashboard';
 
 const kpiToneClassName: Record<DashboardTone, string> = {
-  default: 'border-neutral-200 bg-white',
-  success: 'border-emerald-200 bg-emerald-50',
-  warning: 'border-amber-200 bg-amber-50',
-  danger: 'border-red-200 bg-red-50',
-  info: 'border-blue-200 bg-blue-50',
+  default: 'border-border bg-card',
+  success: 'border-success/30 bg-success-surface',
+  warning: 'border-warning/30 bg-warning-surface',
+  danger: 'border-destructive/30 bg-destructive/10',
+  info: 'border-info/30 bg-info-surface',
 };
 
 export const dynamic = 'force-dynamic';
@@ -61,9 +61,9 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
-      <CardHeader className="flex h-11 flex-row items-center gap-2 border-b border-neutral-200 px-4 py-0">
-        <div className="text-neutral-500">{icon}</div>
+    <Card className="gap-0 rounded-lg border-border bg-card py-0 shadow-sm">
+      <CardHeader className="flex h-11 flex-row items-center gap-2 border-b border-border px-4 py-0">
+        <div className="text-muted-foreground">{icon}</div>
         <CardTitle className="text-sm font-semibold">{title}</CardTitle>
       </CardHeader>
       <CardContent className="px-0 py-0">{children}</CardContent>
@@ -80,10 +80,10 @@ function KpiGrid({ dashboard }: { dashboard: AdminDashboardData }) {
           className={`rounded-lg border p-4 shadow-sm ${kpiToneClassName[kpi.tone]}`}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{kpi.label}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{kpi.label}</p>
             <StatusBadge value={kpi.change} tone={kpi.tone} />
           </div>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">{kpi.value}</p>
+          <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{kpi.value}</p>
         </div>
       ))}
     </div>
@@ -95,10 +95,10 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-neutral-950">仪表盘</h2>
-          <p className="mt-1 text-sm text-neutral-600">账号、订单、AI 任务与合作线索的运营概览。</p>
+          <h2 className="text-base font-semibold text-foreground">仪表盘</h2>
+          <p className="mt-1 text-sm text-muted-foreground">账号、订单、AI 任务与合作线索的运营概览。</p>
         </div>
         <StatusBadge
           value={dashboard.source === 'database' ? '数据库' : '种子数据'}
@@ -122,13 +122,13 @@ export default async function AdminDashboardPage() {
               {dashboard.recentUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
-                    <div className="font-medium text-neutral-950">{user.name}</div>
-                    <div className="text-xs text-neutral-500">{user.email}</div>
+                    <div className="font-medium text-foreground">{user.name}</div>
+                    <div className="text-xs text-muted-foreground">{user.email}</div>
                   </TableCell>
                   <TableCell>
                     <StatusBadge value={user.accountState} />
                   </TableCell>
-                  <TableCell className="text-right text-xs text-neutral-500">
+                  <TableCell className="text-right text-xs text-muted-foreground">
                     {formatDateTime(user.createdAt)}
                   </TableCell>
                 </TableRow>
@@ -150,13 +150,13 @@ export default async function AdminDashboardPage() {
               {dashboard.recentAiJobs.map((job) => (
                 <TableRow key={job.id}>
                   <TableCell>
-                    <div className="font-medium text-neutral-950">{job.type}</div>
-                    <div className="text-xs text-neutral-500">{job.model} · {job.owner}</div>
+                    <div className="font-medium text-foreground">{job.type}</div>
+                    <div className="text-xs text-muted-foreground">{job.model} · {job.owner}</div>
                   </TableCell>
                   <TableCell>
                     <StatusBadge value={job.status} />
                   </TableCell>
-                  <TableCell className="text-right text-xs text-neutral-500">
+                  <TableCell className="text-right text-xs text-muted-foreground">
                     {formatDateTime(job.createdAt)}
                   </TableCell>
                 </TableRow>
@@ -178,13 +178,13 @@ export default async function AdminDashboardPage() {
               {dashboard.recentOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell>
-                    <div className="font-medium text-neutral-950">{order.orderNumber}</div>
-                    <div className="text-xs text-neutral-500">{order.customer} · {formatDateTime(order.createdAt)}</div>
+                    <div className="font-medium text-foreground">{order.orderNumber}</div>
+                    <div className="text-xs text-muted-foreground">{order.customer} · {formatDateTime(order.createdAt)}</div>
                   </TableCell>
                   <TableCell>
                     <StatusBadge value={order.status} />
                   </TableCell>
-                  <TableCell className="text-right font-medium text-neutral-950">{order.total}</TableCell>
+                  <TableCell className="text-right font-medium text-foreground">{order.total}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -204,13 +204,13 @@ export default async function AdminDashboardPage() {
               {dashboard.partnerLeads.map((lead) => (
                 <TableRow key={lead.id}>
                   <TableCell>
-                    <div className="font-medium text-neutral-950">{lead.companyName}</div>
-                    <div className="text-xs text-neutral-500">{lead.contactName} · {formatDateTime(lead.createdAt)}</div>
+                    <div className="font-medium text-foreground">{lead.companyName}</div>
+                    <div className="text-xs text-muted-foreground">{lead.contactName} · {formatDateTime(lead.createdAt)}</div>
                   </TableCell>
                   <TableCell>
                     <StatusBadge value={lead.status} />
                   </TableCell>
-                  <TableCell className="text-right text-xs text-neutral-500">{lead.source}</TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">{lead.source}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -219,12 +219,12 @@ export default async function AdminDashboardPage() {
       </div>
 
       <SectionCard title="系统提示" icon={<AlertTriangle className="h-4 w-4" />}>
-        <div className="divide-y divide-neutral-200">
+        <div className="divide-y divide-border">
           {dashboard.notices.map((notice) => (
             <div key={notice.id} className="flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <div className="text-sm font-medium text-neutral-950">{notice.title}</div>
-                <div className="mt-1 text-sm text-neutral-600">{notice.description}</div>
+                <div className="text-sm font-medium text-foreground">{notice.title}</div>
+                <div className="mt-1 text-sm text-muted-foreground">{notice.description}</div>
               </div>
               <StatusBadge value={notice.tone} tone={notice.tone} />
             </div>

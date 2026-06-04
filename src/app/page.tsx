@@ -37,7 +37,7 @@ export default function SplashPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background">
       {/* 极简光晕背景 */}
       <div className="pointer-events-none absolute inset-0">
         <div
@@ -73,9 +73,9 @@ export default function SplashPage() {
 
       {/* 浮动装饰圆 */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[10%] top-[20%] h-24 w-24 rounded-full border border-black/[0.03]"
+        <div className="absolute left-[10%] top-[20%] h-24 w-24 rounded-full border border-border/40"
           style={{ animation: 'floatSlow 12s ease-in-out infinite' }} />
-        <div className="absolute right-[15%] bottom-[25%] h-16 w-16 rounded-full border border-black/[0.04]"
+        <div className="absolute right-[15%] bottom-[25%] h-16 w-16 rounded-full border border-border/50"
           style={{ animation: 'floatSlow 10s 3s ease-in-out infinite' }} />
         <div className="absolute left-[20%] bottom-[15%] h-8 w-8 rounded-full bg-black/[0.02]"
           style={{ animation: 'floatSlow 8s 1s ease-in-out infinite' }} />
@@ -93,15 +93,15 @@ export default function SplashPage() {
             phase === 'arrive' ? 'scale-[2.5] opacity-0 blur-xl' : 'scale-100 opacity-100'
           }`}
         >
-          <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-[#1d1d1f] shadow-lg"
+          <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-foreground shadow-lg"
             style={{ animation: 'logoBreath 4s ease-in-out infinite' }}>
-            <span className="text-2xl font-bold tracking-tight text-white">NF</span>
+            <span className="text-2xl font-bold tracking-tight text-background">NF</span>
           </div>
         </div>
 
         {/* 标题 */}
         <h1
-          className={`mb-2 text-3xl font-bold tracking-tight text-[#1d1d1f] sm:text-4xl transition-all duration-700 delay-200 ${
+          className={`mb-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl transition-all duration-700 delay-200 ${
             loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
           }`}
         >
@@ -109,14 +109,14 @@ export default function SplashPage() {
         </h1>
 
         {/* 副标题 */}
-        <p className={`mb-3 text-sm text-[#555555] sm:text-base transition-all duration-700 delay-300 ${
+        <p className={`mb-3 text-sm text-muted-foreground sm:text-base transition-all duration-700 delay-300 ${
           loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
         }`}>
           AI视频 · AI生图 · 石头印画 · AI视频工作流
         </p>
 
         {/* 分割线 */}
-        <div className={`mb-8 h-px w-16 bg-black/10 transition-all duration-700 delay-400 ${
+        <div className={`mb-8 h-px w-16 bg-border transition-all duration-700 delay-400 ${
           loaded ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'
         }`} />
 
@@ -132,7 +132,7 @@ export default function SplashPage() {
         </button>
 
         {/* 底部文字 */}
-        <p className={`mt-12 text-xs text-[#86868b] transition-all duration-700 delay-700 ${
+        <p className={`mt-12 text-xs text-muted-foreground transition-all duration-700 delay-700 ${
           loaded ? 'opacity-100' : 'opacity-0'
         }`}>
           石头印画 · 把记忆留在石头上
@@ -141,15 +141,15 @@ export default function SplashPage() {
 
       {/* 到达过渡 */}
       {phase === 'arrive' && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white">
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background">
           <div
-            className="mb-4 flex h-20 w-20 items-center justify-center rounded-[22px] bg-[#1d1d1f] shadow-lg"
+            className="mb-4 flex h-20 w-20 items-center justify-center rounded-[22px] bg-foreground shadow-lg"
             style={{ animation: 'arriveLogo 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards' }}
           >
-            <span className="text-2xl font-bold tracking-tight text-white">NF</span>
+            <span className="text-2xl font-bold tracking-tight text-background">NF</span>
           </div>
           <p
-            className="text-sm text-[#555555]"
+            className="text-sm text-muted-foreground"
             style={{ animation: 'arriveReveal 0.6s 0.3s ease-out forwards', opacity: 0 }}
           >
             正在进入南风石印工坊...

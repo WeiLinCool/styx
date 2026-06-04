@@ -26,19 +26,19 @@ export function UserMediaModule({
   const recentAssets = assets.slice(0, 3);
 
   return (
-    <section className="rounded-2xl border border-black/[0.06] bg-white p-5">
+    <section className="rounded-2xl border border-border bg-card p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[#1d1d1f]">我的资料</h2>
-          <p className="text-xs text-[#6e6e73]">已保存到云端的图片与视频，可在独立页面统一管理。</p>
+          <h2 className="text-base font-semibold text-foreground">我的资料</h2>
+          <p className="text-xs text-muted-foreground">已保存到云端的图片与视频，可在独立页面统一管理。</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="rounded-full bg-black/[0.04] px-3 py-1 text-xs text-[#444444]">
+          <span className="rounded-full bg-secondary px-3 py-1 text-xs text-secondary-foreground">
             {assets.length} 个文件
           </span>
           <Link
             href="/my-assets"
-            className="rounded-full border border-black/[0.08] px-3 py-1 text-xs text-[#1d1d1f] transition-colors hover:bg-black/[0.03]"
+            className="rounded-full border border-border px-3 py-1 text-xs text-foreground transition-colors hover:bg-secondary/70"
           >
             查看全部
           </Link>
@@ -46,7 +46,7 @@ export function UserMediaModule({
       </div>
 
       {assets.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-black/[0.08] px-4 py-6 text-sm text-[#6e6e73]">
+        <div className="rounded-xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
           还没有已保存的资料。先去 AI 生图或 AI 视频生成结果里点击“保存到我的媒体”。
         </div>
       ) : (
@@ -54,21 +54,21 @@ export function UserMediaModule({
           {recentAssets.map((asset) => (
             <div
               key={asset.id}
-              className="flex items-center justify-between rounded-xl border border-black/[0.06] px-4 py-3"
+              className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3"
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-[#1d1d1f]">{asset.title}</span>
-                  <span className="rounded-md bg-black/[0.04] px-2 py-0.5 text-[10px] text-[#444444]">
+                  <span className="text-sm font-medium text-foreground">{asset.title}</span>
+                  <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
                     {formatKind(asset.kind)}
                   </span>
                 </div>
-                <div className="text-xs text-[#6e6e73]">
+                <div className="text-xs text-muted-foreground">
                   {asset.sourceModel} · {formatBytes(asset.byteSize)} · 会话 {asset.conversationId.slice(0, 8)}
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Link href="/my-assets" className="rounded-full border border-black/[0.08] px-3 py-1.5 text-xs text-[#1d1d1f] transition-colors hover:bg-black/[0.03]">
+                <Link href="/my-assets" className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-secondary/70">
                   管理资料
                 </Link>
               </div>

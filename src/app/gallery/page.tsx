@@ -62,24 +62,24 @@ export default function GalleryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Nav */}
-      <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-black/[0.06]">
+      <nav className="sticky top-0 z-40 border-b border-border bg-background/70 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/home" className="p-2 hover:bg-black/[0.04] rounded-xl transition"><ArrowLeft className="w-5 h-5" /></Link>
-            <span className="font-semibold text-[#1d1d1f]">作品展示</span>
+            <Link href="/home" className="rounded-xl p-2 transition hover:bg-secondary/70"><ArrowLeft className="w-5 h-5" /></Link>
+            <span className="font-semibold text-foreground">作品展示</span>
           </div>
-          <Link href="/shop" className="text-sm text-[#86868b] hover:text-[#1d1d1f] transition">去定制</Link>
+          <Link href="/shop" className="text-sm text-muted-foreground transition hover:text-foreground">去定制</Link>
         </div>
       </nav>
 
       {/* Hero Banner */}
       <div className="relative overflow-hidden">
         <div className="max-w-6xl mx-auto px-4 py-16 md:py-24 text-center">
-          <h1 className="text-3xl md:text-5xl font-bold text-[#1d1d1f] mb-4">真实作品 · 真实感动</h1>
-          <p className="text-[#86868b] text-lg max-w-xl mx-auto">每一块石头都承载着独特的故事，看看其他人的定制作品</p>
-          <div className="flex items-center justify-center gap-6 mt-8 text-sm text-[#6e6e73]">
+          <h1 className="mb-4 text-3xl font-bold text-foreground md:text-5xl">真实作品 · 真实感动</h1>
+          <p className="mx-auto max-w-xl text-lg text-muted-foreground">每一块石头都承载着独特的故事，看看其他人的定制作品</p>
+          <div className="mt-8 flex items-center justify-center gap-6 text-sm text-muted-foreground">
             <span className="flex items-center gap-1"><Heart className="w-4 h-4 text-red-400" />{GALLERY_ITEMS.reduce((s, i) => s + i.likes, 0)}+ 喜欢</span>
             <span className="flex items-center gap-1"><MessageCircle className="w-4 h-4" />{GALLERY_ITEMS.length} 作品</span>
             <span className="flex items-center gap-1"><Eye className="w-4 h-4" />8600+ 浏览</span>
@@ -88,18 +88,18 @@ export default function GalleryPage() {
       </div>
 
       {/* Category Filter */}
-      <div className="sticky top-14 z-30 bg-white/80 backdrop-blur-lg border-b border-black/[0.04]">
+      <div className="sticky top-14 z-30 border-b border-border bg-background/80 backdrop-blur-lg">
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex items-center gap-2 py-3 overflow-x-auto">
-            <Filter className="w-4 h-4 text-[#86868b] shrink-0" />
+            <Filter className="h-4 w-4 shrink-0 text-muted-foreground" />
             {CATEGORIES.map(cat => (
               <button
                 key={cat.key}
                 onClick={() => setSelectedCategory(cat.key)}
                 className={`px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
                   selectedCategory === cat.key
-                    ? 'bg-[#1d1d1f] text-white'
-                    : 'bg-[#f5f5f7] text-[#6e6e73] hover:bg-black/[0.08]'
+                    ? 'bg-foreground text-background'
+                    : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
                 }`}
               >
                 {cat.label}
@@ -115,7 +115,7 @@ export default function GalleryPage() {
           {filteredItems.map((item, idx) => (
             <div
               key={item.id}
-              className={`group bg-white rounded-2xl border border-black/[0.06] overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer ${
+              className={`group cursor-pointer overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${
                 mounted ? 'animate-fadeInUp' : 'opacity-0'
               }`}
               style={{ animationDelay: `${idx * 60}ms` }}
@@ -126,21 +126,21 @@ export default function GalleryPage() {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition" />
                 <button
                   onClick={(e) => { e.stopPropagation(); toggleLike(item.id); }}
-                  className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center transition hover:scale-110"
+                  className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-background/80 backdrop-blur transition hover:scale-110"
                 >
-                  <Heart className={`w-4 h-4 transition ${likedItems.has(item.id) ? 'fill-red-500 text-red-500' : 'text-[#6e6e73]'}`} />
+                  <Heart className={`h-4 w-4 transition ${likedItems.has(item.id) ? 'fill-red-500 text-red-500' : 'text-muted-foreground'}`} />
                 </button>
               </div>
               <div className="p-3">
-                <h3 className="font-medium text-[#1d1d1f] text-sm truncate">{item.title}</h3>
-                <p className="text-xs text-[#86868b] mt-1 line-clamp-1">{item.description}</p>
+                <h3 className="truncate text-sm font-medium text-foreground">{item.title}</h3>
+                <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.description}</p>
                 <div className="flex items-center justify-between mt-2">
                   <div className="flex items-center gap-0.5">
                     {Array.from({ length: item.rating }).map((_, i) => (
                       <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />
                     ))}
                   </div>
-                  <span className="text-xs text-[#86868b]">{item.likes + (likedItems.has(item.id) ? 1 : 0)} 喜欢</span>
+                  <span className="text-xs text-muted-foreground">{item.likes + (likedItems.has(item.id) ? 1 : 0)} 喜欢</span>
                 </div>
               </div>
             </div>
@@ -149,19 +149,19 @@ export default function GalleryPage() {
 
         {filteredItems.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-[#86868b]">该分类暂无作品</p>
+            <p className="text-muted-foreground">该分类暂无作品</p>
           </div>
         )}
       </div>
 
       {/* CTA Section */}
-      <div className="bg-[#f5f5f7] py-16">
+      <div className="bg-secondary/60 py-16">
         <div className="max-w-6xl mx-auto px-4 text-center">
-          <h2 className="text-2xl md:text-3xl font-bold text-[#1d1d1f] mb-4">也想做一块属于自己的石头？</h2>
-          <p className="text-[#86868b] mb-8">上传照片，我们帮你把它印进石头里</p>
+          <h2 className="mb-4 text-2xl font-bold text-foreground md:text-3xl">也想做一块属于自己的石头？</h2>
+          <p className="mb-8 text-muted-foreground">上传照片，我们帮你把它印进石头里</p>
           <div className="flex items-center justify-center gap-4">
-            <Link href="/shop" className="px-8 py-3 bg-[#1d1d1f] text-white rounded-xl font-medium hover:scale-105 transition">去定制</Link>
-            <Link href="/home" className="px-8 py-3 bg-white text-[#1d1d1f] rounded-xl font-medium border border-black/[0.1] hover:scale-105 transition">返回首页</Link>
+            <Link href="/shop" className="rounded-xl bg-foreground px-8 py-3 font-medium text-background transition hover:scale-105">去定制</Link>
+            <Link href="/home" className="rounded-xl border border-border bg-card px-8 py-3 font-medium text-foreground transition hover:scale-105">返回首页</Link>
           </div>
         </div>
       </div>
@@ -169,21 +169,21 @@ export default function GalleryPage() {
       {/* Detail Modal */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end md:items-center justify-center" onClick={() => setSelectedItem(null)}>
-          <div className="bg-white w-full md:max-w-lg md:rounded-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[85vh] w-full overflow-y-auto bg-card md:max-w-lg md:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <img src={selectedItem.image} alt={selectedItem.title} className="w-full aspect-square object-cover" />
             <div className="p-6">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xl font-bold text-[#1d1d1f]">{selectedItem.title}</h2>
-                <button onClick={() => toggleLike(selectedItem.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#f5f5f7] hover:bg-red-50 transition">
-                  <Heart className={`w-4 h-4 ${likedItems.has(selectedItem.id) ? 'fill-red-500 text-red-500' : 'text-[#86868b]'}`} />
+                <h2 className="text-xl font-bold text-foreground">{selectedItem.title}</h2>
+                <button onClick={() => toggleLike(selectedItem.id)} className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 transition hover:bg-red-50/80">
+                  <Heart className={`h-4 w-4 ${likedItems.has(selectedItem.id) ? 'fill-red-500 text-red-500' : 'text-muted-foreground'}`} />
                   <span className="text-sm">{selectedItem.likes + (likedItems.has(selectedItem.id) ? 1 : 0)}</span>
                 </button>
               </div>
-              <p className="text-[#6e6e73] mb-4">{selectedItem.description}</p>
+              <p className="mb-4 text-muted-foreground">{selectedItem.description}</p>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-[#f5f5f7] flex items-center justify-center text-sm font-medium text-[#1d1d1f]">{selectedItem.author[0]}</div>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-sm font-medium text-foreground">{selectedItem.author[0]}</div>
                 <div>
-                  <p className="text-sm font-medium text-[#1d1d1f]">{selectedItem.author}</p>
+                  <p className="text-sm font-medium text-foreground">{selectedItem.author}</p>
                   <div className="flex items-center gap-0.5">
                     {Array.from({ length: selectedItem.rating }).map((_, i) => (
                       <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />
@@ -192,13 +192,13 @@ export default function GalleryPage() {
                 </div>
               </div>
               {/* Customer Review */}
-              <div className="bg-[#f5f5f7] rounded-xl p-4 mb-6">
-                <p className="text-sm text-[#1d1d1f] mb-2 font-medium">客户评价</p>
-                <p className="text-sm text-[#6e6e73]">&ldquo;{selectedItem.comment}&rdquo;</p>
+              <div className="mb-6 rounded-xl bg-secondary p-4">
+                <p className="mb-2 text-sm font-medium text-foreground">客户评价</p>
+                <p className="text-sm text-muted-foreground">&ldquo;{selectedItem.comment}&rdquo;</p>
               </div>
               <div className="flex gap-3">
-                <Link href="/shop" className="flex-1 py-3 bg-[#1d1d1f] text-white rounded-xl text-center font-medium hover:scale-[1.02] transition">我也想做</Link>
-                <button onClick={() => setSelectedItem(null)} className="px-6 py-3 bg-[#f5f5f7] text-[#1d1d1f] rounded-xl font-medium hover:scale-[1.02] transition">关闭</button>
+                <Link href="/shop" className="flex-1 rounded-xl bg-foreground py-3 text-center font-medium text-background transition hover:scale-[1.02]">我也想做</Link>
+                <button onClick={() => setSelectedItem(null)} className="rounded-xl bg-secondary px-6 py-3 font-medium text-foreground transition hover:scale-[1.02]">关闭</button>
               </div>
             </div>
           </div>

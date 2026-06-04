@@ -77,15 +77,15 @@ export default function BrandStoryPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Nav */}
-      <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-black/[0.06]">
+      <nav className="sticky top-0 z-40 border-b border-border bg-background/70 backdrop-blur-xl">
         <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/home" className="p-2 hover:bg-black/[0.04] rounded-xl transition"><ArrowLeft className="w-5 h-5" /></Link>
-            <span className="font-semibold text-[#1d1d1f]">品牌故事</span>
+            <Link href="/home" className="rounded-xl p-2 transition hover:bg-secondary/70"><ArrowLeft className="w-5 h-5" /></Link>
+            <span className="font-semibold text-foreground">品牌故事</span>
           </div>
-          <Link href="/gallery" className="text-sm text-[#86868b] hover:text-[#1d1d1f] transition">看作品</Link>
+          <Link href="/gallery" className="text-sm text-muted-foreground transition hover:text-foreground">看作品</Link>
         </div>
       </nav>
 
@@ -97,29 +97,29 @@ export default function BrandStoryPage() {
           <div className="absolute bottom-10 left-1/3 w-24 h-18 bg-[#aeaeb2] rounded-[45%] rotate-6" style={{ animation: 'stoneFloat 12s ease-in-out infinite 4s' }} />
         </div>
         <div className="max-w-4xl mx-auto px-4 py-20 md:py-32 text-center relative">
-          <h1 className={`text-3xl md:text-5xl font-bold text-[#1d1d1f] mb-6 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <h1 className={`mb-6 text-3xl font-bold text-foreground transition-all duration-700 md:text-5xl ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             把记忆，印进石头
           </h1>
-          <p className={`text-lg text-[#86868b] max-w-xl mx-auto transition-all duration-700 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <p className={`mx-auto max-w-xl text-lg text-muted-foreground transition-all duration-700 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             南风石印工坊，用天然石头承载你最珍贵的瞬间
           </p>
-          <p className={`text-base text-[#6e6e73] max-w-2xl mx-auto mt-4 transition-all duration-700 delay-400 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <p className={`mx-auto mt-4 max-w-2xl text-base text-muted-foreground transition-all duration-700 delay-400 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             当照片遇见石头，当记忆遇见永恒——每一块石头印画，都是一段被时光温柔对待的故事
           </p>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="bg-[#f5f5f7] py-16">
+      <div className="bg-secondary/60 py-16">
         <div className="max-w-4xl mx-auto px-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {stats.map((s, idx) => (
               <div key={idx} className="text-center">
-                <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white mb-3">
-                  <s.icon className="w-5 h-5 text-[#1d1d1f]" />
+                <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-card">
+                  <s.icon className="h-5 w-5 text-foreground" />
                 </div>
-                <div className="text-2xl md:text-3xl font-bold text-[#1d1d1f] tabular-nums">{s.number}</div>
-                <div className="text-sm text-[#86868b] mt-1">{s.label}</div>
+                <div className="text-2xl font-bold tabular-nums text-foreground md:text-3xl">{s.number}</div>
+                <div className="mt-1 text-sm text-muted-foreground">{s.label}</div>
               </div>
             ))}
           </div>
@@ -129,16 +129,16 @@ export default function BrandStoryPage() {
       {/* Story Sections */}
       <div className="max-w-4xl mx-auto px-4">
         {sections.map((section, idx) => (
-          <div key={idx} className="py-16 border-t border-black/[0.06]">
+          <div key={idx} className="border-t border-border py-16">
             <div className="flex items-start gap-6">
-              <div className="shrink-0 w-14 h-14 rounded-2xl bg-[#f5f5f7] flex items-center justify-center">
-                <section.icon className="w-6 h-6 text-[#1d1d1f]" />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-secondary">
+                <section.icon className="h-6 w-6 text-foreground" />
               </div>
               <div className="flex-1">
-                <h2 className="text-2xl font-bold text-[#1d1d1f] mb-1">{section.title}</h2>
-                <p className="text-[#86868b] mb-4">{section.subtitle}</p>
+                <h2 className="mb-1 text-2xl font-bold text-foreground">{section.title}</h2>
+                <p className="mb-4 text-muted-foreground">{section.subtitle}</p>
                 <p className="text-[#444444] leading-relaxed">{section.content}</p>
-                <p className="text-[#6e6e73] leading-relaxed mt-3 text-sm">{section.detail}</p>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{section.detail}</p>
               </div>
             </div>
           </div>
@@ -146,16 +146,16 @@ export default function BrandStoryPage() {
       </div>
 
       {/* Process Steps */}
-      <div className="bg-[#f5f5f7] py-20">
+      <div className="bg-secondary/60 py-20">
         <div className="max-w-4xl mx-auto px-4">
-          <h2 className="text-2xl font-bold text-[#1d1d1f] mb-3 text-center">8道核心工序</h2>
-          <p className="text-[#86868b] text-center mb-12">从原石到成品，每一步都凝聚匠心</p>
+          <h2 className="mb-3 text-center text-2xl font-bold text-foreground">8道核心工序</h2>
+          <p className="mb-12 text-center text-muted-foreground">从原石到成品，每一步都凝聚匠心</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {processSteps.map((p) => (
-              <div key={p.step} className="bg-white rounded-2xl p-5 border border-black/[0.06] hover:-translate-y-1 transition-all">
+              <div key={p.step} className="rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-1">
                 <div className="w-8 h-8 rounded-full bg-[#1d1d1f] text-white flex items-center justify-center text-sm font-bold mb-3">{p.step}</div>
-                <h4 className="font-semibold text-[#1d1d1f] mb-1">{p.title}</h4>
-                <p className="text-xs text-[#86868b] leading-relaxed">{p.desc}</p>
+                <h4 className="mb-1 font-semibold text-foreground">{p.title}</h4>
+                <p className="text-xs leading-relaxed text-muted-foreground">{p.desc}</p>
               </div>
             ))}
           </div>
@@ -164,17 +164,17 @@ export default function BrandStoryPage() {
 
       {/* Timeline */}
       <div className="max-w-4xl mx-auto px-4 py-20">
-        <h2 className="text-2xl font-bold text-[#1d1d1f] mb-12 text-center">发展历程</h2>
+        <h2 className="mb-12 text-center text-2xl font-bold text-foreground">发展历程</h2>
         <div className="relative">
-          <div className="absolute left-8 top-0 bottom-0 w-px bg-black/[0.1]" />
+          <div className="absolute bottom-0 left-8 top-0 w-px bg-border" />
           {timeline.map((item, idx) => (
             <div key={idx} className="relative flex items-start gap-6 mb-8 last:mb-0">
               <div className="relative z-10 w-16 h-8 flex items-center justify-center">
-                <div className={`w-3 h-3 rounded-full ${item.highlight ? 'bg-[#1d1d1f] ring-4 ring-[#1d1d1f]/10' : 'bg-[#86868b] ring-4 ring-white'}`} />
+                <div className={`h-3 w-3 rounded-full ${item.highlight ? 'bg-foreground ring-4 ring-foreground/10' : 'bg-muted-foreground ring-4 ring-background'}`} />
               </div>
-              <div className="bg-[#f5f5f7] rounded-xl p-5 flex-1 border border-black/[0.06]">
-                <span className="text-xs font-medium text-[#86868b]">{item.year}</span>
-                <p className="text-[#1d1d1f] mt-1">{item.event}</p>
+              <div className="flex-1 rounded-xl border border-border bg-secondary/60 p-5">
+                <span className="text-xs font-medium text-muted-foreground">{item.year}</span>
+                <p className="mt-1 text-foreground">{item.event}</p>
               </div>
             </div>
           ))}
@@ -182,16 +182,16 @@ export default function BrandStoryPage() {
       </div>
 
       {/* Values */}
-      <div className="bg-[#f5f5f7] py-20">
+      <div className="bg-secondary/60 py-20">
         <div className="max-w-4xl mx-auto px-4">
-          <h2 className="text-2xl font-bold text-[#1d1d1f] mb-3 text-center">我们的价值观</h2>
-          <p className="text-[#86868b] text-center mb-12">做有温度的手艺，做有情怀的品牌</p>
+          <h2 className="mb-3 text-center text-2xl font-bold text-foreground">我们的价值观</h2>
+          <p className="mb-12 text-center text-muted-foreground">做有温度的手艺，做有情怀的品牌</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {values.map((v, idx) => (
-              <div key={idx} className="bg-white rounded-2xl p-8 text-center hover:-translate-y-1 transition border border-black/[0.06]">
+              <div key={idx} className="rounded-2xl border border-border bg-card p-8 text-center transition hover:-translate-y-1">
                 <div className="text-4xl mb-4">{v.emoji}</div>
-                <h3 className="text-lg font-bold text-[#1d1d1f] mb-2">{v.title}</h3>
-                <p className="text-sm text-[#86868b] leading-relaxed">{v.desc}</p>
+                <h3 className="mb-2 text-lg font-bold text-foreground">{v.title}</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">{v.desc}</p>
               </div>
             ))}
           </div>
@@ -205,18 +205,18 @@ export default function BrandStoryPage() {
             &ldquo;每一块石头都有它的故事，<br />
             我们只是帮它把故事讲出来。&rdquo;
           </p>
-          <p className="text-[#86868b]">—— 南风石印工坊创始人</p>
+          <p className="text-muted-foreground">—— 南风石印工坊创始人</p>
         </div>
       </div>
 
       {/* CTA */}
-      <div className="bg-[#f5f5f7] py-16">
+      <div className="bg-secondary/60 py-16">
         <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="text-2xl md:text-3xl font-bold text-[#1d1d1f] mb-4">和我们一起，把故事印进石头</h2>
-          <p className="text-[#86868b] mb-8">无论你想定制作品，还是成为合伙人，我们都欢迎</p>
+          <h2 className="mb-4 text-2xl font-bold text-foreground md:text-3xl">和我们一起，把故事印进石头</h2>
+          <p className="mb-8 text-muted-foreground">无论你想定制作品，还是成为合伙人，我们都欢迎</p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
-            <Link href="/shop" className="px-8 py-3 bg-[#1d1d1f] text-white rounded-xl font-medium hover:scale-105 transition">去定制</Link>
-            <Link href="/partner-benefits" className="px-8 py-3 bg-white text-[#1d1d1f] rounded-xl font-medium border border-black/[0.1] hover:scale-105 transition">成为合伙人</Link>
+            <Link href="/shop" className="rounded-xl bg-foreground px-8 py-3 font-medium text-background transition hover:scale-105">去定制</Link>
+            <Link href="/partner-benefits" className="rounded-xl border border-border bg-card px-8 py-3 font-medium text-foreground transition hover:scale-105">成为合伙人</Link>
           </div>
         </div>
       </div>

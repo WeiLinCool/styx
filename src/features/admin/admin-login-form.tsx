@@ -47,14 +47,14 @@ export function AdminLoginForm() {
   }
 
   return (
-    <Card className="border-neutral-200 bg-white/95 shadow-xl shadow-neutral-950/10">
+    <Card className="border-border bg-card/95 shadow-xl shadow-black/10">
       <CardHeader className="space-y-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-950 text-white">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
           <ShieldCheck className="h-6 w-6" />
         </div>
         <div className="space-y-1">
-          <CardTitle className="text-2xl tracking-tight text-neutral-950">管理端登录</CardTitle>
-          <CardDescription className="text-sm leading-6 text-neutral-600">
+          <CardTitle className="text-2xl tracking-tight text-foreground">管理端登录</CardTitle>
+          <CardDescription className="text-sm leading-6 text-muted-foreground">
             使用后台账号和密码进入独立管理端。这里不是会员侧登录入口。
           </CardDescription>
         </div>
@@ -62,7 +62,7 @@ export function AdminLoginForm() {
       <CardContent>
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-800" htmlFor="admin-username">
+            <label className="text-sm font-medium text-foreground" htmlFor="admin-username">
               账号
             </label>
             <Input
@@ -71,11 +71,11 @@ export function AdminLoginForm() {
               onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
               placeholder="输入后台账号"
-              className="h-11 border-neutral-300 bg-white"
+              className="h-11 border-border bg-background"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-800" htmlFor="admin-password">
+            <label className="text-sm font-medium text-foreground" htmlFor="admin-password">
               密码
             </label>
             <Input
@@ -85,11 +85,11 @@ export function AdminLoginForm() {
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
               placeholder="输入后台密码"
-              className="h-11 border-neutral-300 bg-white"
+              className="h-11 border-border bg-background"
             />
           </div>
           {error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-500/20 bg-red-500/12 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {error}
             </div>
           ) : null}

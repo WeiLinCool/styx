@@ -17,8 +17,8 @@ const columns: AdminColumn<AdminOrderRow>[] = [
     label: '订单',
     render: (order) => (
       <div>
-        <div className="font-medium text-neutral-950">{order.orderNumber}</div>
-        <div className="text-xs text-neutral-500">{order.createdAt}</div>
+        <div className="font-medium text-foreground">{order.orderNumber}</div>
+        <div className="text-xs text-muted-foreground">{order.createdAt}</div>
       </div>
     ),
   },
@@ -30,15 +30,15 @@ const columns: AdminColumn<AdminOrderRow>[] = [
   {
     key: 'user',
     label: '用户',
-    render: (order) => <span className="text-sm text-neutral-800">{order.user}</span>,
+    render: (order) => <span className="text-sm text-foreground">{order.user}</span>,
   },
   {
     key: 'item',
     label: '商品 / SKU',
     render: (order) => (
       <div>
-        <div className="text-sm text-neutral-900">{order.item}</div>
-        <div className="text-xs text-neutral-500">{order.sku}</div>
+        <div className="text-sm text-foreground">{order.item}</div>
+        <div className="text-xs text-muted-foreground">{order.sku}</div>
       </div>
     ),
   },
@@ -47,8 +47,8 @@ const columns: AdminColumn<AdminOrderRow>[] = [
     label: '履约',
     render: (order) => (
       <div>
-        <div className="font-medium text-neutral-950">{order.total}</div>
-        <div className="mt-1 text-xs text-neutral-500">{order.fulfillmentNote}</div>
+        <div className="font-medium text-foreground">{order.total}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{order.fulfillmentNote}</div>
       </div>
     ),
   },

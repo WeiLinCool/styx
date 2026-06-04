@@ -23,7 +23,7 @@ export const membershipPlans: MembershipPlan[] = [
     period: '',
     desc: '体验基础石头定制功能',
     icon: Sparkles,
-    iconBg: 'bg-[#f5f5f7]',
+    iconBg: 'bg-secondary',
     features: [
       { text: '石头定制购买', included: true },
       { text: '效果确认与进度反馈', included: true },

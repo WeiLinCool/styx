@@ -27,10 +27,10 @@ const queueLabels: Record<AdminWorkOrderQueueStatus, string> = {
 };
 
 const queueToneClassName: Record<AdminWorkOrderQueueStatus, string> = {
-  pending: 'border-amber-200 bg-amber-50',
-  processing: 'border-blue-200 bg-blue-50',
-  closed: 'border-emerald-200 bg-emerald-50',
-  archived: 'border-neutral-200 bg-white',
+  pending: 'border-warning/30 bg-warning-surface',
+  processing: 'border-info/30 bg-info-surface',
+  closed: 'border-success/30 bg-success-surface',
+  archived: 'border-border bg-card',
 };
 
 function QueueMetricCards({
@@ -46,10 +46,10 @@ function QueueMetricCards({
           className={`rounded-lg border p-4 shadow-sm ${queueToneClassName[status]}`}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-medium uppercase text-neutral-500">{queueLabels[status]}</p>
+            <p className="text-xs font-medium uppercase text-muted-foreground">{queueLabels[status]}</p>
             <StatusBadge value={queueLabels[status]} />
           </div>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">
+          <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
             {counts[status]}
           </p>
         </div>
@@ -71,14 +71,14 @@ export function AdminWorkOrderQueue({ queue }: { queue: AdminActivationWorkOrder
   const totalPages = Math.max(1, Math.ceil(queue.total / queue.pageSize));
 
   return (
-    <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
-      <CardHeader className="gap-3 border-b border-neutral-200 px-4 py-3">
+    <Card className="gap-0 rounded-lg border-border bg-card py-0 shadow-sm">
+      <CardHeader className="gap-3 border-b border-border px-4 py-3">
         <div>
           <div className="flex items-center gap-2">
-            <Layers3 className="h-4 w-4 text-neutral-500" />
-            <CardTitle className="text-base font-semibold text-neutral-950">激活绑定工单</CardTitle>
+            <Layers3 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base font-semibold text-foreground">激活绑定工单</CardTitle>
           </div>
-          <p className="mt-1 text-sm text-neutral-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             按状态管理客服处理队列，办结后可继续归档到历史记录。
           </p>
         </div>
@@ -94,7 +94,7 @@ export function AdminWorkOrderQueue({ queue }: { queue: AdminActivationWorkOrder
               <TabsTrigger key={status} value={status} asChild className="h-8 flex-none px-3">
                 <Link href={buildQueueHref(status, 1)}>
                   {queueLabels[status]}
-                  <span className="ml-1 text-xs text-neutral-500">{queue.counts[status]}</span>
+                  <span className="ml-1 text-xs text-muted-foreground">{queue.counts[status]}</span>
                 </Link>
               </TabsTrigger>
             ))}
@@ -105,18 +105,18 @@ export function AdminWorkOrderQueue({ queue }: { queue: AdminActivationWorkOrder
       <CardContent className="px-4 py-4">
         <div className="grid gap-3">
           {queue.records.length === 0 ? (
-            <div className="rounded-md border border-dashed border-neutral-200 px-3 py-6 text-center text-sm text-neutral-500">
+            <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
               当前状态下暂无激活绑定工单
             </div>
           ) : (
             queue.records.map((workOrder) => (
               <div
                 key={workOrder.id}
-                className="grid gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 lg:grid-cols-[1fr_auto]"
+                className="grid gap-3 rounded-md border border-border bg-secondary/40 p-3 lg:grid-cols-[1fr_auto]"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-neutral-950">
+                    <span className="font-mono text-sm font-semibold text-foreground">
                       {workOrder.code}
                     </span>
                     <StatusBadge value={queueLabels[workOrder.queueStatus]} />
@@ -133,11 +133,11 @@ export function AdminWorkOrderQueue({ queue }: { queue: AdminActivationWorkOrder
                       />
                     ) : null}
                   </div>
-                  <p className="mt-1 text-sm text-neutral-700">{workOrder.userLabel}</p>
-                  <p className="mt-1 text-xs text-neutral-500">
+                  <p className="mt-1 text-sm text-muted-foreground">{workOrder.userLabel}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     设备摘要：{workOrder.deviceSummary}
                   </p>
-                  <p className="mt-1 text-xs text-neutral-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     创建：{workOrder.createdAt} · 过期：{workOrder.expiresAt}
                     {workOrder.closedAt ? ` · 办结：${workOrder.closedAt}` : ''}
                   </p>
@@ -151,8 +151,8 @@ export function AdminWorkOrderQueue({ queue }: { queue: AdminActivationWorkOrder
           )}
         </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-neutral-200 pt-4">
-        <p className="text-xs text-neutral-500">
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
+        <p className="text-xs text-muted-foreground">
           第 {queue.page} / {totalPages} 页，共 {queue.total} 条
         </p>
         <div className="flex gap-2">
@@ -223,14 +223,14 @@ export function AdminPasswordResetWorkOrderQueue({ queue }: { queue: PasswordRes
   const totalPages = Math.max(1, Math.ceil(queue.total / queue.pageSize));
 
   return (
-    <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
-      <CardHeader className="gap-3 border-b border-neutral-200 px-4 py-3">
+    <Card className="gap-0 rounded-lg border-border bg-card py-0 shadow-sm">
+      <CardHeader className="gap-3 border-b border-border px-4 py-3">
         <div>
           <div className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4 text-neutral-500" />
-            <CardTitle className="text-base font-semibold text-neutral-950">密码重置工单</CardTitle>
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base font-semibold text-foreground">密码重置工单</CardTitle>
           </div>
-          <p className="mt-1 text-sm text-neutral-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             客服审核后生成临时密码，用户下次登录必须立即重置正式密码。
           </p>
         </div>
@@ -243,7 +243,7 @@ export function AdminPasswordResetWorkOrderQueue({ queue }: { queue: PasswordRes
               <TabsTrigger key={status} value={status} asChild className="h-8 flex-none px-3">
                 <Link href={buildPasswordResetQueueHref(status, 1)}>
                   {queueLabels[status]}
-                  <span className="ml-1 text-xs text-neutral-500">{queue.counts[status]}</span>
+                  <span className="ml-1 text-xs text-muted-foreground">{queue.counts[status]}</span>
                 </Link>
               </TabsTrigger>
             ))}
@@ -254,14 +254,14 @@ export function AdminPasswordResetWorkOrderQueue({ queue }: { queue: PasswordRes
       <CardContent className="px-4 py-4">
         <div className="grid gap-3">
           {queue.records.length === 0 ? (
-            <div className="rounded-md border border-dashed border-neutral-200 px-3 py-6 text-center text-sm text-neutral-500">
+            <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
               当前状态下暂无密码重置工单
             </div>
           ) : (
             queue.records.map((workOrder) => (
               <div
                 key={workOrder.id}
-                className="grid gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 lg:grid-cols-[1fr_auto]"
+                className="grid gap-3 rounded-md border border-border bg-secondary/40 p-3 lg:grid-cols-[1fr_auto]"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -270,10 +270,10 @@ export function AdminPasswordResetWorkOrderQueue({ queue }: { queue: PasswordRes
                       <StatusBadge value={`临时密码 ${workOrder.temporaryPassword}`} tone="warning" />
                     ) : null}
                   </div>
-                  <p className="mt-1 text-sm text-neutral-700">{workOrder.userLabel}</p>
-                  <p className="mt-1 text-xs text-neutral-500">手机号：{workOrder.phone}</p>
-                  <p className="mt-1 text-xs text-neutral-500">原因：{workOrder.reason}</p>
-                  <p className="mt-1 text-xs text-neutral-500">
+                  <p className="mt-1 text-sm text-muted-foreground">{workOrder.userLabel}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">手机号：{workOrder.phone}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">原因：{workOrder.reason}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     创建：{workOrder.createdAt}
                     {workOrder.processedAt ? ` · 处理：${workOrder.processedAt}` : ''}
                     {workOrder.archivedAt ? ` · 归档：${workOrder.archivedAt}` : ''}
@@ -288,8 +288,8 @@ export function AdminPasswordResetWorkOrderQueue({ queue }: { queue: PasswordRes
           )}
         </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-neutral-200 pt-4">
-        <p className="text-xs text-neutral-500">
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
+        <p className="text-xs text-muted-foreground">
           第 {queue.page} / {totalPages} 页，共 {queue.total} 条
         </p>
         <div className="flex gap-2">

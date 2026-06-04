@@ -12,8 +12,8 @@ export function ProtectedAccountPanel({ accountState, title = '需要激活账�
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-8">
       <div className="mb-4">
-        <h1 className="text-xl font-semibold text-[#1d1d1f]">{title}</h1>
-        <p className="mt-1 text-sm text-[#555555]">完成激活或绑定后即可继续使用当前功能。</p>
+        <h1 className="text-xl font-semibold text-foreground">{title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">完成激活或绑定后即可继续使用当前功能。</p>
       </div>
       <ActivationPanel accountState={accountState} />
     </div>

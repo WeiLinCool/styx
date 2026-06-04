@@ -299,23 +299,23 @@ export default function UserBenefitsPage() {
   useEffect(() => { setVisible(true); }, []);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Nav */}
-      <nav className="fixed top-0 right-0 left-0 z-50 border-b border-black/[0.06] bg-white/80 backdrop-blur-xl">
+      <nav className="fixed top-0 right-0 left-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-4">
-            <Link href="/home" className="flex items-center gap-1 text-[#555555] transition-colors hover:text-[#1d1d1f]">
+            <Link href="/home" className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground">
               <ArrowLeft size={18} />
               <span className="hidden text-sm sm:inline">返回首页</span>
             </Link>
-            <div className="h-4 w-px bg-black/[0.08]" />
-            <span className="text-sm font-semibold text-[#1d1d1f]">用户权益</span>
+            <div className="h-4 w-px bg-border" />
+            <span className="text-sm font-semibold text-foreground">用户权益</span>
           </div>
           <div className="flex items-center gap-3">
             {isLoggedIn && user ? (
               <div className="flex items-center gap-2">
                 <UserAvatar avatar={user.avatar} size={28} userLevel={user.userLevel} onClick={() => router.push('/user-center')} />
-                <span className="hidden text-xs text-[#1d1d1f] sm:inline">{user.nickname}</span>
+                <span className="hidden text-xs text-foreground sm:inline">{user.nickname}</span>
               </div>
             ) : null}
           </div>
@@ -327,13 +327,13 @@ export default function UserBenefitsPage() {
         <div className={`text-center mb-16 transition-all duration-1000 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <div className="inline-flex items-center gap-3 mb-6">
             <div className="h-px w-16 bg-[#1d1d1f]/20" />
-            <span className="text-[#1d1d1f]/30 text-sm">◆</span>
+            <span className="text-foreground/30 text-sm">◆</span>
             <div className="h-px w-16 bg-[#1d1d1f]/20" />
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-[#1d1d1f] mb-4">
+          <h1 className="mb-4 text-4xl font-bold text-foreground md:text-5xl">
             用户权益
           </h1>
-          <p className="text-[#555555] text-lg">
+          <p className="text-lg text-muted-foreground">
             用心做好每一块石头 · 让每一份回忆历久弥新
           </p>
         </div>
@@ -347,27 +347,27 @@ export default function UserBenefitsPage() {
               style={{ transitionDelay: `${i * 80}ms` }}
               onClick={() => setSelectedBenefit(i)}
             >
-              <div className="p-5 rounded-2xl bg-white border border-black/[0.06] backdrop-blur-md group-hover:-translate-y-1 group-hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] group-hover:border-black/[0.12] transition-all duration-300 h-full flex flex-col">
+              <div className="flex h-full flex-col rounded-2xl border border-border bg-card p-5 backdrop-blur-md transition-all duration-300 group-hover:-translate-y-1 group-hover:border-ring group-hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
                 {/* Icon */}
-                <div className="w-12 h-12 rounded-2xl bg-[#f5f5f7] flex items-center justify-center text-xl mb-4">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-xl">
                   {b.emoji}
                 </div>
 
                 {/* Title */}
-                <h3 className="text-lg font-bold text-[#1d1d1f] mb-1.5">
+                <h3 className="mb-1.5 text-lg font-bold text-foreground">
                   {b.title}
                 </h3>
 
                 {/* Divider */}
-                <div className="w-8 h-0.5 bg-[#1d1d1f]/10 rounded-full mb-2.5" />
+                <div className="mb-2.5 h-0.5 w-8 rounded-full bg-foreground/10" />
 
                 {/* Description */}
-                <p className="text-[#555555] text-sm leading-relaxed flex-1">
+                <p className="flex-1 text-sm leading-relaxed text-muted-foreground">
                   {b.desc}
                 </p>
 
                 {/* Click hint */}
-                <div className="flex items-center gap-1 mt-3 text-xs text-[#86868b] group-hover:text-[#1d1d1f] transition-colors">
+                <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground transition-colors group-hover:text-foreground">
                   <span>查看详情</span>
                   <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                 </div>
@@ -380,7 +380,7 @@ export default function UserBenefitsPage() {
         <div className={`text-center mt-16 transition-all duration-1000 delay-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <Link
             href="/shop"
-            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full bg-[#1d1d1f] text-white font-semibold text-base hover:bg-[#333] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-semibold text-primary-foreground transition-all duration-200 hover:scale-[1.02] hover:bg-primary/85 active:scale-[0.98]"
           >
             立即定制
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -397,24 +397,24 @@ export default function UserBenefitsPage() {
           onClick={() => setSelectedBenefit(null)}
         >
           <div
-            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto"
+            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="sticky top-0 bg-white rounded-t-3xl border-b border-black/[0.06] px-6 py-5 flex items-center justify-between">
+            <div className="sticky top-0 flex items-center justify-between rounded-t-3xl border-b border-border bg-card px-6 py-5">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#f5f5f7] flex items-center justify-center text-lg">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-lg">
                   {benefits[selectedBenefit].emoji}
                 </div>
-                <h2 className="text-lg font-bold text-[#1d1d1f]">
+                <h2 className="text-lg font-bold text-foreground">
                   {benefits[selectedBenefit].detail.title}
                 </h2>
               </div>
               <button
                 onClick={() => setSelectedBenefit(null)}
-                className="cursor-pointer w-8 h-8 rounded-full bg-[#f5f5f7] flex items-center justify-center hover:bg-[#eee] transition-colors"
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-secondary transition-colors hover:bg-secondary/80"
               >
-                <X size={16} className="text-[#555555]" />
+                <X size={16} className="text-muted-foreground" />
               </button>
             </div>
 
@@ -422,15 +422,15 @@ export default function UserBenefitsPage() {
             <div className="px-6 py-5 space-y-6">
               {benefits[selectedBenefit].detail.sections.map((section, si) => (
                 <div key={si}>
-                  <h3 className="text-sm font-bold text-[#1d1d1f] mb-3 flex items-center gap-2">
-                    <div className="w-1 h-4 bg-[#1d1d1f] rounded-full" />
+                  <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-foreground">
+                    <div className="h-4 w-1 rounded-full bg-foreground" />
                     {section.subtitle}
                   </h3>
                   <div className="space-y-2">
                     {section.items.map((item, ii) => (
                       <div key={ii} className="flex items-start gap-2.5 text-sm">
-                        <div className="w-1.5 h-1.5 rounded-full bg-[#1d1d1f]/30 mt-1.5 shrink-0" />
-                        <span className="text-[#555555] leading-relaxed">{item}</span>
+                        <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/30" />
+                        <span className="leading-relaxed text-muted-foreground">{item}</span>
                       </div>
                     ))}
                   </div>
@@ -439,16 +439,16 @@ export default function UserBenefitsPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="sticky bottom-0 bg-white border-t border-black/[0.06] rounded-b-3xl px-6 py-4 flex gap-3">
+            <div className="sticky bottom-0 flex gap-3 rounded-b-3xl border-t border-border bg-card px-6 py-4">
               <button
                 onClick={() => setSelectedBenefit(null)}
-                className="cursor-pointer flex-1 py-2.5 rounded-xl border border-black/[0.1] text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors"
+                className="flex-1 cursor-pointer rounded-xl border border-border py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
               >
                 返回
               </button>
               <Link
                 href="/membership"
-                className="flex-1 py-2.5 rounded-xl bg-[#1d1d1f] text-white text-sm font-medium text-center hover:bg-[#333] transition-colors"
+                className="flex-1 rounded-xl bg-primary py-2.5 text-center text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85"
               >
                 升级会员
               </Link>

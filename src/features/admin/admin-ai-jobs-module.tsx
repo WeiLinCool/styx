@@ -37,11 +37,11 @@ import { AdminAiJobActions } from './admin-action-controls';
 import { StatusBadge } from './status-badge';
 
 const metricToneClassName: Record<AdminMetricTone, string> = {
-  default: 'border-neutral-200 bg-white',
-  success: 'border-emerald-200 bg-emerald-50',
-  warning: 'border-amber-200 bg-amber-50',
-  danger: 'border-red-200 bg-red-50',
-  info: 'border-blue-200 bg-blue-50',
+  default: 'border-border bg-card',
+  success: 'border-success/30 bg-success-surface',
+  warning: 'border-warning/30 bg-warning-surface',
+  danger: 'border-destructive/30 bg-destructive/10',
+  info: 'border-info/30 bg-info-surface',
 };
 
 type AiJobColumn = {
@@ -57,11 +57,11 @@ const columns: AiJobColumn[] = [
     label: '任务',
     render: (job) => (
       <div>
-        <div className="font-medium text-neutral-950">{job.type}</div>
-        <div className="text-xs text-neutral-500">{job.user}</div>
+        <div className="font-medium text-foreground">{job.type}</div>
+        <div className="text-xs text-muted-foreground">{job.user}</div>
         <div className="mt-1 flex flex-wrap gap-1.5">
           <StatusBadge value={job.sourceKind} />
-          <span className="text-xs text-neutral-500">{job.createdAt}</span>
+          <span className="text-xs text-muted-foreground">{job.createdAt}</span>
         </div>
       </div>
     ),
@@ -74,15 +74,15 @@ const columns: AiJobColumn[] = [
   {
     key: 'prompt',
     label: '提示词',
-    render: (job) => <div className="max-w-xs text-xs text-neutral-700">{job.promptSummary}</div>,
+    render: (job) => <div className="max-w-xs text-xs text-muted-foreground">{job.promptSummary}</div>,
   },
   {
     key: 'provider',
     label: '供应商',
     render: (job) => (
       <div>
-        <div className="text-sm text-neutral-900">{job.provider}</div>
-        <div className="text-xs text-neutral-500">{job.model}</div>
+        <div className="text-sm text-foreground">{job.provider}</div>
+        <div className="text-xs text-muted-foreground">{job.model}</div>
       </div>
     ),
   },
@@ -91,9 +91,9 @@ const columns: AiJobColumn[] = [
     label: '输出 / 错误',
     render: (job) => (
       <div>
-        <div className="text-xs text-neutral-700">{job.outputReference}</div>
-        <div className="mt-1 text-xs text-neutral-500">{job.errorSummary}</div>
-        <div className="mt-1 text-xs text-neutral-400">{job.duration}</div>
+        <div className="text-xs text-muted-foreground">{job.outputReference}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{job.errorSummary}</div>
+        <div className="mt-1 text-xs text-muted-foreground/80">{job.duration}</div>
       </div>
     ),
   },
@@ -105,7 +105,7 @@ const columns: AiJobColumn[] = [
       job.sourceKind === 'ai_job' ? (
         <AdminAiJobActions jobId={job.id} />
       ) : (
-        <div className="text-xs text-neutral-500">Agent run 记录</div>
+        <div className="text-xs text-muted-foreground">Agent run 记录</div>
       ),
   },
 ];
@@ -224,10 +224,10 @@ export function AdminAiJobsModule({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-neutral-950">AI 任务</h2>
-          <p className="mt-1 text-sm text-neutral-600">
+          <h2 className="text-base font-semibold text-foreground">AI 任务</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             AI 任务与 Agent runs 的类型、用户、prompt、供应商模型、能力快照、输出引用、错误与复跑入口。
           </p>
         </div>
@@ -244,33 +244,33 @@ export function AdminAiJobsModule({
             className={`rounded-lg border p-4 shadow-sm ${metricToneClassName[metric.tone]}`}
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium uppercase text-neutral-500">{metric.label}</p>
+              <p className="text-xs font-medium uppercase text-muted-foreground">{metric.label}</p>
               <StatusBadge value={metric.hint} tone={metric.tone} />
             </div>
-            <p className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
               {metric.value}
             </p>
           </div>
         ))}
       </div>
 
-      <Card className="gap-0 rounded-lg border-neutral-200 bg-white py-0 shadow-sm">
-        <CardHeader className="gap-3 border-b border-neutral-200 px-4 py-3">
+      <Card className="gap-0 rounded-lg border-border bg-card py-0 shadow-sm">
+        <CardHeader className="gap-3 border-b border-border px-4 py-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <CardTitle className="text-sm font-semibold">任务队列</CardTitle>
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 当前显示 {visibleRecords.length}/{records.length} 个任务
               </p>
             </div>
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="relative w-full md:w-96">
-                <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-neutral-400" />
+                <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="搜索提示词、用户、供应商、模型、输出、错误或状态..."
-                  className="h-9 rounded-md border-neutral-200 pl-8 text-sm"
+                  className="h-9 rounded-md border-input bg-background pl-8 text-sm"
                 />
               </div>
               <Button type="button" variant="outline" className="h-9 rounded-md" disabled>
@@ -281,7 +281,7 @@ export function AdminAiJobsModule({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-9 rounded-md text-neutral-600"
+                  className="h-9 rounded-md text-muted-foreground"
                   onClick={resetFilters}
                 >
                   <X className="h-4 w-4" />
@@ -313,7 +313,7 @@ export function AdminAiJobsModule({
 
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
             <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="记录来源" />
               </SelectTrigger>
               <SelectContent>
@@ -324,7 +324,7 @@ export function AdminAiJobsModule({
             </Select>
 
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="任务类型" />
               </SelectTrigger>
               <SelectContent>
@@ -338,7 +338,7 @@ export function AdminAiJobsModule({
             </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="任务状态" />
               </SelectTrigger>
               <SelectContent>
@@ -352,7 +352,7 @@ export function AdminAiJobsModule({
             </Select>
 
             <Select value={providerFilter} onValueChange={setProviderFilter}>
-              <SelectTrigger className="h-9 w-full rounded-md border-neutral-200 bg-white">
+              <SelectTrigger className="h-9 w-full rounded-md border-input bg-background">
                 <SelectValue placeholder="供应商" />
               </SelectTrigger>
               <SelectContent>
@@ -380,7 +380,7 @@ export function AdminAiJobsModule({
             <TableBody>
               {visibleRecords.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center text-neutral-500">
+                  <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
                     当前筛选条件下暂无 AI 任务记录
                   </TableCell>
                 </TableRow>

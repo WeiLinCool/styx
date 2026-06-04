@@ -61,18 +61,18 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-[#1d1d1f]" htmlFor="set-password-phone">
+        <label className="text-sm font-medium text-foreground" htmlFor="set-password-phone">
           手机号
         </label>
         <Input
           id="set-password-phone"
           value={phone}
           readOnly
-          className="h-12 rounded-xl border-[#d2d2d7] bg-[#f5f5f7] text-[#1d1d1f]"
+          className="h-12 rounded-xl border-input bg-secondary text-foreground"
         />
       </div>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-[#1d1d1f]" htmlFor="set-password-password">
+        <label className="text-sm font-medium text-foreground" htmlFor="set-password-password">
           新密码
         </label>
         <Input
@@ -81,11 +81,11 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="请设置 6 位以上密码"
-          className="h-12 rounded-xl border-[#d2d2d7] bg-white text-[#1d1d1f]"
+          className="h-12 rounded-xl border-input bg-background text-foreground placeholder:text-muted-foreground"
         />
       </div>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-[#1d1d1f]" htmlFor="set-password-confirm">
+        <label className="text-sm font-medium text-foreground" htmlFor="set-password-confirm">
           确认密码
         </label>
         <Input
@@ -94,20 +94,20 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
           value={confirmPassword}
           onChange={(event) => setConfirmPassword(event.target.value)}
           placeholder="请再次输入密码"
-          className="h-12 rounded-xl border-[#d2d2d7] bg-white text-[#1d1d1f]"
+          className="h-12 rounded-xl border-input bg-background text-foreground placeholder:text-muted-foreground"
         />
       </div>
       {errorMessage ? (
-        <div className="rounded-xl bg-[#fff1f3] px-4 py-3 text-sm text-[#b42318]">
+        <div className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {errorMessage}
         </div>
       ) : null}
       {successMessage ? (
-        <div className="rounded-xl bg-[#ecfdf3] px-4 py-3 text-sm text-[#027a48]">
+        <div className="rounded-xl bg-success/10 px-4 py-3 text-sm text-success-foreground">
           {successMessage}
         </div>
       ) : null}
-      <Button type="submit" disabled={pending || password.length < 6 || confirmPassword.length < 6} className="h-12 w-full rounded-xl bg-[#1d1d1f] text-white hover:bg-[#333]">
+      <Button type="submit" disabled={pending || password.length < 6 || confirmPassword.length < 6} className="h-12 w-full rounded-xl">
         {pending ? '保存中...' : '保存密码'}
       </Button>
     </form>

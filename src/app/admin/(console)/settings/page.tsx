@@ -17,8 +17,8 @@ const columns: AdminColumn<AdminSettingRow>[] = [
     label: '配置',
     render: (setting) => (
       <div>
-        <div className="font-medium text-neutral-950">{setting.key}</div>
-        <div className="text-xs text-neutral-500">{setting.category}</div>
+        <div className="font-medium text-foreground">{setting.key}</div>
+        <div className="text-xs text-muted-foreground">{setting.category}</div>
       </div>
     ),
   },
@@ -35,20 +35,20 @@ const columns: AdminColumn<AdminSettingRow>[] = [
   {
     key: 'value',
     label: '值摘要',
-    render: (setting) => <div className="max-w-xs text-xs text-neutral-700">{setting.valueSummary}</div>,
+    render: (setting) => <div className="max-w-xs text-xs text-muted-foreground">{setting.valueSummary}</div>,
   },
   {
     key: 'description',
     label: '说明',
-    render: (setting) => <div className="max-w-sm text-xs text-neutral-600">{setting.description}</div>,
+    render: (setting) => <div className="max-w-sm text-xs text-muted-foreground">{setting.description}</div>,
   },
   {
     key: 'audit',
     label: '更新 / 审计',
     render: (setting) => (
       <div>
-        <div className="text-sm text-neutral-900">{setting.updatedBy}</div>
-        <div className="text-xs text-neutral-500">{setting.updatedAt}</div>
+        <div className="text-sm text-foreground">{setting.updatedBy}</div>
+        <div className="text-xs text-muted-foreground">{setting.updatedAt}</div>
       </div>
     ),
   },

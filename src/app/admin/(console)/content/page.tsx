@@ -21,8 +21,8 @@ const columns: AdminColumn<AdminContentRow>[] = [
     label: '内容',
     render: (content) => (
       <div>
-        <div className="font-medium text-neutral-950">{content.title}</div>
-        <div className="text-xs text-neutral-500">{content.slug}</div>
+        <div className="font-medium text-foreground">{content.title}</div>
+        <div className="text-xs text-muted-foreground">{content.slug}</div>
       </div>
     ),
   },
@@ -36,8 +36,8 @@ const columns: AdminColumn<AdminContentRow>[] = [
     label: '类型 / 位置',
     render: (content) => (
       <div>
-        <div className="text-sm text-neutral-900">{content.kind}</div>
-        <div className="text-xs text-neutral-500">{content.placement}</div>
+        <div className="text-sm text-foreground">{content.kind}</div>
+        <div className="text-xs text-muted-foreground">{content.placement}</div>
       </div>
     ),
   },
@@ -46,8 +46,8 @@ const columns: AdminColumn<AdminContentRow>[] = [
     label: '正文 / 媒体',
     render: (content) => (
       <div>
-        <div className="max-w-xs text-xs text-neutral-700">{content.bodySummary}</div>
-        <div className="mt-1 text-xs text-neutral-500">{content.mediaReference}</div>
+        <div className="max-w-xs text-xs text-muted-foreground">{content.bodySummary}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{content.mediaReference}</div>
       </div>
     ),
   },
@@ -56,8 +56,8 @@ const columns: AdminColumn<AdminContentRow>[] = [
     label: '负责人',
     render: (content) => (
       <div>
-        <div className="text-sm text-neutral-900">{content.owner}</div>
-        <div className="text-xs text-neutral-500">{content.updatedAt}</div>
+        <div className="text-sm text-foreground">{content.owner}</div>
+        <div className="text-xs text-muted-foreground">{content.updatedAt}</div>
       </div>
     ),
   },

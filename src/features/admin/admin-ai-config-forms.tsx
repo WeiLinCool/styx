@@ -147,11 +147,11 @@ function BillingSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
+    <div className="rounded-md border border-border bg-secondary/40 p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-medium text-neutral-950">{title}</div>
-          <div className="mt-1 text-xs leading-5 text-neutral-600">{description}</div>
+          <div className="text-sm font-medium text-foreground">{title}</div>
+          <div className="mt-1 text-xs leading-5 text-muted-foreground">{description}</div>
         </div>
         <Switch checked={enabled} onCheckedChange={onEnabledChange} />
       </div>
@@ -208,8 +208,8 @@ function ProviderBillingRulesFields({
   return (
     <div className="space-y-3">
       <div>
-        <div className="text-sm font-medium text-neutral-950">计费规则</div>
-        <div className="mt-1 text-xs leading-5 text-neutral-600">
+        <div className="text-sm font-medium text-foreground">计费规则</div>
+        <div className="mt-1 text-xs leading-5 text-muted-foreground">
           按供应商返回的用量换算积分。关闭某一类后，该供应商不会保存对应任务类型的计费规则。
         </div>
       </div>
@@ -877,7 +877,7 @@ function ModelDialog({
                   <FormItem>
                     <FormLabel>支持对话</FormLabel>
                     <FormControl>
-                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                      <div className="flex h-9 items-center rounded-md border border-border bg-card px-3">
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </div>
                     </FormControl>
@@ -895,7 +895,7 @@ function ModelDialog({
                   <FormItem>
                     <FormLabel>图像生成</FormLabel>
                     <FormControl>
-                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                      <div className="flex h-9 items-center rounded-md border border-border bg-card px-3">
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </div>
                     </FormControl>
@@ -910,7 +910,7 @@ function ModelDialog({
                   <FormItem>
                     <FormLabel>图像编辑</FormLabel>
                     <FormControl>
-                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                      <div className="flex h-9 items-center rounded-md border border-border bg-card px-3">
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </div>
                     </FormControl>
@@ -925,7 +925,7 @@ function ModelDialog({
                   <FormItem>
                     <FormLabel>图像放大</FormLabel>
                     <FormControl>
-                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                      <div className="flex h-9 items-center rounded-md border border-border bg-card px-3">
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </div>
                     </FormControl>
@@ -940,7 +940,7 @@ function ModelDialog({
                   <FormItem>
                     <FormLabel>视频生成</FormLabel>
                     <FormControl>
-                      <div className="flex h-9 items-center rounded-md border border-neutral-200 px-3">
+                      <div className="flex h-9 items-center rounded-md border border-border bg-card px-3">
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </div>
                     </FormControl>
@@ -1121,7 +1121,7 @@ export function AdminAiModelQuickSummary({
   model: AdminAiModelRow;
 }) {
   return (
-    <div className="space-y-1 text-xs text-neutral-600">
+    <div className="space-y-1 text-xs text-muted-foreground">
       <div>{model.providerName}</div>
       <div>{model.model}</div>
       <div>{model.pricingSummary}</div>

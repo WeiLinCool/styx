@@ -335,7 +335,7 @@ export function AdminUserActions({
               <DialogTitle>手动调整积分</DialogTitle>
               <DialogDescription>支持正负调整，变更原因必填，写入真实积分账本与审计日志。</DialogDescription>
             </DialogHeader>
-            <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            <div className="rounded-md bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
               当前积分：{formatCredits(currentPoints)}
             </div>
             <form className="space-y-4" onSubmit={(event) => void handlePointAdjustmentSubmit(event)}>
