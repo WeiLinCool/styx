@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState, useTransition } from 'react';
-import { CheckCircle2, Loader2, MoreHorizontal, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, MoreHorizontal, Plus, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -54,6 +54,11 @@ type AdminInlineAction = {
   body: Record<string, unknown>;
   successMessage: string;
   variant?: 'outline' | 'destructive';
+};
+
+type SplitActions = {
+  primary: AdminInlineAction[];
+  secondary: AdminInlineAction[];
 };
 
 type AdminPointAdjustmentState = {
@@ -232,6 +237,15 @@ function CompactActionMenu({ actions }: { actions: AdminInlineAction[] }) {
   );
 }
 
+function SplitActionButtons({ actions }: { actions: SplitActions }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5">
+      {actions.primary.length > 0 ? <ActionButtons actions={actions.primary} /> : null}
+      {actions.secondary.length > 0 ? <CompactActionMenu actions={actions.secondary} /> : null}
+    </div>
+  );
+}
+
 export function AdminUserActions({
   userId,
   currentPoints,
@@ -248,6 +262,37 @@ export function AdminUserActions({
     reason: '',
   });
   const [, startTransition] = useTransition();
+  const activationActions: SplitActions = {
+    primary: [
+      {
+        label: '调整积分',
+        url: '',
+        body: {},
+        successMessage: '',
+      },
+    ],
+    secondary: [
+      {
+        label: '重发激活',
+        url: `/api/admin/users/${userId}/activation`,
+        body: { purpose: 'account_activation' },
+        successMessage: '激活 token 已重发。',
+      },
+      {
+        label: '直接激活',
+        url: `/api/admin/users/${userId}/activate`,
+        body: { reason: '客服后台操作' },
+        successMessage: '账号已激活。',
+      },
+      {
+        label: '停用',
+        url: `/api/admin/users/${userId}/suspend`,
+        body: { reason: '客服后台操作' },
+        successMessage: '账号已停用。',
+        variant: 'destructive',
+      },
+    ],
+  };
 
   async function handlePointAdjustmentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -277,87 +322,68 @@ export function AdminUserActions({
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <ActionButtons
-        actions={[
-          {
-            label: '重发激活',
-            url: `/api/admin/users/${userId}/activation`,
-            body: { purpose: 'account_activation' },
-            successMessage: '激活 token 已重发。',
-          },
-          {
-            label: '直接激活',
-            url: `/api/admin/users/${userId}/activate`,
-            body: { reason: '客服后台操作' },
-            successMessage: '账号已激活。',
-          },
-          {
-            label: '停用',
-            url: `/api/admin/users/${userId}/suspend`,
-            body: { reason: '客服后台操作' },
-            successMessage: '账号已停用。',
-            variant: 'destructive',
-          },
-        ]}
-      />
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogTrigger asChild>
-          <Button type="button" size="sm" variant="outline" className="h-7 rounded-md px-2 text-xs">
-            调整积分
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>手动调整积分</DialogTitle>
-            <DialogDescription>支持正负调整，变更原因必填，写入真实积分账本与审计日志。</DialogDescription>
-          </DialogHeader>
-          <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-            当前积分：{formatCredits(currentPoints)}
-          </div>
-          <form className="space-y-4" onSubmit={(event) => void handlePointAdjustmentSubmit(event)}>
-            <div className="space-y-2">
-              <Label htmlFor={`admin-points-amount-${userId}`}>调整值</Label>
-              <Input
-                id={`admin-points-amount-${userId}`}
-                type="number"
-                step="0.01"
-                placeholder="例如 100、-50、0.5"
-                value={formState.amount}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, amount: event.target.value }))
-                }
-                disabled={pending}
-              />
+      <div className="flex flex-wrap justify-end gap-1.5">
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button type="button" size="sm" className="h-7 rounded-md px-2 text-xs">
+              <Plus className="h-3.5 w-3.5" />
+              调整积分
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>手动调整积分</DialogTitle>
+              <DialogDescription>支持正负调整，变更原因必填，写入真实积分账本与审计日志。</DialogDescription>
+            </DialogHeader>
+            <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+              当前积分：{formatCredits(currentPoints)}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor={`admin-points-reason-${userId}`}>原因</Label>
-              <Textarea
-                id={`admin-points-reason-${userId}`}
-                placeholder="请填写审计原因，例如：客服补偿、误扣修正。"
-                value={formState.reason}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, reason: event.target.value }))
-                }
-                disabled={pending}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDialogOpen(false)}
-                disabled={pending}
-              >
-                取消
-              </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                提交调整
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+            <form className="space-y-4" onSubmit={(event) => void handlePointAdjustmentSubmit(event)}>
+              <div className="space-y-2">
+                <Label htmlFor={`admin-points-amount-${userId}`}>调整值</Label>
+                <Input
+                  id={`admin-points-amount-${userId}`}
+                  type="number"
+                  step="0.01"
+                  placeholder="例如 100、-50、0.5"
+                  value={formState.amount}
+                  onChange={(event) =>
+                    setFormState((current) => ({ ...current, amount: event.target.value }))
+                  }
+                  disabled={pending}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`admin-points-reason-${userId}`}>原因</Label>
+                <Textarea
+                  id={`admin-points-reason-${userId}`}
+                  placeholder="请填写审计原因，例如：客服补偿、误扣修正。"
+                  value={formState.reason}
+                  onChange={(event) =>
+                    setFormState((current) => ({ ...current, reason: event.target.value }))
+                  }
+                  disabled={pending}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDialogOpen(false)}
+                  disabled={pending}
+                >
+                  取消
+                </Button>
+                <Button type="submit" disabled={pending || !formState.amount.trim() || !formState.reason.trim()}>
+                  {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  提交调整
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        <CompactActionMenu actions={activationActions.secondary} />
+      </div>
       {state ? (
         <div
           className={cn(
@@ -425,11 +451,11 @@ export function AdminActivationWorkOrderActions({
     return null;
   }
 
-  return (
-    <ActionButtons
-      actions={actions}
-    />
-  );
+  if (queueStatus === 'processing' && actions.length > 1) {
+    return <SplitActionButtons actions={{ primary: [actions[0]], secondary: actions.slice(1) }} />;
+  }
+
+  return <ActionButtons actions={actions} />;
 }
 
 export function AdminPasswordResetWorkOrderActions({

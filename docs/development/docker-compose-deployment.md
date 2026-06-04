@@ -655,3 +655,167 @@ docker image prune
 - `docker compose -f docker-compose.prod.yml logs app` 没有 `DATABASE_URL is required`、迁移缺失或端口监听错误。
 - 如果没有 HTTPS，先使用 `STYX_TRANSPORT_SECURITY_MODE=compatible`。
 - 管理端登录前确认 `STYX_ADMIN_ACCOUNTS_JSON` 是合法 JSON，且 `passwordHash` 是 SHA-256。
+
+### 10.12 更新已有旧镜像的操作流程
+
+当 OrbStack 本地已有旧镜像（如 `styx-webui:prod-202606021746`），需要构建新镜像并部署到 CentOS 服务器时，按以下步骤操作：
+
+#### 步骤 1：确认目标服务器 CPU 架构
+
+CentOS 服务器通常是 `x86_64`，因此构建平台使用 `linux/amd64`：
+
+```bash
+export TARGET_PLATFORM=linux/amd64
+export APP_IMAGE=styx-webui:prod-$(date +%Y%m%d%H%M)
+```
+
+#### 步骤 2：本地构建新镜像
+
+在项目根目录执行：
+
+```bash
+docker buildx build \
+  --platform "$TARGET_PLATFORM" \
+  -t "$APP_IMAGE" \
+  --load \
+  .
+```
+
+确认镜像存在：
+
+```bash
+docker image ls "$APP_IMAGE"
+```
+
+#### 步骤 3：导出新镜像
+
+创建导出目录（如已存在则跳过）：
+
+```bash
+mkdir -p deploy-artifacts
+```
+
+导出应用镜像：
+
+```bash
+docker save "$APP_IMAGE" | gzip > "deploy-artifacts/${APP_IMAGE//:/-}.tar.gz"
+```
+
+记录镜像名：
+
+```bash
+echo "$APP_IMAGE" > deploy-artifacts/app-image.txt
+```
+
+#### 步骤 4：更新 docker-compose.prod.yml
+
+编辑 `deploy-artifacts/docker-compose.prod.yml`，将 `app` 服务的 `image` 字段改为新镜像名：
+
+```yaml
+services:
+  app:
+    image: styx-webui:prod-YYYYMMDDHHMM  # 替换为新镜像名
+    ...
+```
+
+#### 步骤 5：上传到 CentOS 服务器
+
+上传新镜像包和更新的 Compose 文件：
+
+```bash
+scp deploy-artifacts/${APP_IMAGE//:/-}.tar.gz root@服务器IP:/opt/styx/
+scp deploy-artifacts/docker-compose.prod.yml root@服务器IP:/opt/styx/docker-compose.prod.yml
+```
+
+#### 步骤 6：CentOS 服务器加载新镜像
+
+进入部署目录：
+
+```bash
+cd /opt/styx
+```
+
+加载新镜像：
+
+```bash
+gunzip -c styx-webui-prod-*.tar.gz | docker load
+```
+
+确认镜像已加载：
+
+```bash
+docker image ls | grep styx-webui
+```
+
+#### 步骤 7：备份数据库并执行迁移
+
+升级前备份数据库：
+
+```bash
+docker compose -f docker-compose.prod.yml exec postgres pg_dump -U styx -d styx > styx-backup-$(date +%Y%m%d%H%M).sql
+```
+
+执行数据库迁移：
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm app pnpm db:migrate
+```
+
+#### 步骤 8：重启应用
+
+重启应用容器以使用新镜像：
+
+```bash
+docker compose -f docker-compose.prod.yml up -d app
+```
+
+查看状态和日志：
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f app
+```
+
+#### 步骤 9：清理旧镜像
+
+确认新容器正常运行后，清理不用的旧应用镜像：
+
+```bash
+docker image prune
+```
+
+或手动删除特定旧镜像：
+
+```bash
+docker rmi styx-webui:prod-旧时间戳
+```
+
+#### 本次构建的新镜像
+
+本次构建的新镜像名为：`styx-webui:prod-202606032332`
+
+对应的镜像包文件：`styx-webui-prod-202606032332.tar.gz`（约 255MB）
+
+操作命令汇总：
+
+```bash
+# 本地构建和导出
+export TARGET_PLATFORM=linux/amd64
+export APP_IMAGE=styx-webui:prod-202606032332
+
+docker buildx build --platform "$TARGET_PLATFORM" -t "$APP_IMAGE" --load .
+mkdir -p deploy-artifacts
+docker save "$APP_IMAGE" | gzip > "deploy-artifacts/${APP_IMAGE//:/-}.tar.gz"
+echo "$APP_IMAGE" > deploy-artifacts/app-image.txt
+
+# 上传到服务器（假设服务器 IP 为 YOUR_SERVER_IP）
+scp deploy-artifacts/styx-webui-prod-202606032332.tar.gz root@YOUR_SERVER_IP:/opt/styx/
+
+# 服务器端操作
+cd /opt/styx
+gunzip -c styx-webui-prod-202606032332.tar.gz | docker load
+docker compose -f docker-compose.prod.yml exec postgres pg_dump -U styx -d styx > styx-backup-$(date +%Y%m%d%H%M).sql
+docker compose -f docker-compose.prod.yml run --rm app pnpm db:migrate
+docker compose -f docker-compose.prod.yml up -d app
+docker compose -f docker-compose.prod.yml logs -f app
+```

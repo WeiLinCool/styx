@@ -1,11 +1,17 @@
 'use client';
 
-import { Boxes } from 'lucide-react';
+import { Boxes, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMemo, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 import { ADMIN_NAV_ITEMS } from './admin-nav-config';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 type AdminNavProps = {
   className?: string;
@@ -21,10 +27,17 @@ export function isAdminNavItemActive(href: string, pathname: string) {
 
 export function AdminNav({ className }: AdminNavProps) {
   const pathname = usePathname();
+  const grouped = useMemo(() => {
+    const core = ADMIN_NAV_ITEMS.filter((item) => item.group !== 'more');
+    const more = ADMIN_NAV_ITEMS.filter((item) => item.group === 'more');
+    return { core, more };
+  }, []);
+  const hasMoreActive = grouped.more.some((item) => isAdminNavItemActive(item.href, pathname));
+  const [moreOpen, setMoreOpen] = useState(hasMoreActive);
 
   return (
     <nav className={cn('flex flex-col gap-1', className)} aria-label="后台导航">
-      {ADMIN_NAV_ITEMS.map((item) => {
+      {grouped.core.map((item) => {
         const Icon = item.icon;
         const isActive = isAdminNavItemActive(item.href, pathname);
 
@@ -42,6 +55,46 @@ export function AdminNav({ className }: AdminNavProps) {
           </Link>
         );
       })}
+
+      <Collapsible open={moreOpen} onOpenChange={setMoreOpen} className="mt-1">
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              'flex h-9 w-full items-center justify-between rounded-md px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950',
+              hasMoreActive && 'bg-neutral-100 text-neutral-950',
+            )}
+          >
+            <span>更多</span>
+            <ChevronDown
+              className={cn(
+                'h-4 w-4 shrink-0 transition-transform',
+                moreOpen && 'rotate-180',
+              )}
+            />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-1 space-y-1">
+          {grouped.more.map((item) => {
+            const Icon = item.icon;
+            const isActive = isAdminNavItemActive(item.href, pathname);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950',
+                  isActive && 'bg-neutral-950 text-white hover:bg-neutral-900 hover:text-white',
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </Link>
+            );
+          })}
+        </CollapsibleContent>
+      </Collapsible>
 
       <div className="mt-3 rounded-md border border-neutral-200 bg-white p-3 text-xs text-neutral-600">
         <div className="mb-2 flex items-center gap-2 font-semibold text-neutral-950">

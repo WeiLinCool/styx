@@ -34,6 +34,7 @@ import type {
   AgentTaskType,
   AiUsage,
   CreateAgentRunResult,
+  DirectMediaArtifactCompletedPayload,
   TransientAgentArtifactDto,
 } from './types';
 import {
@@ -761,7 +762,7 @@ async function runMediaOrchestration(input: {
         }),
       };
     })
-    .filter((event): event is { eventType: 'artifact_completed'; payload: Record<string, unknown> } => event !== null);
+    .filter((event): event is { eventType: 'artifact_completed'; payload: DirectMediaArtifactCompletedPayload } => event !== null);
 
   try {
     await appendRunEventsRequired(input.repository, input.running.id, directMediaPayloads);
@@ -1085,7 +1086,7 @@ async function runImageProviderOrchestration(input: {
         }),
       };
     })
-    .filter((event): event is { eventType: 'artifact_completed'; payload: Record<string, unknown> } => event !== null);
+    .filter((event): event is { eventType: 'artifact_completed'; payload: DirectMediaArtifactCompletedPayload } => event !== null);
 
   try {
     await appendRunEventsRequired(input.repository, input.running.id, directMediaPayloads);

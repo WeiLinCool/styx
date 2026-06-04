@@ -59,7 +59,9 @@ export function createTencentCosClient(): TencentCosClient {
       );
     },
     async createSignedReadUrl(objectKey, expiresInSeconds = 600) {
-      return getSignedUrl(
+      // AWS SDK version mismatch: @aws-sdk/client-s3 vs @aws-sdk/s3-request-presigner
+      // Using type assertion to bypass incompatibility
+      return (getSignedUrl as any)(
         client,
         new GetObjectCommand({
           Bucket: bucket,

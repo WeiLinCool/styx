@@ -7,6 +7,7 @@ import {
   adjustUserPointsByAdmin,
   createMemoryUserStorageRepository,
   createUserStorageQuota,
+  getAdminUserCreditBalance,
 } from './users';
 
 test('adjustUserPointsByAdmin writes signed ledger adjustment and audit event', async () => {
@@ -112,6 +113,80 @@ test('adjustUserPointsByAdmin rejects unknown users before touching ledger', asy
       error.code === 'account_not_found' &&
       /Account not found/i.test(error.message),
   );
+});
+
+test('getAdminUserCreditBalance combines legacy credits with ledger sum', async () => {
+  const balance = await getAdminUserCreditBalance(
+    {
+      id: 'user-1',
+      metadata: {
+        credits: 1280,
+      },
+    } as never,
+    {
+      readLegacyCreditBalance(metadata) {
+        return typeof metadata?.credits === 'number' ? metadata.credits : 0;
+      },
+      async sumLedgerAmount(userId) {
+        assert.equal(userId, 'user-1');
+        return 4.5;
+      },
+    },
+  );
+
+  assert.equal(balance, 1284.5);
+});
+
+test('getAdminUserCreditBalance parses legacy string credits before combining ledger sum', async () => {
+  const balance = await getAdminUserCreditBalance(
+    {
+      id: 'user-1',
+      metadata: {
+        credits: '1,280',
+      },
+    } as never,
+    {
+      readLegacyCreditBalance(metadata) {
+        const credits = metadata?.credits;
+        if (typeof credits === 'number') {
+          return credits;
+        }
+
+        if (typeof credits === 'string') {
+          const parsed = Number(credits.replaceAll(',', '').trim());
+          return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        return 0;
+      },
+      async sumLedgerAmount(userId) {
+        assert.equal(userId, 'user-1');
+        return 4.5;
+      },
+    },
+  );
+
+  assert.equal(balance, 1284.5);
+});
+
+test('getAdminUserCreditBalance accepts numeric-string ledger totals', async () => {
+  const balance = await getAdminUserCreditBalance(
+    {
+      id: 'user-1',
+      metadata: {},
+    } as never,
+    {
+      readLegacyCreditBalance() {
+        return 0;
+      },
+      async sumLedgerAmount(userId) {
+        assert.equal(userId, 'user-1');
+        return Number('11283.50');
+      },
+    },
+  );
+
+  assert.equal(balance, 11283.5);
 });
 
 test('storage quota owner rejects saves that exceed remaining bytes', () => {

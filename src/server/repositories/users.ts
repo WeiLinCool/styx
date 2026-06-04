@@ -11,7 +11,7 @@ import {
   type UserIdentityRecord,
 } from '@/server/auth/account-types';
 import { recordAuditEvent } from '@/server/audit/audit-service';
-import { adjustCredits } from '@/server/billing/credits';
+import { adjustCredits, calculateCreditBalance } from '@/server/billing/credits';
 import { db, schema } from '@/server/db';
 import { formatCredits } from '@/lib/credits';
 import {
@@ -475,11 +475,65 @@ type AdminAdjustUserPointsDeps = {
   createIdempotencyKey: () => string;
 };
 
+type AdminUserCreditBalanceDeps = {
+  readLegacyCreditBalance: (
+    metadata: Record<string, unknown> | undefined,
+  ) => number;
+  sumLedgerAmount: (userId: string) => Promise<number>;
+};
+
+function parsePositiveCreditValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.replaceAll(',', '').trim());
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
+function parseCreditValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.replaceAll(',', '').trim());
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
 const defaultAdminAdjustUserPointsDeps: AdminAdjustUserPointsDeps = {
   getUserById,
   adjustCredits,
   recordAuditEvent,
   createIdempotencyKey: () => `admin-points-adjustment:${randomUUID()}`,
+};
+
+const defaultAdminUserCreditBalanceDeps: AdminUserCreditBalanceDeps = {
+  readLegacyCreditBalance(metadata) {
+    return parsePositiveCreditValue(metadata?.credits);
+  },
+  async sumLedgerAmount(userId) {
+    const database = requireDb();
+    const [ledgerBalance] = await database
+      .select({
+        amount: sql<number>`coalesce(sum(${schema.creditLedgerEntries.amount}), 0)::numeric`,
+      })
+      .from(schema.creditLedgerEntries)
+      .where(eq(schema.creditLedgerEntries.userId, userId));
+
+    return parseCreditValue(ledgerBalance?.amount);
+  },
 };
 
 export async function adjustUserPointsByAdmin(
@@ -529,6 +583,19 @@ export async function adjustUserPointsByAdmin(
     balanceAfter: adjustment.balanceAfter,
     reason,
   };
+}
+
+export async function getAdminUserCreditBalance(
+  user: Pick<typeof schema.users.$inferSelect, 'id' | 'metadata'>,
+  deps: AdminUserCreditBalanceDeps = defaultAdminUserCreditBalanceDeps,
+) {
+  const legacyCredits = deps.readLegacyCreditBalance(user.metadata ?? undefined);
+  const ledgerAmount = await deps.sumLedgerAmount(user.id);
+
+  return calculateCreditBalance({
+    legacyCredits,
+    ledgerAmount,
+  });
 }
 
 function getSeedUsers(): AdminModuleData<AdminUserRow> {
@@ -610,24 +677,6 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
         sql<number>`count(distinct ${schema.userIdentities.id}) filter (where ${schema.userIdentities.isVerified} = true)::int`,
       membership:
         sql<string>`coalesce(max(${schema.membershipPlans.name}), '免费 / 无有效方案')`,
-      points: sql<number>`(
-        coalesce((
-          select sum(
-            case
-              when jsonb_typeof(u.metadata -> 'credits') = 'number'
-                then (u.metadata ->> 'credits')::numeric
-              else 0
-            end
-          )
-          from ${schema.users} as u
-          where u.id = ${schema.users.id}
-        ), 0) +
-        coalesce((
-          select sum(${schema.creditLedgerEntries.amount})
-          from ${schema.creditLedgerEntries}
-          where ${schema.creditLedgerEntries.userId} = ${schema.users.id}
-        ), 0)
-      )::numeric`,
       lastAuditAction: sql<string>`coalesce(max(${schema.auditEvents.action}), 'none')`,
     })
     .from(schema.users)
@@ -642,29 +691,31 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
     .orderBy(desc(schema.users.createdAt))
     .limit(50);
 
-  const records = rows.map((row): AdminUserRow => ({
-    id: row.user.id,
-    displayName: row.user.displayName,
-    primaryContact: row.user.email ?? row.user.phone ?? '未绑定',
-    accountState: row.user.accountState,
-    identities: [
-      `${row.identityCount} 个身份`,
-      `${row.verifiedIdentityCount} 个已验证`,
-    ],
-    bindingState:
-      row.verifiedIdentityCount > 0
-        ? `${row.verifiedIdentityCount} 个已验证身份`
-        : '需要激活',
-    membership: row.membership,
-    points: row.points,
-    activity:
-      row.user.accountState === 'active'
-        ? '账号已激活'
-        : metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
-    auditSummary: `最近操作: ${row.lastAuditAction}`,
-    createdAt: formatIso(row.user.createdAt),
-    actions: ['重发激活', '直接激活', '停用', '归档'],
-  }));
+  const records = await Promise.all(
+    rows.map(async (row): Promise<AdminUserRow> => ({
+      id: row.user.id,
+      displayName: row.user.displayName,
+      primaryContact: row.user.email ?? row.user.phone ?? '未绑定',
+      accountState: row.user.accountState,
+      identities: [
+        `${row.identityCount} 个身份`,
+        `${row.verifiedIdentityCount} 个已验证`,
+      ],
+      bindingState:
+        row.verifiedIdentityCount > 0
+          ? `${row.verifiedIdentityCount} 个已验证身份`
+          : '需要激活',
+      membership: row.membership,
+      points: await getAdminUserCreditBalance(row.user),
+      activity:
+        row.user.accountState === 'active'
+          ? '账号已激活'
+          : metadataText(row.user.metadata, 'activity', '数据库暂无活动摘要'),
+      auditSummary: `最近操作: ${row.lastAuditAction}`,
+      createdAt: formatIso(row.user.createdAt),
+      actions: ['重发激活', '直接激活', '停用', '归档'],
+    })),
+  );
 
   const pendingCount = records.filter((record) => record.accountState === 'pending_activation').length;
   const activeCount = records.filter((record) => record.accountState === 'active').length;
