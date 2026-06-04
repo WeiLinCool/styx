@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
+import { invalidateUserPermissionCacheForPlan } from '@/server/auth/permission-service';
 import { scheduleMembershipPlanDraftInDb } from '@/server/repositories/membership-plan-versions';
 
 const bodySchema = z.object({
@@ -23,13 +24,13 @@ export async function POST(
     const body = await parseMembershipScheduleBody(request);
     const { planId } = await context.params;
 
-    return NextResponse.json(
-      await scheduleMembershipPlanDraftInDb(planId, {
-        effectiveFrom: body.effectiveFrom,
-        actorId: session.user.id,
-      }),
-      { status: 200 },
-    );
+    const scheduled = await scheduleMembershipPlanDraftInDb(planId, {
+      effectiveFrom: body.effectiveFrom,
+      actorId: session.user.id,
+    });
+    await invalidateUserPermissionCacheForPlan(planId);
+
+    return NextResponse.json(scheduled, { status: 200 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

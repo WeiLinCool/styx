@@ -1,4 +1,8 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import {
+  listDevAuthBypassCookieNames,
+  listSessionCookieNames,
+} from '@/lib/auth-cookie-names';
 
 import {
   AccountDomainError,
@@ -11,7 +15,6 @@ import {
   listAdminRoles,
 } from '@/server/repositories/users';
 
-const SESSION_COOKIE_NAMES = ['styx_session', 'nfai_auth_token'];
 export const DEV_AUTH_BYPASS_COOKIE = 'styx_dev_auth_disabled';
 
 export function shouldUseDevelopmentAuth(input: {
@@ -48,7 +51,9 @@ function getExplicitDevelopmentUserId(devAuthBlocked: boolean) {
 
 export async function resolveSession(): Promise<SessionContext> {
   const cookieStore = await cookies();
-  const sessionToken = SESSION_COOKIE_NAMES.map((name) => cookieStore.get(name)?.value).find(
+  const requestHeaders = await headers();
+  const host = requestHeaders.get('host');
+  const sessionToken = listSessionCookieNames(host).map((name) => cookieStore.get(name)?.value).find(
     Boolean,
   );
 
@@ -69,7 +74,7 @@ export async function resolveSession(): Promise<SessionContext> {
   }
 
   const developmentUserId = getExplicitDevelopmentUserId(
-    cookieStore.get(DEV_AUTH_BYPASS_COOKIE)?.value === 'true',
+    listDevAuthBypassCookieNames(host).some((name) => cookieStore.get(name)?.value === 'true'),
   );
   if (developmentUserId) {
     const user = await getUserById(developmentUserId);

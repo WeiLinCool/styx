@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
+import { invalidateUserPermissionCacheForPlan } from '@/server/auth/permission-service';
 import {
   listMembershipPlanPermissionWorkspaceByPlanId,
   replaceMembershipPlanPermissionBindingsByPlanId,
@@ -68,6 +69,7 @@ export async function PUT(
           planId,
           permissionCodes: body.permissionCodes,
         });
+        await invalidateUserPermissionCacheForPlan(planId);
 
         return NextResponse.json(result, { status: 200 });
       },

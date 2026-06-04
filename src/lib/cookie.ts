@@ -1,6 +1,11 @@
 import Cookies from 'js-cookie';
 import type { AccountState } from '@/server/auth/account-types';
 import { getAccountState } from '@/features/account/account-state';
+import {
+  getScopedAuthCookieName,
+  getScopedUserCookieName,
+  legacyAuthCookieNames,
+} from './auth-cookie-names';
 
 export type UserLevel = 'free' | 'vip' | 'svip' | 'partner' | 'core_partner';
 
@@ -16,19 +21,43 @@ export interface UserInfo {
   accountState?: AccountState;
   mustResetPassword?: boolean;
   points: number;
-  permissionCodes?: string[];
 }
 
-const USER_COOKIE_KEY = 'nfai_user';
-const AUTH_COOKIE_KEY = 'nfai_auth_token';
 const SPLASH_COOKIE_KEY = 'nfai_splash_visited';
 
+function getCurrentCookieScopeHost() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.location.host;
+}
+
 export function saveUserToCookie(user: UserInfo): void {
-  Cookies.set(USER_COOKIE_KEY, JSON.stringify({ ...user, accountState: getAccountState(user) }), { expires: 30, sameSite: 'lax' });
+  const scopedUserCookieName = getScopedUserCookieName(getCurrentCookieScopeHost());
+  const payload = JSON.stringify({
+    id: user.id,
+    nickname: user.nickname,
+    avatar: user.avatar,
+    email: user.email,
+    phone: user.phone,
+    membershipLevel: user.membershipLevel,
+    membershipExpiry: user.membershipExpiry,
+    userLevel: user.userLevel,
+    accountState: getAccountState(user),
+    mustResetPassword: user.mustResetPassword,
+    points: user.points,
+  } satisfies UserInfo);
+
+  Cookies.set(scopedUserCookieName, payload, { expires: 30, sameSite: 'lax' });
+  if (scopedUserCookieName !== legacyAuthCookieNames.user) {
+    Cookies.remove(legacyAuthCookieNames.user);
+  }
 }
 
 export function getUserFromCookie(): UserInfo | null {
-  const data = Cookies.get(USER_COOKIE_KEY);
+  const scopedUserCookieName = getScopedUserCookieName(getCurrentCookieScopeHost());
+  const data = Cookies.get(scopedUserCookieName) ?? Cookies.get(legacyAuthCookieNames.user);
   if (!data) return null;
   try {
     const user = JSON.parse(data) as UserInfo;
@@ -39,16 +68,24 @@ export function getUserFromCookie(): UserInfo | null {
 }
 
 export function removeUserFromCookie(): void {
-  Cookies.remove(USER_COOKIE_KEY);
-  Cookies.remove(AUTH_COOKIE_KEY);
+  const host = getCurrentCookieScopeHost();
+  Cookies.remove(getScopedUserCookieName(host));
+  Cookies.remove(getScopedAuthCookieName(host));
+  Cookies.remove(legacyAuthCookieNames.user);
+  Cookies.remove(legacyAuthCookieNames.auth);
 }
 
 export function setAuthToken(token: string): void {
-  Cookies.set(AUTH_COOKIE_KEY, token, { expires: 30, sameSite: 'lax' });
+  const scopedAuthCookieName = getScopedAuthCookieName(getCurrentCookieScopeHost());
+  Cookies.set(scopedAuthCookieName, token, { expires: 30, sameSite: 'lax' });
+  if (scopedAuthCookieName !== legacyAuthCookieNames.auth) {
+    Cookies.remove(legacyAuthCookieNames.auth);
+  }
 }
 
 export function getAuthToken(): string | undefined {
-  return Cookies.get(AUTH_COOKIE_KEY);
+  const host = getCurrentCookieScopeHost();
+  return Cookies.get(getScopedAuthCookieName(host)) ?? Cookies.get(legacyAuthCookieNames.auth);
 }
 
 export function setSplashVisited(): void {

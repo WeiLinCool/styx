@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import { db, schema } from '@/server/db';
+import { invalidateUserPermissionCache } from '@/server/auth/permission-service';
 import { qualifyReferralReward } from '@/server/repositories/admin-mutations';
 import {
   membershipPlanVersionRepository,
@@ -33,6 +34,22 @@ export function getSubscriptionApprovalOrderAction(status: string) {
   throw new AccountDomainError(
     'invalid_subscription_work_order_transition',
     `Linked subscription order cannot be approved from status ${status}.`,
+    409,
+  );
+}
+
+export function getSubscriptionApprovalQueueAction(status: SubscriptionWorkOrderStatus) {
+  if (status === 'pending') {
+    return { requiresProcessingClaim: true };
+  }
+
+  if (status === 'processing') {
+    return { requiresProcessingClaim: false };
+  }
+
+  throw new AccountDomainError(
+    'invalid_subscription_work_order_transition',
+    `Only pending or processing subscription work orders can be approved, received ${status}.`,
     409,
   );
 }
@@ -370,7 +387,7 @@ export async function approveSubscriptionWorkOrder(input: {
     return current.workOrder;
   }
 
-  assertSubscriptionWorkOrderTransition(current.workOrder.status, 'closed');
+  getSubscriptionApprovalQueueAction(current.workOrder.status);
 
   const approvalTime = new Date();
   const updated = await database.transaction(async (tx) => {
@@ -392,6 +409,40 @@ export async function approveSubscriptionWorkOrder(input: {
 
     if (shouldTreatApprovalAsIdempotent({ status: latest.status, result: latest.result })) {
       return latest;
+    }
+
+    const latestApprovalQueueAction = getSubscriptionApprovalQueueAction(latest.status);
+
+    if (latestApprovalQueueAction.requiresProcessingClaim) {
+      const [claimed] = await tx
+        .update(schema.subscriptionWorkOrders)
+        .set({
+          status: 'processing',
+          processorAdminId: input.actorId,
+          processedAt: approvalTime,
+          updatedAt: approvalTime,
+        })
+        .where(
+          and(
+            eq(schema.subscriptionWorkOrders.id, latest.id),
+            eq(schema.subscriptionWorkOrders.status, 'pending'),
+            isNull(schema.subscriptionWorkOrders.result),
+          ),
+        )
+        .returning();
+
+      if (!claimed) {
+        throw new AccountDomainError(
+          'invalid_subscription_work_order_transition',
+          'Subscription work order can no longer be claimed for approval.',
+          409,
+        );
+      }
+
+      latest.status = claimed.status;
+      latest.processorAdminId = claimed.processorAdminId;
+      latest.processedAt = claimed.processedAt;
+      latest.updatedAt = claimed.updatedAt;
     }
 
     if (latest.status !== 'processing') {
@@ -513,6 +564,7 @@ export async function approveSubscriptionWorkOrder(input: {
     referredUserId: updated.userId,
     qualifiedBy: 'membership_activated',
   });
+  await invalidateUserPermissionCache(updated.userId);
 
   await recordAuditEvent({
     actorId: input.actorId,

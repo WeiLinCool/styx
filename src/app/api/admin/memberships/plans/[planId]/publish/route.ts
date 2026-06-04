@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
+import { invalidateUserPermissionCacheForPlan } from '@/server/auth/permission-service';
 import { publishMembershipPlanDraftInDb } from '@/server/repositories/membership-plan-versions';
 
 export async function POST(
@@ -12,10 +13,10 @@ export async function POST(
     const session = await requireAdmin();
     const { planId } = await context.params;
 
-    return NextResponse.json(
-      await publishMembershipPlanDraftInDb(planId, { actorId: session.user.id }),
-      { status: 200 },
-    );
+    const published = await publishMembershipPlanDraftInDb(planId, { actorId: session.user.id });
+    await invalidateUserPermissionCacheForPlan(planId);
+
+    return NextResponse.json(published, { status: 200 });
   } catch (error) {
     const response = accountErrorToResponse(error);
     return NextResponse.json(response.body, { status: response.status });

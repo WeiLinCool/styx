@@ -7,6 +7,11 @@ import { DEV_AUTH_BYPASS_COOKIE } from '@/server/auth/session';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { createJsonResponse } from '@/server/encrypted-response';
 import { consumeCheckinVerificationToken } from '@/server/points/checkin-challenge';
+import {
+  getScopedAuthCookieName,
+  getScopedDevAuthBypassCookieName,
+  legacyAuthCookieNames,
+} from '@/lib/auth-cookie-names';
 
 type RegisterOrLoginUserInput = Parameters<typeof registerOrLoginUser>[0];
 type RegisterOrLoginUserResult = Awaited<ReturnType<typeof registerOrLoginUser>>;
@@ -94,8 +99,21 @@ export function createLoginHandler(
             },
           });
 
-          response.cookies.set('nfai_auth_token', result.token, {
+          const host = new URL(request.url).host;
+          response.cookies.set(getScopedAuthCookieName(host), result.token, {
             expires: result.expiresAt,
+            httpOnly: true,
+            sameSite: 'lax',
+            path: '/',
+          });
+          response.cookies.set(legacyAuthCookieNames.auth, '', {
+            expires: new Date(0),
+            httpOnly: true,
+            sameSite: 'lax',
+            path: '/',
+          });
+          response.cookies.set(getScopedDevAuthBypassCookieName(host), '', {
+            expires: new Date(0),
             httpOnly: true,
             sameSite: 'lax',
             path: '/',

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
+import { invalidateUserPermissionCacheForVersion } from '@/server/auth/permission-service';
 import { createOrUpdateMembershipPlanDraft } from '@/server/repositories/membership-plan-versions';
 import { syncPermissionResourcesFromCatalog } from '@/server/repositories/permission-resources';
 
@@ -40,8 +41,7 @@ export async function PUT(
     const body = await parseMembershipDraftBody(request);
     const { planId } = await context.params;
 
-    return NextResponse.json(
-      await createOrUpdateMembershipPlanDraft({
+    const draft = await createOrUpdateMembershipPlanDraft({
         planId,
         displayName: body.displayName,
         description: body.description,
@@ -51,9 +51,10 @@ export async function PUT(
         changeSummary: body.changeSummary,
         benefits: body.benefits,
         permissionCodes: body.permissionCodes,
-      }),
-      { status: 200 },
-    );
+      });
+    await invalidateUserPermissionCacheForVersion(draft.id);
+
+    return NextResponse.json(draft, { status: 200 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

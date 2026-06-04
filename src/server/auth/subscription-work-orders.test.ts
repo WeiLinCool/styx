@@ -6,6 +6,7 @@ import {
   assertSubscriptionWorkOrderTransition,
   buildMembershipEntitlementRecord,
   getEntitlementWindow,
+  getSubscriptionApprovalQueueAction,
   getSubscriptionApprovalOrderAction,
 } from './subscription-work-orders';
 
@@ -71,6 +72,15 @@ test('unsupported one-time membership period is rejected', () => {
 test('subscription approval accepts already-paid linked orders without requiring another paid transition', () => {
   assert.deepEqual(getSubscriptionApprovalOrderAction('pending'), { shouldMarkPaid: true });
   assert.deepEqual(getSubscriptionApprovalOrderAction('paid'), { shouldMarkPaid: false });
+});
+
+test('subscription approval can claim pending work orders before closing them', () => {
+  assert.deepEqual(getSubscriptionApprovalQueueAction('pending'), {
+    requiresProcessingClaim: true,
+  });
+  assert.deepEqual(getSubscriptionApprovalQueueAction('processing'), {
+    requiresProcessingClaim: false,
+  });
 });
 
 test('subscription approval rejects linked orders outside pending/paid states', () => {

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import { ADMIN_SESSION_COOKIE, getAdminAuthSecret } from './admin-auth-config';
@@ -10,6 +10,7 @@ import {
   readAdminSessionToken,
 } from './admin-session-token';
 import { getUserById, listAdminRoles } from '@/server/repositories/users';
+import { listAdminSessionCookieNames } from '@/lib/auth-cookie-names';
 
 const DEFAULT_ADMIN_SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 
@@ -167,7 +168,9 @@ export async function resolveAdminSession(): Promise<SessionContext> {
   }
 
   const cookieStore = await cookies();
-  const token = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
+  const requestHeaders = await headers();
+  const host = requestHeaders.get('host');
+  const token = listAdminSessionCookieNames(host).map((name) => cookieStore.get(name)?.value).find(Boolean);
   if (!token) {
     return {
       authenticated: false,
