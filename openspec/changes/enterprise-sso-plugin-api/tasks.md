@@ -18,9 +18,9 @@
 
 ## 4. OpenAI-Compatible Gateway
 
-- [ ] 4.1 Add `GET /api/llm/v1/models` protected by bearer validation and `models:proxy`/`all` entitlement checks.
-- [ ] 4.2 Add `POST /api/llm/v1/chat/completions` with OpenAI-compatible payload validation, model entitlement enforcement, non-streaming response support, and no upstream provider call on authorization failure.
-- [ ] 4.3 Add streaming SSE support for `stream=true`, including OpenAI-compatible `data:` chunks and `data: [DONE]`.
+- [x] 4.1 Add `GET /api/llm/v1/models` protected by bearer validation and `models:proxy`/`all` entitlement checks.
+- [x] 4.2 Add `POST /api/llm/v1/chat/completions` with OpenAI-compatible payload validation, model entitlement enforcement, non-streaming response support, and no upstream provider call on authorization failure.
+- [x] 4.3 Add streaming SSE support for `stream=true`, including OpenAI-compatible `data:` chunks and `data: [DONE]`.
 
 ## 5. Verification
 

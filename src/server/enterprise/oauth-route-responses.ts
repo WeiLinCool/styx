@@ -5,6 +5,7 @@ import {
   resolveEnterpriseBearerToken,
   type ResolvedEnterpriseBearerToken,
 } from '@/server/enterprise/oauth';
+import { EnterpriseGatewayError } from '@/server/enterprise/gateway';
 
 export function createOAuthErrorJsonResponse(error: EnterpriseOAuthError) {
   const headers =
@@ -32,6 +33,16 @@ function escapeAuthHeaderValue(value: string) {
 export function enterpriseRouteErrorToJsonResponse(error: unknown) {
   if (error instanceof EnterpriseOAuthError) {
     return createOAuthErrorJsonResponse(error);
+  }
+
+  if (error instanceof EnterpriseGatewayError) {
+    return NextResponse.json(
+      {
+        error: error.code,
+        error_description: error.message,
+      },
+      { status: error.status },
+    );
   }
 
   return NextResponse.json(
