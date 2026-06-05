@@ -151,6 +151,30 @@ export type AgentRunBillingDto = {
   ledgerEntryId: string | null;
 };
 
+export type AgentConversationFolderDto = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentConversationDto = {
+  id: string;
+  folderId: string | null;
+  title: string;
+  autoTitle: string;
+  titleOverride: string | null;
+  lastRunAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentConversationListDto = {
+  folders: AgentConversationFolderDto[];
+  conversations: AgentConversationDto[];
+};
+
 export type AgentRunStreamEventType =
   | 'run_started'
   | 'assistant_message_started'

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import {
+  AgentConversationNotFoundError,
   AgentRunModelRequiredError,
   createAgentRunService,
 } from '@/server/agent/run-service';
@@ -173,6 +174,10 @@ export function serviceErrorToResponse(error: unknown) {
 
   if (error instanceof ModelNotAvailableError) {
     return jsonError('model_not_available', error.message, 404);
+  }
+
+  if (error instanceof AgentConversationNotFoundError) {
+    return jsonError('conversation_not_found', error.message, 404);
   }
 
   if (error instanceof ModelEntitlementRequiredError) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AgentRunModelRequiredError } from '@/server/agent/run-service';
+import { AgentConversationNotFoundError, AgentRunModelRequiredError } from '@/server/agent/run-service';
 import {
   ProviderConfigurationError,
   ProviderRequestError,
@@ -226,6 +226,14 @@ test('serviceErrorToResponse maps model availability errors to stable API code',
 
   assert.equal(response.status, 404);
   assert.equal(body.error.code, 'model_not_available');
+});
+
+test('serviceErrorToResponse maps missing conversation to stable API code', async () => {
+  const response = serviceErrorToResponse(new AgentConversationNotFoundError());
+  const body = await response.json();
+
+  assert.equal(response.status, 404);
+  assert.equal(body.error.code, 'conversation_not_found');
 });
 
 test('serviceErrorToResponse maps model entitlement errors to stable API code', async () => {

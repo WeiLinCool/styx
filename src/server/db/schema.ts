@@ -1079,6 +1079,47 @@ export const aiModelEntitlementRequirements = pgTable(
   ],
 );
 
+export const agentConversationFolders = pgTable(
+  'agent_conversation_folders',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('agent_conversation_folders_user_deleted_idx').on(table.userId, table.deletedAt),
+    index('agent_conversation_folders_user_sort_idx').on(table.userId, table.sortOrder),
+  ],
+);
+
+export const agentConversations = pgTable(
+  'agent_conversations',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id').references(() => agentConversationFolders.id, { onDelete: 'set null' }),
+    autoTitle: text('auto_title').notNull(),
+    titleOverride: text('title_override'),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('agent_conversations_user_deleted_idx').on(table.userId, table.deletedAt),
+    index('agent_conversations_user_folder_idx').on(table.userId, table.folderId),
+    index('agent_conversations_user_last_run_idx').on(table.userId, table.lastRunAt),
+  ],
+);
+
 export const agentRuns = pgTable(
   'agent_runs',
   {

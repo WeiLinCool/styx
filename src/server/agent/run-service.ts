@@ -26,6 +26,10 @@ import {
 import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
 import type { AgentArtifactInput, AgentRunRepository } from '@/server/repositories/agent-runs';
 import {
+  getAgentConversationRepository,
+  type AgentConversationRepository,
+} from '@/server/repositories/agent-conversations';
+import {
   resolveChatModelForUser as defaultResolveChatModelForUser,
   resolveImageModelForUser as defaultResolveImageModelForUser,
   resolveVideoModelForUser as defaultResolveVideoModelForUser,
@@ -74,6 +78,13 @@ export class AgentRunImageSourceRequiredError extends Error {
   }
 }
 
+export class AgentConversationNotFoundError extends Error {
+  constructor() {
+    super('Agent conversation was not found.');
+    this.name = 'AgentConversationNotFoundError';
+  }
+}
+
 type DebitForAgentRun = (input: {
   userId: string;
   runId: string;
@@ -104,6 +115,7 @@ type MediaRunScheduler = {
 
 export type CreateAgentRunServiceInput = {
   repository: AgentRunRepository;
+  conversationRepository?: AgentConversationRepository;
   runtime: PiAgentRuntime;
   resolveChatModelForUser?: (userId: string, modelId: string) => Promise<ResolvedChatModel>;
   assertCanAffordMinimum?: (
@@ -706,6 +718,7 @@ function providerArtifact(input: {
 
 export function createAgentRunService({
   repository,
+  conversationRepository = getAgentConversationRepository(),
   runtime,
   resolveChatModelForUser = defaultResolveChatModelForUser,
   assertCanAffordMinimum = defaultAssertCanAffordMinimum,
@@ -724,6 +737,7 @@ export function createAgentRunService({
         return createAndRunChatAgentRun({
           input,
           repository,
+          conversationRepository,
           resolveChatModelForUser,
           assertCanAffordMinimum,
           createChatProviderAdapter,
@@ -1145,6 +1159,7 @@ async function syncVideoAgentRunForUser(input: {
 async function createAndRunChatAgentRun(input: {
   input: CreateAndRunAgentRunInput;
   repository: AgentRunRepository;
+  conversationRepository: AgentConversationRepository;
   resolveChatModelForUser: (userId: string, modelId: string) => Promise<ResolvedChatModel>;
   assertCanAffordMinimum: (
     userId: string,
@@ -1159,6 +1174,16 @@ async function createAndRunChatAgentRun(input: {
     throw new AgentRunModelRequiredError();
   }
 
+  const conversation = request.conversationId
+    ? await input.conversationRepository.getConversationForUser(request.conversationId, request.userId)
+    : await input.conversationRepository.createConversation({
+        userId: request.userId,
+        autoTitle: request.prompt,
+      });
+  if (!conversation) {
+    throw new AgentConversationNotFoundError();
+  }
+
   const model = await resolveChatModelForUser(request.userId, request.modelId);
   await assertCanAffordMinimum(request.userId, model.pricing);
 
@@ -1166,7 +1191,7 @@ async function createAndRunChatAgentRun(input: {
   const runInput = toChatRunInput(request.input, model);
   const created = await repository.createRun({
     userId: request.userId,
-    conversationId: request.conversationId,
+    conversationId: conversation.id,
     taskType: request.taskType,
     prompt: request.prompt,
     provider: capabilitySnapshot.provider,

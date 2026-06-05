@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { createDeleteAgentRunResponse, serviceErrorToResponse } from '../route';
 import { requireActiveAccount } from '@/server/auth/guards';
 import { getAgentRunRepository } from '@/server/repositories/agent-runs';
+import { getAgentConversationRepository } from '@/server/repositories/agent-conversations';
 import { runProtectedMutation } from '@/server/api-request-guard';
 
 type RouteContext = {
@@ -44,6 +45,12 @@ export async function DELETE(request: Request, context: RouteContext) {
       },
       async () => {
         const run = await getAgentRunRepository().softDeleteRunForUser(runId, session.user.id);
+        if (run) {
+          await getAgentConversationRepository().softDeleteConversation(
+            run.conversationId,
+            session.user.id,
+          );
+        }
 
         return createDeleteAgentRunResponse(run);
       },

@@ -3,12 +3,15 @@ import test from 'node:test';
 
 import {
   AgentRuntimeApiError,
+  createConversationFolder,
   createAgentRun,
   createAgentRunEventsUrl,
+  deleteConversationFolder,
   disableMediaShare,
   enableMediaShare,
   getAgentRunDetail,
   getPublicSharedMedia,
+  listAgentConversations,
   listSavedMediaAssets,
   listImageModels,
   listChatModels,
@@ -21,6 +24,8 @@ import {
   syncAgentRun,
   selectImageModelId,
   selectChatModelId,
+  updateAgentConversation,
+  updateConversationFolder,
   uploadUserMedia,
   type ChatModelOption,
   type ImageModelOption,
@@ -210,6 +215,95 @@ test('listVideoModels returns empty array for an empty payload', async () => {
     assert.deepEqual(models, []);
   } finally {
     restore();
+  }
+});
+
+test('listAgentConversations returns folders and conversations', async () => {
+  const restore = installFetchMock({
+    folders: [
+      {
+        id: 'folder-1',
+        name: '项目',
+        sortOrder: 0,
+        createdAt: '2026-06-05T00:00:00.000Z',
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    ],
+    conversations: [
+      {
+        id: 'conversation-1',
+        folderId: 'folder-1',
+        title: '自定义标题',
+        autoTitle: '自动标题',
+        titleOverride: '自定义标题',
+        lastRunAt: '2026-06-05T00:00:00.000Z',
+        createdAt: '2026-06-05T00:00:00.000Z',
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    ],
+  });
+
+  try {
+    const list = await listAgentConversations();
+    assert.equal(list.folders[0]?.name, '项目');
+    assert.equal(list.conversations[0]?.title, '自定义标题');
+  } finally {
+    restore();
+  }
+});
+
+test('conversation organization mutations return typed payloads', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; method: string | undefined }> = [];
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method });
+    if (String(input).includes('/conversation-folders') && init?.method !== 'DELETE') {
+      return Response.json({
+        folder: {
+          id: 'folder-1',
+          name: '项目',
+          sortOrder: 0,
+          createdAt: '2026-06-05T00:00:00.000Z',
+          updatedAt: '2026-06-05T00:00:00.000Z',
+        },
+      });
+    }
+    if (String(input).includes('/conversation-folders') && init?.method === 'DELETE') {
+      return Response.json({
+        folder: {
+          id: 'folder-1',
+          name: '项目',
+          sortOrder: 0,
+          createdAt: '2026-06-05T00:00:00.000Z',
+          updatedAt: '2026-06-05T00:00:00.000Z',
+        },
+      });
+    }
+    return Response.json({
+      conversation: {
+        id: 'conversation-1',
+        folderId: null,
+        title: '标题',
+        autoTitle: '自动标题',
+        titleOverride: '标题',
+        lastRunAt: '2026-06-05T00:00:00.000Z',
+        createdAt: '2026-06-05T00:00:00.000Z',
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    });
+  };
+
+  try {
+    assert.equal((await createConversationFolder('项目')).name, '项目');
+    assert.equal((await updateConversationFolder('folder-1', '项目')).id, 'folder-1');
+    assert.equal((await deleteConversationFolder('folder-1')).id, 'folder-1');
+    assert.equal((await updateAgentConversation('conversation-1', { titleOverride: '标题' })).title, '标题');
+    assert.deepEqual(
+      requests.map((request) => request.method),
+      ['POST', 'PATCH', 'DELETE', 'PATCH'],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

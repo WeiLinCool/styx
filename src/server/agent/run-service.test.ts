@@ -6,6 +6,7 @@ import {
   type AgentRunEventInput,
   type AgentRunRepository,
 } from '@/server/repositories/agent-runs';
+import { createMemoryAgentConversationRepository } from '@/server/repositories/agent-conversations';
 import {
   ModelEntitlementRequiredError,
   ModelNotAvailableError,
@@ -1116,9 +1117,11 @@ test('image run strips source image data URL from durable input before provider 
 
 test('createAndRunAgentRun routes chat through selected model adapter and bills usage', async () => {
   const repository = createMemoryAgentRunRepository();
+  const conversationRepository = createMemoryAgentConversationRepository();
   const debits: Array<{ amount: number; runId: string; modelCode: string }> = [];
   const service = createAgentRunService({
     repository,
+    conversationRepository,
     runtime: createDeterministicPiRuntime(),
     resolveChatModelForUser: async (_userId, modelId) => {
       assert.equal(modelId, 'seed-model-free');
@@ -1157,8 +1160,12 @@ test('createAndRunAgentRun routes chat through selected model adapter and bills 
     input: {},
   });
   const run = result.run;
+  const conversations = await conversationRepository.listForUser('user-1');
 
   assert.equal(run.status, 'running');
+  assert.equal(conversations.conversations.length, 1);
+  assert.equal(conversations.conversations[0]?.id, run.conversationId);
+  assert.equal(conversations.conversations[0]?.title, 'hello');
   await new Promise((resolve) => setTimeout(resolve, 0));
   const completed = await repository.getRunForUser(run.id, 'user-1');
   assert.equal(completed?.status, 'succeeded');
@@ -1170,6 +1177,50 @@ test('createAndRunAgentRun routes chat through selected model adapter and bills 
   assert.equal(completed?.billing?.ledgerEntryId, 'ledger-1');
   assert.equal(debits.length, 1);
   assert.equal(debits[0].modelCode, 'dev-free-chat');
+});
+
+test('createAndRunAgentRun rejects chat conversation ids not owned by user', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const conversationRepository = createMemoryAgentConversationRepository();
+  const bobConversation = await conversationRepository.createConversation({
+    userId: 'user-bob',
+    autoTitle: 'Bob chat',
+  });
+  let providerCalled = false;
+  const service = createAgentRunService({
+    repository,
+    conversationRepository,
+    runtime: createDeterministicPiRuntime(),
+    resolveChatModelForUser: async () => resolvedChatModel(),
+    assertCanAffordMinimum: async () => {},
+    createChatProviderAdapter: () => ({
+      kind: 'development',
+      async runChat() {
+        providerCalled = true;
+        return {
+          finalMessage: 'should not run',
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          rawMetadata: {},
+        };
+      },
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-alice',
+        taskType: 'chat',
+        prompt: 'hello',
+        modelId: 'seed-model-free',
+        conversationId: bobConversation.id,
+        input: {},
+      }),
+    /Agent conversation was not found/,
+  );
+
+  assert.equal(providerCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-alice'), []);
 });
 
 test('createAndRunAgentRun prefers provider billing rules over legacy model pricing for chat usage', async () => {

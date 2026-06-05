@@ -5,3 +5,7 @@ export function formatChatModelLabel(modelName?: string | null) {
 
   return modelName;
 }
+
+export function formatChatUsageLabel(_usage?: unknown) {
+  return undefined;
+}

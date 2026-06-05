@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, type FormEvent } from 'react';
+import { useState, useRef, useEffect, type DragEvent, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Send, Bot, Menu, X, Lightbulb, Code, PenTool, Globe, ArrowLeft, Trash2,
+  Send, Bot, Menu, X, Lightbulb, Code, PenTool, Globe, ArrowLeft, Trash2, Folder, Pencil, Check, Plus, GripVertical,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { formatCredits } from '@/lib/credits';
@@ -15,22 +15,32 @@ import {
   AgentRuntimeApiError,
   createAgentRun,
   createAgentRunEventsUrl,
+  createConversationFolder,
   deleteAgentRun,
+  deleteConversationFolder,
   getAgentRunDetail,
+  listAgentConversations,
   listAgentRuns,
   listChatModels,
   selectChatModelId,
+  updateAgentConversation,
+  updateConversationFolder,
   type ChatModelOption,
 } from '@/features/public/agent-runtime-client';
 import { ChatMarkdown } from '@/features/public/chat-markdown';
-import { formatChatModelLabel } from '@/features/public/chat-message-format';
+import { formatChatModelLabel, formatChatUsageLabel } from '@/features/public/chat-message-format';
 import {
   buildUnavailableModelMessage,
   createInitialModelAvailabilityState,
   nextReloadKey,
   reconcileSelectedModelId,
 } from '@/features/public/model-availability';
-import type { AgentRunDetailDto, AgentRunDto } from '@/server/agent/types';
+import type {
+  AgentConversationDto,
+  AgentConversationFolderDto,
+  AgentRunDetailDto,
+  AgentRunDto,
+} from '@/server/agent/types';
 
 interface Message {
   id: string;
@@ -46,9 +56,14 @@ interface Message {
 type ConversationSummary = {
   id: string;
   conversationId: string;
+  folderId: string | null;
   title: string;
   time: string;
 };
+
+type ConversationDropTarget = 'uncategorized' | string | null;
+
+const uncategorizedMoveValue = '__uncategorized__';
 
 const quickPrompts = [
   { icon: Lightbulb, text: '帮我设计一个石头印画作品' },
@@ -65,6 +80,8 @@ export default function ChatPage() {
   const { user, isLoggedIn, openLoginModal } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [recentRuns, setRecentRuns] = useState<AgentRunDto[]>([]);
+  const [conversationFolders, setConversationFolders] = useState<AgentConversationFolderDto[]>([]);
+  const [conversationHistory, setConversationHistory] = useState<AgentConversationDto[]>([]);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [modelAvailability, setModelAvailability] = useState(createInitialModelAvailabilityState());
@@ -77,8 +94,25 @@ export default function ChatPage() {
   const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(() => new Set());
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [mutatingHistoryId, setMutatingHistoryId] = useState<string | null>(null);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [creatingFolderName, setCreatingFolderName] = useState('');
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editingFolderName, setEditingFolderName] = useState('');
+  const [editingConversationId, setEditingConversationId] = useState<string | null>(null);
+  const [editingConversationTitle, setEditingConversationTitle] = useState('');
+  const [movingConversationId, setMovingConversationId] = useState<string | null>(null);
+  const [draggingConversationId, setDraggingConversationId] = useState<string | null>(null);
+  const [activeDropTarget, setActiveDropTarget] = useState<ConversationDropTarget>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgCounter = useRef(0);
+
+  async function refreshConversationHistory() {
+    const history = await listAgentConversations();
+    setConversationFolders(history.folders);
+    setConversationHistory(history.conversations);
+    return history;
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -87,6 +121,8 @@ export default function ChatPage() {
   useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user)) {
       setRecentRuns([]);
+      setConversationFolders([]);
+      setConversationHistory([]);
       setChatModels([]);
       setSelectedModelId(null);
       setMessages([]);
@@ -104,7 +140,11 @@ export default function ChatPage() {
       }));
 
       try {
-        const [models, runs] = await Promise.all([listChatModels(), listAgentRuns()]);
+        const [models, runs, history] = await Promise.all([
+          listChatModels(),
+          listAgentRuns(),
+          listAgentConversations(),
+        ]);
         if (cancelled) {
           return;
         }
@@ -115,9 +155,13 @@ export default function ChatPage() {
         const nextModelId = reconcileSelectedModelId(models, storedModelId);
 
         setChatModels(models);
+        setConversationFolders(history.folders);
+        setConversationHistory(history.conversations);
         setSelectedModelId(nextModelId);
         if (models.length === 0) {
           setRecentRuns([]);
+          setConversationFolders([]);
+          setConversationHistory([]);
           setSelectedRunId(null);
           setMessages([]);
           setModelAvailability((current) => ({
@@ -203,8 +247,13 @@ export default function ChatPage() {
       if (finalMessage) {
         setMessages((prev) => reconcileAssistantFinalMessage(prev, streamRunId, finalMessage));
       }
-      const runs = await listAgentRuns();
+      const [detail, runs] = await Promise.all([
+        getAgentRunDetail(streamRunId),
+        listAgentRuns(),
+      ]);
+      setMessages((prev) => reconcileAssistantRunMetadata(prev, detail.run));
       setRecentRuns(runs.filter((run) => run.taskType === 'chat'));
+      await refreshConversationHistory();
       eventSource.close();
       setStreamRunId((current) => (current === streamRunId ? null : current));
     });
@@ -216,6 +265,7 @@ export default function ChatPage() {
       setMessages((prev) => removeAssistantLoadingMessage(prev, streamRunId));
       const runs = await listAgentRuns();
       setRecentRuns(runs.filter((run) => run.taskType === 'chat'));
+      await refreshConversationHistory();
       eventSource.close();
       setStreamRunId((current) => (current === streamRunId ? null : current));
     });
@@ -294,6 +344,142 @@ export default function ChatPage() {
       }
       return next;
     });
+  };
+
+  const handleCreateFolder = async (event?: FormEvent) => {
+    event?.preventDefault();
+    const name = creatingFolderName.trim();
+    if (!name) {
+      return;
+    }
+    setMutatingHistoryId('folder:new');
+    setErrorMessage(null);
+    try {
+      await createConversationFolder(name);
+      setCreatingFolderName('');
+      setIsCreatingFolder(false);
+      await refreshConversationHistory();
+    } catch (error) {
+      setErrorMessage(readRuntimeErrorMessage(error, '文件夹创建失败'));
+    } finally {
+      setMutatingHistoryId(null);
+    }
+  };
+
+  const startRenameFolder = (folder: AgentConversationFolderDto) => {
+    setEditingFolderId(folder.id);
+    setEditingFolderName(folder.name);
+    setMovingConversationId(null);
+  };
+
+  const cancelRenameFolder = () => {
+    setEditingFolderId(null);
+    setEditingFolderName('');
+  };
+
+  const handleRenameFolder = async (folder: AgentConversationFolderDto, event?: FormEvent) => {
+    event?.preventDefault();
+    const name = editingFolderName.trim();
+    if (!name) {
+      return;
+    }
+    if (name === folder.name) {
+      cancelRenameFolder();
+      return;
+    }
+    setMutatingHistoryId(folder.id);
+    setErrorMessage(null);
+    try {
+      await updateConversationFolder(folder.id, name);
+      cancelRenameFolder();
+      await refreshConversationHistory();
+    } catch (error) {
+      setErrorMessage(readRuntimeErrorMessage(error, '文件夹重命名失败'));
+    } finally {
+      setMutatingHistoryId(null);
+    }
+  };
+
+  const handleDeleteFolder = async (folder: AgentConversationFolderDto) => {
+    if (!window.confirm('删除文件夹后，对话会回到未分类，确认删除吗？')) {
+      return;
+    }
+    setMutatingHistoryId(folder.id);
+    setErrorMessage(null);
+    try {
+      await deleteConversationFolder(folder.id);
+      await refreshConversationHistory();
+    } catch (error) {
+      setErrorMessage(readRuntimeErrorMessage(error, '文件夹删除失败'));
+    } finally {
+      setMutatingHistoryId(null);
+    }
+  };
+
+  const startRenameConversation = (conversation: ConversationSummary) => {
+    setEditingConversationId(conversation.conversationId);
+    setEditingConversationTitle(conversation.title);
+    setMovingConversationId(null);
+  };
+
+  const cancelRenameConversation = () => {
+    setEditingConversationId(null);
+    setEditingConversationTitle('');
+  };
+
+  const handleRenameConversation = async (conversation: ConversationSummary, event?: FormEvent) => {
+    event?.preventDefault();
+    const title = editingConversationTitle.trim();
+    if (title === conversation.title) {
+      cancelRenameConversation();
+      return;
+    }
+    setMutatingHistoryId(conversation.conversationId);
+    setErrorMessage(null);
+    try {
+      await updateAgentConversation(conversation.conversationId, {
+        titleOverride: title ? title : null,
+      });
+      cancelRenameConversation();
+      await refreshConversationHistory();
+    } catch (error) {
+      setErrorMessage(readRuntimeErrorMessage(error, '对话重命名失败'));
+    } finally {
+      setMutatingHistoryId(null);
+    }
+  };
+
+  const handleMoveConversation = async (conversation: ConversationSummary, folderId: string | null) => {
+    if (conversation.folderId === folderId) {
+      setMovingConversationId(null);
+      return;
+    }
+    setMutatingHistoryId(conversation.conversationId);
+    setErrorMessage(null);
+    try {
+      await updateAgentConversation(conversation.conversationId, { folderId });
+      setMovingConversationId(null);
+      await refreshConversationHistory();
+    } catch (error) {
+      setErrorMessage(readRuntimeErrorMessage(error, '对话移动失败'));
+    } finally {
+      setMutatingHistoryId(null);
+    }
+  };
+
+  const handleDropConversation = async (event: DragEvent, folderId: string | null) => {
+    event.preventDefault();
+    const conversationId = event.dataTransfer.getData('text/plain') || draggingConversationId;
+    setActiveDropTarget(null);
+    setDraggingConversationId(null);
+    if (!conversationId) {
+      return;
+    }
+    const conversation = conversations.find((item) => item.conversationId === conversationId);
+    if (!conversation) {
+      return;
+    }
+    await handleMoveConversation(conversation, folderId);
   };
 
   const handleDeleteRun = async (runId: string) => {
@@ -379,6 +565,7 @@ export default function ChatPage() {
       setStreamRunId(run.id);
       const detail = await getAgentRunDetail(run.id);
       setRecentRuns((prev) => [detail.run, ...prev.filter((item) => item.id !== detail.run.id)]);
+      await refreshConversationHistory();
       setMessages((prev) => ensureAssistantLoadingMessage(mergeCreatedRunMessages(prev, detail), run.id));
     } catch (error) {
       setErrorMessage(readRuntimeErrorMessage(error, 'AI 请求失败'));
@@ -387,7 +574,21 @@ export default function ChatPage() {
     }
   };
 
-  const conversations = getConversationHeads(recentRuns).map(mapRunToConversationSummary);
+  const conversations = conversationHistory.length > 0
+    ? conversationHistory
+        .map((conversation) => mapConversationToSummary(conversation, recentRuns))
+        .filter((conversation): conversation is ConversationSummary => conversation !== null)
+    : getConversationHeads(recentRuns).map(mapRunToConversationSummary);
+  const uncategorizedConversations = conversations.filter((conversation) => conversation.folderId === null);
+  const conversationsByFolder = new Map<string, ConversationSummary[]>();
+  for (const conversation of conversations) {
+    if (!conversation.folderId) {
+      continue;
+    }
+    const items = conversationsByFolder.get(conversation.folderId) ?? [];
+    items.push(conversation);
+    conversationsByFolder.set(conversation.folderId, items);
+  }
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -414,30 +615,177 @@ export default function ChatPage() {
             >
               + 新对话
             </button>
-            {conversations.map((c) => (
+            <div className="mb-3">
+              {isCreatingFolder ? (
+                <form onSubmit={(event) => void handleCreateFolder(event)} className="flex items-center gap-1 rounded-xl border border-ring bg-card p-1.5">
+                  <Folder size={15} className="ml-1 shrink-0 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={creatingFolderName}
+                    onChange={(event) => setCreatingFolderName(event.target.value)}
+                    placeholder="文件夹名称"
+                    disabled={mutatingHistoryId === 'folder:new'}
+                    className="min-w-0 flex-1 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                  <button
+                    type="submit"
+                    aria-label="创建文件夹"
+                    disabled={mutatingHistoryId === 'folder:new' || !creatingFolderName.trim()}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="取消创建文件夹"
+                    onClick={() => {
+                      setIsCreatingFolder(false);
+                      setCreatingFolderName('');
+                    }}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    <X size={14} />
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingFolder(true)}
+                  className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
+                >
+                  <Plus size={15} />
+                  新建文件夹
+                </button>
+              )}
+            </div>
+            <ConversationGroup
+              title="未分类"
+              conversations={uncategorizedConversations}
+              folderId={null}
+              folders={conversationFolders}
+              selectedRunId={selectedRunId}
+              deletingRunId={deletingRunId}
+              mutatingHistoryId={mutatingHistoryId}
+              draggingConversationId={draggingConversationId}
+              activeDropTarget={activeDropTarget}
+              editingConversationId={editingConversationId}
+              editingConversationTitle={editingConversationTitle}
+              movingConversationId={movingConversationId}
+              onSelect={setSelectedRunId}
+              onStartRename={startRenameConversation}
+              onCancelRename={cancelRenameConversation}
+              onRename={(conversation, event) => void handleRenameConversation(conversation, event)}
+              onEditingConversationTitleChange={setEditingConversationTitle}
+              onStartMove={(conversation) => {
+                setMovingConversationId((current) => current === conversation.conversationId ? null : conversation.conversationId);
+                setEditingConversationId(null);
+              }}
+              onMove={(conversation, folderId) => void handleMoveConversation(conversation, folderId)}
+              onCancelMove={() => setMovingConversationId(null)}
+              onDelete={handleDeleteRun}
+              onDragStart={(conversationId) => setDraggingConversationId(conversationId)}
+              onDragEnd={() => {
+                setDraggingConversationId(null);
+                setActiveDropTarget(null);
+              }}
+              onDragEnter={() => setActiveDropTarget('uncategorized')}
+              onDrop={(event) => void handleDropConversation(event, null)}
+            />
+            {conversationFolders.map((folder) => (
               <div
-                key={c.id}
-                className={`group mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] ${
-                  selectedRunId === c.id ? 'bg-card text-foreground shadow-sm' : 'text-foreground'
+                key={folder.id}
+                className={`mt-3 rounded-xl transition-colors ${
+                  activeDropTarget === folder.id ? 'bg-card/80 ring-1 ring-ring' : ''
                 }`}
+                onDragOver={(event) => event.preventDefault()}
+                onDragEnter={() => setActiveDropTarget(folder.id)}
+                onDrop={(event) => void handleDropConversation(event, folder.id)}
               >
-                <button
-                  type="button"
-                  onClick={() => setSelectedRunId(c.id)}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className="block truncate font-medium">{c.title}</span>
-                  <span className="block text-[11px] text-muted-foreground">{c.time}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label="删除历史记录"
-                  disabled={deletingRunId === c.id}
-                  onClick={() => void handleDeleteRun(c.id)}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 group-hover:opacity-100"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {editingFolderId === folder.id ? (
+                  <form onSubmit={(event) => void handleRenameFolder(folder, event)} className="mb-1 flex items-center gap-1 rounded-lg border border-ring bg-card p-1.5">
+                    <Folder size={13} className="ml-1 shrink-0 text-muted-foreground" />
+                    <input
+                      autoFocus
+                      value={editingFolderName}
+                      onChange={(event) => setEditingFolderName(event.target.value)}
+                      disabled={mutatingHistoryId === folder.id}
+                      className="min-w-0 flex-1 bg-transparent px-1 text-xs font-medium text-foreground outline-none"
+                    />
+                    <button
+                      type="submit"
+                      aria-label="保存文件夹名称"
+                      disabled={mutatingHistoryId === folder.id || !editingFolderName.trim()}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Check size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="取消重命名文件夹"
+                      onClick={cancelRenameFolder}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    >
+                      <X size={12} />
+                    </button>
+                  </form>
+                ) : (
+                  <div className="mb-1 flex items-center gap-1 px-2 text-[11px] font-medium uppercase text-muted-foreground">
+                    <Folder size={13} />
+                    <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                    <button
+                      type="button"
+                      aria-label="重命名文件夹"
+                      disabled={mutatingHistoryId === folder.id}
+                      onClick={() => startRenameFolder(folder)}
+                      className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-card disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="删除文件夹"
+                      disabled={mutatingHistoryId === folder.id}
+                      onClick={() => void handleDeleteFolder(folder)}
+                      className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+                <ConversationGroup
+                  title={folder.name}
+                  hideTitle
+                  conversations={conversationsByFolder.get(folder.id) ?? []}
+                  folderId={folder.id}
+                  folders={conversationFolders}
+                  selectedRunId={selectedRunId}
+                  deletingRunId={deletingRunId}
+                  mutatingHistoryId={mutatingHistoryId}
+                  draggingConversationId={draggingConversationId}
+                  activeDropTarget={activeDropTarget}
+                  editingConversationId={editingConversationId}
+                  editingConversationTitle={editingConversationTitle}
+                  movingConversationId={movingConversationId}
+                  onSelect={setSelectedRunId}
+                  onStartRename={startRenameConversation}
+                  onCancelRename={cancelRenameConversation}
+                  onRename={(conversation, event) => void handleRenameConversation(conversation, event)}
+                  onEditingConversationTitleChange={setEditingConversationTitle}
+                  onStartMove={(conversation) => {
+                    setMovingConversationId((current) => current === conversation.conversationId ? null : conversation.conversationId);
+                    setEditingConversationId(null);
+                  }}
+                  onMove={(conversation, folderId) => void handleMoveConversation(conversation, folderId)}
+                  onCancelMove={() => setMovingConversationId(null)}
+                  onDelete={handleDeleteRun}
+                  onDragStart={(conversationId) => setDraggingConversationId(conversationId)}
+                  onDragEnd={() => {
+                    setDraggingConversationId(null);
+                    setActiveDropTarget(null);
+                  }}
+                  onDragEnter={() => setActiveDropTarget(folder.id)}
+                  onDrop={(event) => void handleDropConversation(event, folder.id)}
+                />
               </div>
             ))}
           </div>
@@ -699,6 +1047,210 @@ function mapRunsToMessages(runs: AgentRunDto[]): Message[] {
     });
 }
 
+function ConversationGroup({
+  title,
+  hideTitle = false,
+  conversations,
+  folderId,
+  folders,
+  selectedRunId,
+  deletingRunId,
+  mutatingHistoryId,
+  draggingConversationId,
+  activeDropTarget,
+  editingConversationId,
+  editingConversationTitle,
+  movingConversationId,
+  onSelect,
+  onStartRename,
+  onCancelRename,
+  onRename,
+  onEditingConversationTitleChange,
+  onStartMove,
+  onMove,
+  onCancelMove,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+  onDragEnter,
+  onDrop,
+}: {
+  title: string;
+  hideTitle?: boolean;
+  conversations: ConversationSummary[];
+  folderId: string | null;
+  folders: AgentConversationFolderDto[];
+  selectedRunId: string | null;
+  deletingRunId: string | null;
+  mutatingHistoryId: string | null;
+  draggingConversationId: string | null;
+  activeDropTarget: ConversationDropTarget;
+  editingConversationId: string | null;
+  editingConversationTitle: string;
+  movingConversationId: string | null;
+  onSelect: (runId: string) => void;
+  onStartRename: (conversation: ConversationSummary) => void;
+  onCancelRename: () => void;
+  onRename: (conversation: ConversationSummary, event?: FormEvent) => void;
+  onEditingConversationTitleChange: (title: string) => void;
+  onStartMove: (conversation: ConversationSummary) => void;
+  onMove: (conversation: ConversationSummary, folderId: string | null) => void;
+  onCancelMove: () => void;
+  onDelete: (runId: string) => void;
+  onDragStart: (conversationId: string) => void;
+  onDragEnd: () => void;
+  onDragEnter: () => void;
+  onDrop: (event: DragEvent) => void;
+}) {
+  const dropTarget = folderId ?? 'uncategorized';
+  const isActiveDropTarget = activeDropTarget === dropTarget;
+
+  if (conversations.length === 0) {
+    return (
+      <div
+        className={`rounded-xl border border-dashed px-3 py-3 text-[11px] transition-colors ${
+          isActiveDropTarget
+            ? 'border-ring bg-card text-foreground'
+            : 'border-border/70 text-muted-foreground'
+        }`}
+        onDragOver={(event) => event.preventDefault()}
+        onDragEnter={onDragEnter}
+        onDrop={onDrop}
+      >
+        {hideTitle ? '拖到这里归类' : `${title}暂无对话，拖到这里归类`}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`space-y-1 rounded-xl transition-colors ${
+        isActiveDropTarget ? 'bg-card/80 ring-1 ring-ring' : ''
+      }`}
+      onDragOver={(event) => event.preventDefault()}
+      onDragEnter={onDragEnter}
+      onDrop={onDrop}
+    >
+      {!hideTitle && (
+        <div className="px-2 pb-1 text-[11px] font-medium uppercase text-muted-foreground">
+          {title}
+        </div>
+      )}
+      {conversations.map((conversation) => (
+        <div
+          key={conversation.id}
+          draggable={editingConversationId !== conversation.conversationId && movingConversationId !== conversation.conversationId}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', conversation.conversationId);
+            onDragStart(conversation.conversationId);
+          }}
+          onDragEnd={onDragEnd}
+          className={`group rounded-xl px-2 py-2 text-left text-[13px] transition ${
+            selectedRunId === conversation.id ? 'bg-card text-foreground shadow-sm' : 'text-foreground'
+          } ${
+            draggingConversationId === conversation.conversationId ? 'opacity-50' : ''
+          }`}
+        >
+          {editingConversationId === conversation.conversationId ? (
+            <form onSubmit={(event) => onRename(conversation, event)} className="flex items-center gap-1">
+              <input
+                autoFocus
+                value={editingConversationTitle}
+                onChange={(event) => onEditingConversationTitleChange(event.target.value)}
+                disabled={mutatingHistoryId === conversation.conversationId}
+                className="min-w-0 flex-1 rounded-lg border border-ring bg-background px-2 py-1.5 text-sm text-foreground outline-none"
+              />
+              <button
+                type="submit"
+                aria-label="保存对话名称"
+                disabled={mutatingHistoryId === conversation.conversationId}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Check size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label="取消重命名对话"
+                onClick={onCancelRename}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <X size={13} />
+              </button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-1">
+              <GripVertical size={13} className="shrink-0 text-muted-foreground opacity-40 transition group-hover:opacity-80" />
+              <button
+                type="button"
+                onClick={() => onSelect(conversation.id)}
+                className="min-w-0 flex-1 text-left"
+              >
+                <span className="block truncate font-medium">{conversation.title}</span>
+                <span className="block text-[11px] text-muted-foreground">{conversation.time}</span>
+              </button>
+              <button
+                type="button"
+                aria-label="重命名对话"
+                onClick={() => onStartRename(conversation)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition hover:bg-card hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label="移动对话"
+                onClick={() => onStartMove(conversation)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition hover:bg-card hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+              >
+                <Folder size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label="删除历史记录"
+                disabled={deletingRunId === conversation.id}
+                onClick={() => void onDelete(conversation.id)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 group-hover:opacity-100"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          )}
+          {movingConversationId === conversation.conversationId && (
+            <div className="mt-2 flex items-center gap-1 pl-5">
+              <select
+                autoFocus
+                value={conversation.folderId ?? uncategorizedMoveValue}
+                disabled={mutatingHistoryId === conversation.conversationId}
+                onChange={(event) => {
+                  const nextFolderId = event.target.value === uncategorizedMoveValue ? null : event.target.value;
+                  onMove(conversation, nextFolderId);
+                }}
+                className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus:border-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value={uncategorizedMoveValue}>未分类</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                aria-label="关闭移动菜单"
+                onClick={onCancelMove}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-card hover:text-foreground"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function getConversationRuns(runs: AgentRunDto[], conversationId: string): AgentRunDto[] {
   return runs
     .filter((run) => run.conversationId === conversationId)
@@ -837,6 +1389,20 @@ function reconcileAssistantFinalMessage(messages: Message[], runId: string, cont
   );
 }
 
+function reconcileAssistantRunMetadata(messages: Message[], run: AgentRunDto): Message[] {
+  const assistantId = `${run.id}-assistant`;
+  return messages.map((message) =>
+    message.id === assistantId
+      ? {
+          ...message,
+          modelLabel: formatModelLabel(run),
+          billingLabel: formatBillingLabel(run),
+          usageLabel: formatUsageLabel(run),
+        }
+      : message,
+  );
+}
+
 function parseStreamEventPayload(event: Event) {
   if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
     return null;
@@ -869,11 +1435,7 @@ function formatBillingLabel(run: AgentRunDto) {
 }
 
 function formatUsageLabel(run: AgentRunDto) {
-  if (!run.usage) {
-    return undefined;
-  }
-
-  return `用量：${run.usage.totalTokens} tokens`;
+  return formatChatUsageLabel(run.usage);
 }
 
 function readRuntimeErrorMessage(error: unknown, fallback: string) {
@@ -903,6 +1465,7 @@ function mapRunToConversationSummary(run: AgentRunDto): ConversationSummary {
   return {
     id: run.id,
     conversationId: run.conversationId,
+    folderId: null,
     title: run.prompt.length > 18 ? `${run.prompt.slice(0, 18)}...` : run.prompt,
     time: new Intl.DateTimeFormat('zh-CN', {
       month: '2-digit',
@@ -910,5 +1473,30 @@ function mapRunToConversationSummary(run: AgentRunDto): ConversationSummary {
       hour: '2-digit',
       minute: '2-digit',
     }).format(new Date(run.createdAt)),
+  };
+}
+
+function mapConversationToSummary(
+  conversation: AgentConversationDto,
+  runs: AgentRunDto[],
+): ConversationSummary | null {
+  const run = runs
+    .filter((item) => item.conversationId === conversation.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  if (!run) {
+    return null;
+  }
+
+  return {
+    id: run.id,
+    conversationId: conversation.id,
+    folderId: conversation.folderId,
+    title: conversation.title,
+    time: new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(conversation.lastRunAt)),
   };
 }

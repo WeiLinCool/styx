@@ -1,4 +1,7 @@
 import type {
+  AgentConversationDto,
+  AgentConversationFolderDto,
+  AgentConversationListDto,
   AgentRunDetailDto,
   AgentRunDto,
   AgentTaskType,
@@ -58,6 +61,11 @@ export type CreateAgentRunRequest = {
   modelId?: string;
   conversationId?: string;
   input?: Record<string, unknown>;
+};
+
+export type UpdateAgentConversationRequest = {
+  titleOverride?: string | null;
+  folderId?: string | null;
 };
 
 type ErrorPayload = {
@@ -200,6 +208,148 @@ export async function listVideoModels(): Promise<VideoModelOption[]> {
       : [];
 
   return rawModels.map(parseVideoModel).filter((model): model is VideoModelOption => model !== null);
+}
+
+function parseConversationFolder(value: unknown): AgentConversationFolderDto | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const folder = value as Record<string, unknown>;
+  if (
+    typeof folder.id !== 'string' ||
+    typeof folder.name !== 'string' ||
+    typeof folder.sortOrder !== 'number' ||
+    typeof folder.createdAt !== 'string' ||
+    typeof folder.updatedAt !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    id: folder.id,
+    name: folder.name,
+    sortOrder: folder.sortOrder,
+    createdAt: folder.createdAt,
+    updatedAt: folder.updatedAt,
+  };
+}
+
+function parseConversation(value: unknown): AgentConversationDto | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const conversation = value as Record<string, unknown>;
+  if (
+    typeof conversation.id !== 'string' ||
+    (conversation.folderId !== null && typeof conversation.folderId !== 'string') ||
+    typeof conversation.title !== 'string' ||
+    typeof conversation.autoTitle !== 'string' ||
+    (conversation.titleOverride !== null && typeof conversation.titleOverride !== 'string') ||
+    typeof conversation.lastRunAt !== 'string' ||
+    typeof conversation.createdAt !== 'string' ||
+    typeof conversation.updatedAt !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    id: conversation.id,
+    folderId: conversation.folderId,
+    title: conversation.title,
+    autoTitle: conversation.autoTitle,
+    titleOverride: conversation.titleOverride,
+    lastRunAt: conversation.lastRunAt,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+  };
+}
+
+export async function listAgentConversations(): Promise<AgentConversationListDto> {
+  const response = await userApiRequest('/api/agent/conversations', {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '对话历史加载失败');
+  }
+
+  const rawFolders =
+    payload && typeof payload === 'object' && Array.isArray((payload as { folders?: unknown }).folders)
+      ? (payload as { folders: unknown[] }).folders
+      : [];
+  const rawConversations =
+    payload && typeof payload === 'object' && Array.isArray((payload as { conversations?: unknown }).conversations)
+      ? (payload as { conversations: unknown[] }).conversations
+      : [];
+
+  return {
+    folders: rawFolders.map(parseConversationFolder).filter((folder): folder is AgentConversationFolderDto => folder !== null),
+    conversations: rawConversations.map(parseConversation).filter((conversation): conversation is AgentConversationDto => conversation !== null),
+  };
+}
+
+export async function createConversationFolder(name: string): Promise<AgentConversationFolderDto> {
+  const response = await userApiRequest('/api/agent/conversation-folders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '文件夹创建失败');
+  }
+
+  return payload.folder;
+}
+
+export async function updateConversationFolder(
+  folderId: string,
+  name: string,
+): Promise<AgentConversationFolderDto> {
+  const response = await userApiRequest(`/api/agent/conversation-folders/${folderId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '文件夹更新失败');
+  }
+
+  return payload.folder;
+}
+
+export async function deleteConversationFolder(folderId: string): Promise<AgentConversationFolderDto> {
+  const response = await userApiRequest(`/api/agent/conversation-folders/${folderId}`, {
+    method: 'DELETE',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '文件夹删除失败');
+  }
+
+  return payload.folder;
+}
+
+export async function updateAgentConversation(
+  conversationId: string,
+  input: UpdateAgentConversationRequest,
+): Promise<AgentConversationDto> {
+  const response = await userApiRequest(`/api/agent/conversations/${conversationId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '对话更新失败');
+  }
+
+  return payload.conversation;
 }
 
 export async function createAgentRun(input: CreateAgentRunRequest): Promise<CreateAgentRunResult> {
