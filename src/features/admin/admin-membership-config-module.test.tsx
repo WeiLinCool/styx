@@ -111,8 +111,7 @@ test('admin membership config module shows version states and onboarding guide',
   assert.match(html, /权限绑定/);
   assert.match(html, /历史版本/);
   assert.match(html, /Pro Monthly V2/);
-  assert.match(html, /云资料存储额度/);
-  assert.match(html, /允许本地上传图片和视频/);
-  assert.match(html, /允许公开分享/);
-  assert.match(html, /1024/);
+  assert.match(html, /展示名称/);
+  assert.match(html, /价格（分）/);
+  assert.doesNotMatch(html, /云资料存储额度/);
 });

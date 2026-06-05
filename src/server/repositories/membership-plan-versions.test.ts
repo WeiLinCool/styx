@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   createMembershipPlanVersionHarness,
   duplicateMembershipPlanVersionAsDraft,
+  persistMembershipVersionVideoGenerationPolicy,
   publishMembershipPlanDraft,
   resolvePlanVersionForEntitlement,
   saveMembershipPlanDraftWithLoader,
@@ -205,6 +206,19 @@ test('saveMembershipPlanDraftWithLoader stores videoGenerationPolicy', async () 
   );
 });
 
+test('persistMembershipVersionVideoGenerationPolicy clears an existing policy when input is null', async () => {
+  const calls: string[] = [];
+  const repository = {
+    async clearVideoPlanConfig(planVersionId: string) {
+      calls.push(planVersionId);
+    },
+  };
+
+  await persistMembershipVersionVideoGenerationPolicy('draft-v2', null, repository);
+
+  assert.deepEqual(calls, ['draft-v2']);
+});
+
 test('publishMembershipPlanDraft archives the previous published version', async () => {
   const harness = createMembershipPlanVersionHarness();
 
@@ -383,4 +397,67 @@ test('duplicateMembershipPlanVersionAsDraft carries videoGenerationPolicy forwar
     defaultDuration: 5,
     defaultResolution: '720p',
   });
+});
+
+test('duplicateMembershipPlanVersionAsDraft carries null videoGenerationPolicy over an existing draft policy', async () => {
+  const harness = createMembershipPlanVersionHarness({
+    versions: [
+      {
+        id: 'source-v1',
+        planId: 'seed:pro',
+        planCode: 'pro-monthly',
+        versionNumber: 1,
+        status: 'archived',
+        effectiveFrom: '2026-06-01T00:00:00.000Z',
+        publishedAt: '2026-06-01T00:00:00.000Z',
+        displayName: 'Pro Monthly',
+        description: 'source',
+        billingPeriod: 'month',
+        priceCents: 9900,
+        currency: 'CNY',
+        changeSummary: null,
+        benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: 2147483648,
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
+        videoGenerationPolicy: null,
+        permissionCodes: [],
+      },
+      {
+        id: 'existing-draft',
+        planId: 'seed:pro',
+        planCode: 'pro-monthly',
+        versionNumber: 2,
+        status: 'draft',
+        effectiveFrom: null,
+        publishedAt: null,
+        displayName: 'Pro Monthly Draft',
+        description: 'existing draft',
+        billingPeriod: 'month',
+        priceCents: 12900,
+        currency: 'CNY',
+        changeSummary: null,
+        benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: 2147483648,
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
+        videoGenerationPolicy: {
+          enabled: true,
+          allowedDurations: [5, 10],
+          allowedResolutions: ['720p', '1080p'],
+          defaultDuration: 5,
+          defaultResolution: '720p',
+        },
+        permissionCodes: [],
+      },
+    ],
+  });
+
+  const draft = await duplicateMembershipPlanVersionAsDraft('seed:pro', 'source-v1', harness);
+
+  assert.equal(draft.videoGenerationPolicy, null);
 });

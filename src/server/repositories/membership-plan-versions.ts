@@ -864,13 +864,10 @@ export async function createOrUpdateMembershipPlanDraft(
     );
   }
 
-  if (input.videoGenerationPolicy) {
-    const videoRepository = getVideoGenerationConfigRepository();
-    if (!videoRepository.upsertVideoPlanConfig) {
-      throw new Error('Video plan config repository does not support draft updates.');
-    }
-    await videoRepository.upsertVideoPlanConfig(draft.id, input.videoGenerationPolicy);
-  }
+  await persistMembershipVersionVideoGenerationPolicy(
+    draft.id,
+    input.videoGenerationPolicy,
+  );
 
   const savedDraft = (await getMembershipPlanWorkspace(input.planId)).draftVersion;
   if (!savedDraft) {
@@ -878,6 +875,35 @@ export async function createOrUpdateMembershipPlanDraft(
   }
 
   return savedDraft;
+}
+
+export async function persistMembershipVersionVideoGenerationPolicy(
+  versionId: string,
+  policy: VideoPlanConfig | null,
+  repository: {
+    upsertVideoPlanConfig?: (versionId: string, policy: VideoPlanConfig) => Promise<VideoPlanConfig>;
+    clearVideoPlanConfig?: (versionId: string) => Promise<void>;
+  } = {},
+) {
+  if (!policy) {
+    if (repository.clearVideoPlanConfig) {
+      await repository.clearVideoPlanConfig(versionId);
+      return;
+    }
+
+    const database = requireDb('video plan config clear');
+    await database
+      .delete(schema.membershipPlanVideoConfigs)
+      .where(eq(schema.membershipPlanVideoConfigs.planVersionId, versionId));
+    return;
+  }
+
+  const upsertVideoPlanConfig =
+    repository.upsertVideoPlanConfig ?? getVideoGenerationConfigRepository().upsertVideoPlanConfig;
+  if (!upsertVideoPlanConfig) {
+    throw new Error('Video plan config repository does not support draft updates.');
+  }
+  await upsertVideoPlanConfig(versionId, policy);
 }
 
 export async function publishMembershipPlanDraftInDb(
