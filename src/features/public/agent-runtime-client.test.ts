@@ -5,7 +5,10 @@ import {
   AgentRuntimeApiError,
   createAgentRun,
   createAgentRunEventsUrl,
+  disableMediaShare,
+  enableMediaShare,
   getAgentRunDetail,
+  getPublicSharedMedia,
   listSavedMediaAssets,
   listImageModels,
   listChatModels,
@@ -17,6 +20,7 @@ import {
   saveGeneratedMedia,
   selectImageModelId,
   selectChatModelId,
+  uploadUserMedia,
   type ChatModelOption,
   type ImageModelOption,
 } from './agent-runtime-client';
@@ -429,10 +433,16 @@ test('listSavedMediaAssets returns saved asset rows from API payload', async () 
           artifactId: 'artifact-1',
           kind: 'image',
           title: '生成图片',
+          sourceType: 'ai_generated',
           sourceProvider: 'doubao',
           sourceModel: 'seedream-3',
           sourceUrl: null,
           sourceExpiresAt: null,
+          originalFilename: null,
+          sha256: null,
+          shareId: null,
+          shareStatus: 'disabled',
+          sharedAt: null,
           storageProvider: 'tencent_cos',
           bucket: 'bucket-a',
           region: 'ap-shanghai',
@@ -457,6 +467,142 @@ test('listSavedMediaAssets returns saved asset rows from API payload', async () 
     const assets = await listSavedMediaAssets();
     assert.equal(assets.length, 1);
     assert.equal(assets[0]?.id, 'asset-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadUserMedia returns uploaded asset payload', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      asset: {
+        id: 'asset-upload-1',
+        userId: 'user-1',
+        runId: null,
+        conversationId: null,
+        artifactId: null,
+        kind: 'image',
+        title: 'photo',
+        sourceType: 'user_uploaded',
+        sourceProvider: null,
+        sourceModel: null,
+        sourceUrl: null,
+        sourceExpiresAt: null,
+        originalFilename: 'photo.png',
+        sha256: 'sha256-1',
+        shareId: null,
+        shareStatus: 'disabled',
+        sharedAt: null,
+        storageProvider: 'tencent_cos',
+        bucket: 'bucket-a',
+        region: 'ap-shanghai',
+        objectKey: 'key',
+        mimeType: 'image/png',
+        byteSize: 1024,
+        width: null,
+        height: null,
+        durationSeconds: null,
+        status: 'ready',
+        metadata: {},
+        saveRequestedAt: '2026-06-04T10:00:00.000Z',
+        savedAt: '2026-06-04T10:00:00.000Z',
+        deletedAt: null,
+        createdAt: '2026-06-04T10:00:00.000Z',
+        updatedAt: '2026-06-04T10:00:00.000Z',
+      },
+    });
+
+  try {
+    const file = new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' });
+    const result = await uploadUserMedia({ file });
+    assert.equal(result.id, 'asset-upload-1');
+    assert.equal(result.sourceType, 'user_uploaded');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('enableMediaShare returns share metadata', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      asset: {
+        id: 'asset-1',
+        userId: 'user-1',
+        runId: null,
+        conversationId: null,
+        artifactId: null,
+        kind: 'image',
+        title: 'share me',
+        sourceType: 'user_uploaded',
+        sourceProvider: null,
+        sourceModel: null,
+        sourceUrl: null,
+        sourceExpiresAt: null,
+        originalFilename: 'photo.png',
+        sha256: 'sha256-1',
+        shareId: 'share-1',
+        shareStatus: 'active',
+        sharedAt: '2026-06-04T10:00:00.000Z',
+        storageProvider: 'tencent_cos',
+        bucket: 'bucket-a',
+        region: 'ap-shanghai',
+        objectKey: 'key',
+        mimeType: 'image/png',
+        byteSize: 1024,
+        width: null,
+        height: null,
+        durationSeconds: null,
+        status: 'ready',
+        metadata: {},
+        saveRequestedAt: '2026-06-04T10:00:00.000Z',
+        savedAt: '2026-06-04T10:00:00.000Z',
+        deletedAt: null,
+        createdAt: '2026-06-04T10:00:00.000Z',
+        updatedAt: '2026-06-04T10:00:00.000Z',
+      },
+      share: {
+        shareId: 'share-1',
+        url: 'https://example.com/shared/media/share-1',
+      },
+    });
+
+  try {
+    const result = await enableMediaShare('asset-1');
+    assert.equal(result.share.shareId, 'share-1');
+    assert.equal(result.asset.shareStatus, 'active');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('getPublicSharedMedia returns share payload for public page', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      asset: {
+        id: 'asset-1',
+        title: 'Shared image',
+        kind: 'image',
+        mimeType: 'image/png',
+        byteSize: 128,
+        width: 64,
+        height: 64,
+        durationSeconds: null,
+        shareId: 'share-1',
+        shareStatus: 'active',
+      },
+      access: {
+        url: 'https://signed.example/object',
+        expiresAt: '2026-06-04T10:10:00.000Z',
+      },
+    });
+
+  try {
+    const result = await getPublicSharedMedia('share-1');
+    assert.equal(result.asset.id, 'asset-1');
+    assert.equal(result.access.url, 'https://signed.example/object');
   } finally {
     globalThis.fetch = originalFetch;
   }

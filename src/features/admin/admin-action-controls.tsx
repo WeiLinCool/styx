@@ -275,6 +275,12 @@ export function AdminUserActions({
     ],
     secondary: [
       {
+        label: '同步媒体额度',
+        url: `/api/admin/users/${userId}/membership-media-policy`,
+        body: {},
+        successMessage: '媒体额度已按用户当前生效会员版本同步。',
+      },
+      {
         label: '重发激活',
         url: `/api/admin/users/${userId}/activation`,
         body: { purpose: 'account_activation' },

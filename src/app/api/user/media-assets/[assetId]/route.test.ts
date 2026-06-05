@@ -15,10 +15,16 @@ test('DELETE /api/user/media-assets/[assetId] soft deletes the asset for the cur
       artifactId: 'artifact-1',
       kind: 'image',
       title: '生成图片',
+      sourceType: 'ai_generated',
       sourceProvider: 'doubao',
       sourceModel: 'seedream-3',
       sourceUrl: null,
       sourceExpiresAt: null,
+      originalFilename: null,
+      sha256: null,
+      shareId: 'share-1',
+      shareStatus: 'disabled',
+      sharedAt: '2026-06-03T12:00:01.000Z',
       storageProvider: 'tencent_cos',
       bucket: 'bucket-a',
       region: 'ap-shanghai',
@@ -45,6 +51,7 @@ test('DELETE /api/user/media-assets/[assetId] soft deletes the asset for the cur
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.asset.status, 'deleted');
+  assert.equal(body.asset.shareStatus, 'disabled');
 });
 
 test('GET /api/user/media-assets/[assetId] returns not found when user does not own the asset', async () => {

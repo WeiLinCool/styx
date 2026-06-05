@@ -64,7 +64,8 @@ export function UserMediaModule({
                   </span>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {asset.sourceModel} · {formatBytes(asset.byteSize)} · 会话 {asset.conversationId.slice(0, 8)}
+                  {(asset.sourceModel ?? (asset.sourceType === 'user_uploaded' ? '本地上传' : '未标记来源'))} · {formatBytes(asset.byteSize)}
+                  {asset.conversationId ? ` · 会话 ${asset.conversationId.slice(0, 8)}` : ''}
                 </div>
               </div>
               <div className="flex items-center gap-2">

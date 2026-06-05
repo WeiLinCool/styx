@@ -35,6 +35,7 @@ import type {
 import type { AdminAiJobRow } from '@/server/repositories/ai-jobs';
 import { AdminAiJobActions } from './admin-action-controls';
 import { StatusBadge } from './status-badge';
+import { adminText } from './admin-i18n';
 
 const metricToneClassName: Record<AdminMetricTone, string> = {
   default: 'border-border bg-card',
@@ -101,11 +102,11 @@ const columns: AiJobColumn[] = [
     key: 'actions',
     label: '操作',
     className: 'text-right',
-    render: (job) =>
+      render: (job) =>
       job.sourceKind === 'ai_job' ? (
         <AdminAiJobActions jobId={job.id} />
       ) : (
-        <div className="text-xs text-muted-foreground">Agent run 记录</div>
+        <div className="text-xs text-muted-foreground">Agent 运行记录</div>
       ),
   },
 ];
@@ -228,11 +229,11 @@ export function AdminAiJobsModule({
         <div>
           <h2 className="text-base font-semibold text-foreground">AI 任务</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            AI 任务与 Agent runs 的类型、用户、prompt、供应商模型、能力快照、输出引用、错误与复跑入口。
+            AI 任务与 Agent 运行记录的类型、用户、输入、供应商模型、能力快照、输出引用、错误与复跑入口。
           </p>
         </div>
         <StatusBadge
-          value={source === 'database' ? '数据库' : '种子数据'}
+          value={source === 'database' ? adminText.source.database : adminText.source.seed}
           tone={source === 'database' ? 'success' : 'warning'}
         />
       </div>
@@ -318,8 +319,8 @@ export function AdminAiJobsModule({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部来源</SelectItem>
-                <SelectItem value="ai_job">ai_job</SelectItem>
-                <SelectItem value="agent_run">agent_run</SelectItem>
+                <SelectItem value="ai_job">AI 任务</SelectItem>
+                <SelectItem value="agent_run">Agent 运行记录</SelectItem>
               </SelectContent>
             </Select>
 

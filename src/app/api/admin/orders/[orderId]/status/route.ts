@@ -9,6 +9,7 @@ import {
   type OrderStatus,
 } from '@/server/repositories/admin-mutations';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   orderId: z.uuid(),
@@ -76,11 +77,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'Order status request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.orderStatusInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

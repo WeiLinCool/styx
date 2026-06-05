@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -239,6 +240,16 @@ export const generatedMediaAssetStatus = pgEnum('generated_media_asset_status', 
   'deleted',
 ]);
 
+export const mediaAssetSourceType = pgEnum('media_asset_source_type', [
+  'ai_generated',
+  'user_uploaded',
+]);
+
+export const mediaAssetShareStatus = pgEnum('media_asset_share_status', [
+  'disabled',
+  'active',
+]);
+
 export const requestIdempotencyActorType = pgEnum('request_idempotency_actor_type', [
   'anonymous',
   'user',
@@ -269,8 +280,8 @@ export const users = pgTable(
     activatedAt: timestamp('activated_at', { withTimezone: true }),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
-    storageQuotaBytes: integer('storage_quota_bytes').notNull().default(0),
-    storageUsedBytes: integer('storage_used_bytes').notNull().default(0),
+    storageQuotaBytes: bigint('storage_quota_bytes', { mode: 'number' }).notNull().default(0),
+    storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: now,
     updatedAt: updated,
@@ -525,6 +536,9 @@ export const membershipPlanVersions = pgTable(
     priceCents: integer('price_cents').notNull(),
     currency: text('currency').notNull().default('CNY'),
     changeSummary: text('change_summary'),
+    mediaStorageQuotaBytes: bigint('media_storage_quota_bytes', { mode: 'number' }).notNull().default(0),
+    mediaAllowUserUpload: boolean('media_allow_user_upload').notNull().default(false),
+    mediaAllowPublicSharing: boolean('media_allow_public_sharing').notNull().default(false),
     createdBy: uuid('created_by').references(() => users.id, {
       onDelete: 'set null',
     }),
@@ -549,6 +563,10 @@ export const membershipPlanVersions = pgTable(
     index('membership_plan_versions_status_idx').on(table.status),
     index('membership_plan_versions_effective_from_idx').on(table.effectiveFrom),
     check('membership_plan_versions_price_non_negative', sql`${table.priceCents} >= 0`),
+    check(
+      'membership_plan_versions_media_storage_quota_non_negative',
+      sql`${table.mediaStorageQuotaBytes} >= 0`,
+    ),
   ],
 );
 
@@ -1166,17 +1184,21 @@ export const generatedMediaAssets = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    runId: uuid('run_id')
-      .notNull()
-      .references(() => agentRuns.id, { onDelete: 'cascade' }),
-    conversationId: uuid('conversation_id').notNull(),
-    artifactId: uuid('artifact_id').notNull(),
+    runId: uuid('run_id').references(() => agentRuns.id, { onDelete: 'cascade' }),
+    conversationId: uuid('conversation_id'),
+    artifactId: uuid('artifact_id'),
     kind: agentArtifactKind('kind').notNull(),
     title: text('title').notNull(),
-    sourceProvider: text('source_provider').notNull(),
-    sourceModel: text('source_model').notNull(),
+    sourceType: mediaAssetSourceType('source_type').notNull().default('ai_generated'),
+    sourceProvider: text('source_provider'),
+    sourceModel: text('source_model'),
     sourceUrl: text('source_url'),
     sourceExpiresAt: timestamp('source_expires_at', { withTimezone: true }),
+    originalFilename: text('original_filename'),
+    sha256: text('sha256'),
+    shareId: text('share_id'),
+    shareStatus: mediaAssetShareStatus('share_status').notNull().default('disabled'),
+    sharedAt: timestamp('shared_at', { withTimezone: true }),
     storageProvider: text('storage_provider').notNull().default('tencent_cos'),
     bucket: text('bucket').notNull(),
     region: text('region').notNull(),

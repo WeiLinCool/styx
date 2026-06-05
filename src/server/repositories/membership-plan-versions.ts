@@ -6,7 +6,6 @@ import {
   getAdminPermissionResourceOverview,
   type AdminPermissionResourceOverview,
 } from './permission-resources';
-import type { MembershipPlanPermissionWorkspace } from './membership-plan-permissions';
 
 export type MembershipPlanVersionStatus = 'draft' | 'scheduled' | 'published' | 'archived';
 
@@ -16,6 +15,12 @@ export type MembershipVersionBenefitInput = {
   kind: 'quota' | 'feature' | 'discount' | 'support';
   quantity: number | null;
   unit: string | null;
+};
+
+export type MembershipMediaLibraryPolicy = {
+  storageQuotaBytes: number;
+  allowUserUpload: boolean;
+  allowPublicSharing: boolean;
 };
 
 export type MembershipPlanVersionRecord = {
@@ -33,6 +38,7 @@ export type MembershipPlanVersionRecord = {
   currency: string;
   changeSummary: string | null;
   benefits: MembershipVersionBenefitInput[];
+  mediaLibraryPolicy: MembershipMediaLibraryPolicy;
   permissionCodes: string[];
 };
 
@@ -53,17 +59,19 @@ type DraftInput = {
   currency: string;
   changeSummary: string | null;
   benefits: MembershipVersionBenefitInput[];
+  mediaLibraryPolicy: MembershipMediaLibraryPolicy;
   permissionCodes: string[];
 };
 
 type MutableVersionStore = {
   listVersionsByPlanCode(planCode: string): Promise<MembershipPlanVersionRecord[]>;
   listVersionsByPlanId(planId: string): Promise<MembershipPlanVersionRecord[]>;
+  getVersionById(versionId: string): Promise<MembershipPlanVersionRecord | null>;
   saveDraft(input: DraftInput): Promise<MembershipPlanVersionRecord>;
-  publishDraft(planId: string, actorId: string): Promise<MembershipPlanVersionRecord>;
+  publishDraft(planId: string): Promise<MembershipPlanVersionRecord>;
   scheduleDraft(
     planId: string,
-    input: { effectiveFrom: string; actorId: string },
+    input: { effectiveFrom: string },
   ): Promise<MembershipPlanVersionRecord>;
   duplicateVersionAsDraft(planId: string, versionId: string): Promise<MembershipPlanVersionRecord>;
 };
@@ -106,10 +114,19 @@ function cloneBenefit(benefit: MembershipVersionBenefitInput): MembershipVersion
   };
 }
 
+function cloneMediaPolicy(policy: MembershipMediaLibraryPolicy): MembershipMediaLibraryPolicy {
+  return {
+    storageQuotaBytes: policy.storageQuotaBytes,
+    allowUserUpload: policy.allowUserUpload,
+    allowPublicSharing: policy.allowPublicSharing,
+  };
+}
+
 function cloneVersion(version: MembershipPlanVersionRecord): MembershipPlanVersionRecord {
   return {
     ...version,
     benefits: version.benefits.map(cloneBenefit),
+    mediaLibraryPolicy: cloneMediaPolicy(version.mediaLibraryPolicy),
     permissionCodes: [...version.permissionCodes].sort(),
   };
 }
@@ -139,6 +156,11 @@ function toMembershipPlanVersionRecord(params: {
     currency: params.version.currency,
     changeSummary: params.version.changeSummary,
     benefits: params.benefits.map(cloneBenefit),
+    mediaLibraryPolicy: {
+      storageQuotaBytes: params.version.mediaStorageQuotaBytes,
+      allowUserUpload: params.version.mediaAllowUserUpload,
+      allowPublicSharing: params.version.mediaAllowPublicSharing,
+    },
     permissionCodes: [...params.permissionCodes].sort(),
   };
 }
@@ -178,6 +200,11 @@ function buildSeedVersions(plans = buildSeedPlans()): MembershipPlanVersionRecor
           unit: 'credit',
         },
       ],
+      mediaLibraryPolicy: {
+        storageQuotaBytes: 1073741824,
+        allowUserUpload: true,
+        allowPublicSharing: false,
+      },
       permissionCodes: ['action.user_center.copy_invite_code', 'page.user_center'],
     },
     {
@@ -203,6 +230,11 @@ function buildSeedVersions(plans = buildSeedPlans()): MembershipPlanVersionRecor
           unit: 'minute',
         },
       ],
+      mediaLibraryPolicy: {
+        storageQuotaBytes: 2147483648,
+        allowUserUpload: true,
+        allowPublicSharing: true,
+      },
       permissionCodes: ['page.user_center'],
     },
   ];
@@ -246,6 +278,10 @@ export function createMembershipPlanVersionHarness(input: HarnessInput = {}): Mu
     async listVersionsByPlanId(planId: string) {
       return listByPlanId(planId).map(cloneVersion);
     },
+    async getVersionById(versionId: string) {
+      const version = versions.find((item) => item.id === versionId);
+      return version ? cloneVersion(version) : null;
+    },
     async saveDraft(inputDraft) {
       const plan = findPlanById(inputDraft.planId);
       const planVersions = listByPlanId(inputDraft.planId);
@@ -266,13 +302,14 @@ export function createMembershipPlanVersionHarness(input: HarnessInput = {}): Mu
         currency: inputDraft.currency,
         changeSummary: inputDraft.changeSummary,
         benefits: inputDraft.benefits.map(cloneBenefit),
+        mediaLibraryPolicy: cloneMediaPolicy(inputDraft.mediaLibraryPolicy),
         permissionCodes: [...new Set(inputDraft.permissionCodes)].sort(),
       };
 
       upsertVersion(draft);
       return cloneVersion(draft);
     },
-    async publishDraft(planId, _actorId) {
+    async publishDraft(planId) {
       const planVersions = listByPlanId(planId);
       const draft = planVersions.find((version) => version.status === 'draft');
       if (!draft) {
@@ -352,10 +389,10 @@ export async function saveMembershipPlanDraftWithLoader(
 
 export async function publishMembershipPlanDraft(
   planId: string,
-  input: { actorId: string },
+  _input: { actorId: string },
   loader: MutableVersionStore,
 ) {
-  return loader.publishDraft(planId, input.actorId);
+  return loader.publishDraft(planId);
 }
 
 export async function scheduleMembershipPlanDraft(
@@ -363,7 +400,7 @@ export async function scheduleMembershipPlanDraft(
   input: { effectiveFrom: string; actorId: string },
   loader: MutableVersionStore,
 ) {
-  return loader.scheduleDraft(planId, input);
+  return loader.scheduleDraft(planId, { effectiveFrom: input.effectiveFrom });
 }
 
 export async function duplicateMembershipPlanVersionAsDraft(
@@ -503,6 +540,39 @@ export async function listVersionsByPlanCode(planCode: string): Promise<Membersh
 export const membershipPlanVersionRepository: Pick<MutableVersionStore, 'listVersionsByPlanCode'> = {
   listVersionsByPlanCode,
 };
+
+export async function getMembershipPlanVersionById(
+  versionId: string,
+): Promise<MembershipPlanVersionRecord | null> {
+  const database = requireDb('membership plan version lookup');
+  const [row] = await database
+    .select({
+      planId: schema.membershipPlans.id,
+      planCode: schema.membershipPlans.code,
+      version: schema.membershipPlanVersions,
+    })
+    .from(schema.membershipPlanVersions)
+    .innerJoin(
+      schema.membershipPlans,
+      eq(schema.membershipPlans.id, schema.membershipPlanVersions.planId),
+    )
+    .where(eq(schema.membershipPlanVersions.id, versionId))
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  const benefitsByVersion = await listVersionBenefits([row.version.id]);
+  const permissionCodesByVersion = await listVersionPermissionCodes([row.version.id]);
+
+  return toMembershipPlanVersionRecord({
+    plan: { id: row.planId, code: row.planCode },
+    version: row.version,
+    benefits: benefitsByVersion.get(row.version.id) ?? [],
+    permissionCodes: permissionCodesByVersion.get(row.version.id) ?? [],
+  });
+}
 
 export async function getMembershipPlanWorkspace(planId: string): Promise<MembershipPlanWorkspaceDto> {
   const database = requireDb('membership workspace');
@@ -666,6 +736,7 @@ function toDraftBody(input: DraftInput) {
     currency: input.currency,
     changeSummary: input.changeSummary,
     benefits: input.benefits.map(cloneBenefit),
+    mediaLibraryPolicy: cloneMediaPolicy(input.mediaLibraryPolicy),
     permissionCodes: [...new Set(input.permissionCodes)].sort(),
   };
 }
@@ -675,7 +746,6 @@ export async function createOrUpdateMembershipPlanDraft(
 ): Promise<MembershipPlanVersionRecord> {
   const database = requireDb('membership draft mutation');
   const workspace = await getMembershipPlanWorkspace(input.planId);
-  const currentVersion = workspace.draftVersion ?? workspace.currentVersion;
   const nextVersionNumber = workspace.history.reduce(
     (max, version) => Math.max(max, version.versionNumber),
     0,
@@ -696,6 +766,9 @@ export async function createOrUpdateMembershipPlanDraft(
       priceCents: input.priceCents,
       currency: input.currency,
       changeSummary: input.changeSummary,
+      mediaStorageQuotaBytes: input.mediaLibraryPolicy.storageQuotaBytes,
+      mediaAllowUserUpload: input.mediaLibraryPolicy.allowUserUpload,
+      mediaAllowPublicSharing: input.mediaLibraryPolicy.allowPublicSharing,
       metadata: {
         source: 'admin_membership_workspace',
       },
@@ -710,6 +783,9 @@ export async function createOrUpdateMembershipPlanDraft(
         priceCents: input.priceCents,
         currency: input.currency,
         changeSummary: input.changeSummary,
+        mediaStorageQuotaBytes: input.mediaLibraryPolicy.storageQuotaBytes,
+        mediaAllowUserUpload: input.mediaLibraryPolicy.allowUserUpload,
+        mediaAllowPublicSharing: input.mediaLibraryPolicy.allowPublicSharing,
         updatedAt: new Date(),
       },
     })
@@ -770,7 +846,6 @@ export async function createOrUpdateMembershipPlanDraft(
 
 export async function publishMembershipPlanDraftInDb(
   planId: string,
-  input: { actorId: string },
 ): Promise<MembershipPlanVersionRecord> {
   const database = requireDb('membership publish mutation');
   const workspace = await getMembershipPlanWorkspace(planId);
@@ -795,7 +870,6 @@ export async function publishMembershipPlanDraftInDb(
       status: 'published',
       publishedAt: new Date(),
       effectiveFrom: new Date(),
-      publishedBy: input.actorId,
       updatedAt: new Date(),
     })
     .where(eq(schema.membershipPlanVersions.id, draft.id))
@@ -834,7 +908,6 @@ export async function scheduleMembershipPlanDraftInDb(
     .set({
       status: 'scheduled',
       effectiveFrom: new Date(input.effectiveFrom),
-      publishedBy: input.actorId,
       updatedAt: new Date(),
     })
     .where(eq(schema.membershipPlanVersions.id, draft.id))
@@ -866,6 +939,7 @@ export async function duplicateMembershipPlanVersionAsDraftInDb(
     currency: source.currency,
     changeSummary: source.changeSummary,
     benefits: source.benefits,
+    mediaLibraryPolicy: source.mediaLibraryPolicy,
     permissionCodes: source.permissionCodes,
   });
 }

@@ -5,6 +5,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { updateAdminContentStatus } from '@/server/repositories/content';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({ contentId: z.uuid() });
 
@@ -40,11 +41,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'Content status request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.contentStatusInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

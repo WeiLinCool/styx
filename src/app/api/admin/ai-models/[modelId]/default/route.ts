@@ -5,6 +5,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { setDefaultAiChatModel } from '@/server/repositories/ai-models';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   modelId: z.uuid(),
@@ -53,11 +54,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'AI model default request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.aiModelDefaultInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

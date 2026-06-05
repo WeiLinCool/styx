@@ -279,6 +279,89 @@ export async function listSavedMediaAssets(): Promise<GeneratedMediaAssetDto[]> 
   return Array.isArray(payload?.assets) ? payload.assets : [];
 }
 
+export async function uploadUserMedia(input: {
+  file: File;
+  title?: string;
+}): Promise<GeneratedMediaAssetDto> {
+  const formData = new FormData();
+  formData.set('file', input.file);
+  if (input.title?.trim()) {
+    formData.set('title', input.title.trim());
+  }
+
+  const response = await userApiRequest('/api/user/media-assets/upload', {
+    method: 'POST',
+    body: formData,
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '资料上传失败');
+  }
+
+  return payload.asset;
+}
+
+export async function enableMediaShare(assetId: string): Promise<{
+  asset: GeneratedMediaAssetDto;
+  share: { shareId: string; url: string };
+}> {
+  const response = await userApiRequest(`/api/user/media-assets/${assetId}/share`, {
+    method: 'POST',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '开启分享失败');
+  }
+
+  return payload;
+}
+
+export async function disableMediaShare(assetId: string): Promise<GeneratedMediaAssetDto> {
+  const response = await userApiRequest(`/api/user/media-assets/${assetId}/share`, {
+    method: 'DELETE',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '关闭分享失败');
+  }
+
+  return payload.asset;
+}
+
+export async function getPublicSharedMedia(shareId: string): Promise<{
+  asset: {
+    id: string;
+    title: string;
+    kind: 'image' | 'video';
+    mimeType: string | null;
+    byteSize: number;
+    width: number | null;
+    height: number | null;
+    durationSeconds: number | null;
+    shareId: string | null;
+    shareStatus: 'active' | 'disabled';
+  };
+  access: {
+    url: string;
+    expiresAt: string;
+  };
+}> {
+  const response = await fetch(`/api/public/media-share/${shareId}`, {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '分享资料加载失败');
+  }
+
+  return payload;
+}
+
 export async function getSavedMediaAssetAccess(
   assetId: string,
   disposition: 'preview' | 'download',

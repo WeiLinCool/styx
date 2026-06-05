@@ -553,6 +553,14 @@ export async function approveSubscriptionWorkOrder(input: {
       }),
     );
 
+    await tx
+      .update(schema.users)
+      .set({
+        storageQuotaBytes: resolvedVersion.mediaLibraryPolicy.storageQuotaBytes,
+        updatedAt: approvalTime,
+      })
+      .where(eq(schema.users.id, latest.userId));
+
     const [closed] = await tx
       .update(schema.subscriptionWorkOrders)
       .set({

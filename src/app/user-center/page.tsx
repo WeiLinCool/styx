@@ -12,6 +12,7 @@ import { userCenterCartFixtures, userCenterPurchaseHistory } from '@/features/pu
 import { UserMediaModule } from '@/features/public/user-media-module';
 import { userApiRequest } from '@/lib/user-api-client';
 import { formatCredits } from '@/lib/credits';
+import { formatStorageUsage } from '@/lib/storage';
 import {
   shouldRefreshUserCenterOnEntry,
   shouldRefreshUserCenterOnResume,
@@ -225,6 +226,7 @@ export default function UserCenterPage() {
   const totalCartPrice = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const maskedPhone = user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
   const membershipLabel = user.membershipLevel === 'free' ? '免费' : user.membershipLevel === 'monthly' ? '月度' : '年度';
+  const storage = formatStorageUsage(user.storageUsedBytes, user.storageQuotaBytes);
   const permissionCodes = Array.isArray(user.permissionCodes) ? user.permissionCodes : null;
   const canAccessUserCenter = permissionCodes ? permissionCodes.includes('page.user_center') : true;
   const canCopyInviteCode = permissionCodes
@@ -289,6 +291,26 @@ export default function UserCenterPage() {
 
   const renderOverview = () => (
     <div className="space-y-4">
+      <div className="rounded-2xl bg-secondary/70 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">存储使用情况</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {storage.usedLabel} / {storage.quotaLabel} · {storage.percentLabel}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-semibold text-foreground">{storage.percentLabel}</p>
+            <p className="text-xs text-muted-foreground">已使用</p>
+          </div>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-card">
+          <div
+            className="h-full rounded-full bg-foreground transition-all"
+            style={{ width: `${Math.round(storage.ratio * 100)}%` }}
+          />
+        </div>
+      </div>
       <UserMediaModule assets={savedMediaAssets} />
     </div>
   );
@@ -616,6 +638,27 @@ export default function UserCenterPage() {
                 >
                   升级
                 </button>
+              </div>
+
+              <div className="rounded-xl bg-secondary/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">账号存储</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {storage.usedLabel} / {storage.quotaLabel} · {storage.percentLabel}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-foreground">{storage.quotaLabel}</p>
+                    <p className="text-xs text-muted-foreground">总配额</p>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-card">
+                  <div
+                    className="h-full rounded-full bg-foreground transition-all"
+                    style={{ width: `${Math.round(storage.ratio * 100)}%` }}
+                  />
+                </div>
               </div>
 
               {subscriptionWorkOrder ? (

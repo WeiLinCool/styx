@@ -40,8 +40,10 @@ import { readJsonResponse } from '@/lib/api-response';
 import { AdminModuleGuide } from './admin-module-guide';
 import { AdminPermissionsModule } from './admin-permissions-module';
 import { StatusBadge } from './status-badge';
+import { adminText } from './admin-i18n';
 import type {
   AdminMembershipWorkspacePageData,
+  MembershipMediaLibraryPolicy,
   MembershipPlanWorkspaceDto,
   MembershipPlanVersionRecord,
   MembershipVersionBenefitInput,
@@ -62,8 +64,18 @@ type DraftFormState = {
   currency: string;
   changeSummary: string;
   benefits: BenefitDraft[];
+  mediaLibraryPolicy: {
+    storageQuotaGb: string;
+    allowUserUpload: boolean;
+    allowPublicSharing: boolean;
+  };
   permissionCodes: string[];
 };
+
+function toStorageQuotaGbString(policy: MembershipMediaLibraryPolicy | undefined) {
+  const bytes = policy?.storageQuotaBytes ?? 0;
+  return String(bytes / (1024 * 1024 * 1024));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -102,7 +114,37 @@ function buildFormState(version: MembershipPlanVersionRecord | null): DraftFormS
     currency: version?.currency ?? 'CNY',
     changeSummary: version?.changeSummary ?? '',
     benefits: version?.benefits.map((benefit) => ({ ...benefit })) ?? [],
+    mediaLibraryPolicy: {
+      storageQuotaGb: toStorageQuotaGbString(version?.mediaLibraryPolicy),
+      allowUserUpload: version?.mediaLibraryPolicy.allowUserUpload ?? false,
+      allowPublicSharing: version?.mediaLibraryPolicy.allowPublicSharing ?? false,
+    },
     permissionCodes: [...(version?.permissionCodes ?? [])],
+  };
+}
+
+function buildDraftPayload(formState: DraftFormState) {
+  return {
+    displayName: formState.displayName,
+    description: formState.description || null,
+    billingPeriod: formState.billingPeriod,
+    priceCents: Number(formState.priceCents || 0),
+    currency: formState.currency,
+    changeSummary: formState.changeSummary || null,
+    permissionCodes: formState.permissionCodes,
+    benefits: formState.benefits.map((benefit) => ({
+      ...benefit,
+      quantity: benefit.quantity === null ? null : Number(benefit.quantity),
+    })),
+    mediaLibraryPolicy: {
+      storageQuotaBytes:
+        Math.max(0, Number(formState.mediaLibraryPolicy.storageQuotaGb || 0)) *
+        1024 *
+        1024 *
+        1024,
+      allowUserUpload: formState.mediaLibraryPolicy.allowUserUpload,
+      allowPublicSharing: formState.mediaLibraryPolicy.allowPublicSharing,
+    },
   };
 }
 
@@ -234,7 +276,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
       setSelectedPlanId(planId);
       setFormState(buildFormState(next.draftVersion ?? next.currentVersion));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '加载会员方案工作台失败。');
+      toast.error(error instanceof Error ? error.message : adminText.api.loadWorkspaceFailed);
     } finally {
       setLoadingPlan(false);
     }
@@ -249,34 +291,36 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
     }));
   }
 
-  async function saveDraft() {
+  async function persistDraft(options?: { silent?: boolean }) {
     setSavingDraft(true);
     try {
-      await putAdminJson(`/api/admin/memberships/plans/${selectedPlanId}/draft`, {
-        displayName: formState.displayName,
-        description: formState.description || null,
-        billingPeriod: formState.billingPeriod,
-        priceCents: Number(formState.priceCents || 0),
-        currency: formState.currency,
-        changeSummary: formState.changeSummary || null,
-        permissionCodes: formState.permissionCodes,
-        benefits: formState.benefits.map((benefit) => ({
-          ...benefit,
-          quantity: benefit.quantity === null ? null : Number(benefit.quantity),
-        })),
-      });
-      toast.success('会员草稿已保存。');
+      await putAdminJson(`/api/admin/memberships/plans/${selectedPlanId}/draft`, buildDraftPayload(formState));
+      if (!options?.silent) {
+        toast.success('会员草稿已保存。云资料额度会写入草稿版本，需发布并让用户切换到新生效版本后才会影响用户当前额度。');
+      }
       await refreshWorkspace();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '保存会员草稿失败。');
+      if (!options?.silent) {
+        toast.error(error instanceof Error ? error.message : '保存会员草稿失败。');
+      }
+      throw error;
     } finally {
       setSavingDraft(false);
+    }
+  }
+
+  async function saveDraft() {
+    try {
+      await persistDraft();
+    } catch {
+      return;
     }
   }
 
   async function publishNow() {
     setPublishing(true);
     try {
+      await persistDraft({ silent: true });
       await postAdminJson(`/api/admin/memberships/plans/${selectedPlanId}/publish`);
       toast.success('会员版本已发布。');
       await refreshWorkspace();
@@ -290,6 +334,7 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
   async function schedulePublish() {
     setScheduling(true);
     try {
+      await persistDraft({ silent: true });
       await postAdminJson(`/api/admin/memberships/plans/${selectedPlanId}/schedule`, {
         effectiveFrom: new Date(scheduleValue).toISOString(),
       });
@@ -364,9 +409,9 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                   <span className="text-[11px] opacity-70">{plan.code}</span>
                 </div>
                 <div className="mt-2 space-y-1 text-xs opacity-80">
-                  <div>当前: {plan.currentVersionLabel}</div>
-                  <div>下一版: {plan.nextVersionLabel}</div>
-                  <div>价格: {plan.priceLabel}</div>
+                  <div>当前：{plan.currentVersionLabel}</div>
+                  <div>下一版：{plan.nextVersionLabel}</div>
+                  <div>价格：{plan.priceLabel}</div>
                 </div>
               </button>
             ))}
@@ -385,10 +430,10 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {current ? (
-                    <StatusBadge value={`Published V${current.versionNumber}`} tone="success" />
+                    <StatusBadge value={`已发布 V${current.versionNumber}`} tone="success" />
                   ) : null}
                   {scheduled ? (
-                    <StatusBadge value={`Scheduled V${scheduled.versionNumber}`} tone="warning" />
+                    <StatusBadge value={`已预定 V${scheduled.versionNumber}`} tone="warning" />
                   ) : null}
                   {editableVersion ? (
                     <StatusBadge
@@ -518,9 +563,64 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
 
                 <TabsContent value="benefits" className="mt-0">
                   <Collapsible open={advancedBenefitsOpen} onOpenChange={setAdvancedBenefitsOpen} className="space-y-3">
+                    <div className="rounded-md border border-border bg-card p-4">
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            云资料存储额度
+                          </label>
+                          <Input
+                            type="number"
+                            value={formState.mediaLibraryPolicy.storageQuotaGb}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                mediaLibraryPolicy: {
+                                  ...currentState.mediaLibraryPolicy,
+                                  storageQuotaGb: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <p className="text-[11px] text-muted-foreground">单位：GB</p>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={formState.mediaLibraryPolicy.allowUserUpload}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                mediaLibraryPolicy: {
+                                  ...currentState.mediaLibraryPolicy,
+                                  allowUserUpload: event.target.checked,
+                                },
+                              }))
+                            }
+                          />
+                          允许本地上传图片和视频
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={formState.mediaLibraryPolicy.allowPublicSharing}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                mediaLibraryPolicy: {
+                                  ...currentState.mediaLibraryPolicy,
+                                  allowPublicSharing: event.target.checked,
+                                },
+                              }))
+                            }
+                          />
+                          允许公开分享
+                        </label>
+                      </div>
+                    </div>
                     <div className="flex items-center justify-between rounded-md border border-border bg-card p-3">
                       <div className="text-xs text-muted-foreground">
-                        仅在需要自定义权益明细时编辑。只调整方案名称、价格、周期时，可直接保存基础设置。
+                        仅在需要自定义权益明细时编辑。这里保存的是会员方案草稿版本；云资料额度需在版本发布并生效后，才会影响对应用户的当前额度。
                       </div>
                       <CollapsibleTrigger asChild>
                         <Button type="button" variant="outline" size="sm">

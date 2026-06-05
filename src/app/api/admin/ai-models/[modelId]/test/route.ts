@@ -5,6 +5,7 @@ import { createAgentRunService } from '@/server/agent/run-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { testAiModelConfiguration } from '@/server/repositories/ai-models';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   modelId: z.uuid(),
@@ -40,7 +41,7 @@ export async function POST(
         {
           error: {
             code: 'validation_error',
-            message: 'AI model test request is invalid.',
+            message: adminText.api.aiModelTestInvalid,
             issues: error.issues,
           },
         },

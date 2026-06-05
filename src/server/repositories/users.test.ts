@@ -209,3 +209,13 @@ test('storage quota owner updates used bytes on save and delete', async () => {
   const quota = await repository.getStorageQuota('user-1');
   assert.deepEqual(quota, { storageQuotaBytes: 2_000, storageUsedBytes: 600 });
 });
+
+test('storage quota owner applies membership quota snapshot without mutating used bytes', async () => {
+  const repository = createMemoryUserStorageRepository({
+    'user-1': { storageQuotaBytes: 2_000, storageUsedBytes: 600 },
+  });
+
+  const quota = await repository.applyMembershipMediaQuota('user-1', 4_000);
+
+  assert.deepEqual(quota, { storageQuotaBytes: 4_000, storageUsedBytes: 600 });
+});

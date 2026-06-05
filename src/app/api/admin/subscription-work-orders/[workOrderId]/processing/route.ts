@@ -5,6 +5,7 @@ import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { startSubscriptionWorkOrderProcessing } from '@/server/auth/subscription-work-orders';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   workOrderId: z.uuid(),
@@ -43,11 +44,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'Subscription work order processing request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.subscriptionProcessingInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

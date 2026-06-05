@@ -105,14 +105,6 @@ export const ADMIN_HELP_CENTER_GROUPS: AdminHelpCenterGroup[] = [
         actions: ['编辑方案', '发布版本', '查看历史'],
       },
       {
-        navHref: '/admin/permissions',
-        role: '定义会员方案绑定的权限资源，控制页面和动作准入。',
-        relatedFrontend: ['用户中心', '功能入口显隐'],
-        upstream: ['会员方案', '资源定义'],
-        downstream: ['前台功能准入', '会员升级差异'],
-        actions: ['绑定权限', '核对资源', '检查方案差异'],
-      },
-      {
         navHref: '/admin/orders',
         role: '跟踪支付、开通、履约和人工处理状态。',
         relatedFrontend: ['会员开通', '购买结果', '订单记录'],
@@ -127,14 +119,6 @@ export const ADMIN_HELP_CENTER_GROUPS: AdminHelpCenterGroup[] = [
     title: '能力与供给',
     description: '解释用户能用什么、按什么规则用，以及背后的运行供给如何配置。',
     modules: [
-      {
-        navHref: '/admin/benefits',
-        role: '维护会员权益、额度与服务边界。',
-        relatedFrontend: ['会员权益页', 'AI 使用额度', '用户中心'],
-        upstream: ['会员方案', '商业定价'],
-        downstream: ['额度展示', '功能可用范围', '扣费与消耗规则'],
-        actions: ['配置权益', '检查额度', '核对方案差异'],
-      },
       {
         navHref: '/admin/ai-jobs',
         role: '查看和处理 AI 任务执行结果、审核状态与异常。',

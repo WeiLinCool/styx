@@ -7,6 +7,7 @@ import { invalidateUserPermissionCacheForVersion } from '@/server/auth/permissio
 import { readJsonBody } from '@/server/api-request-guard';
 import { createOrUpdateMembershipPlanDraft } from '@/server/repositories/membership-plan-versions';
 import { syncPermissionResourcesFromCatalog } from '@/server/repositories/permission-resources';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const membershipDraftSchema = z.object({
   displayName: z.string().trim().min(1),
@@ -25,6 +26,11 @@ const membershipDraftSchema = z.object({
       unit: z.string().trim().nullable().optional().default(null),
     }),
   ),
+  mediaLibraryPolicy: z.object({
+    storageQuotaBytes: z.coerce.number().int().nonnegative(),
+    allowUserUpload: z.boolean(),
+    allowPublicSharing: z.boolean(),
+  }),
 });
 
 export function parseMembershipDraftBody(input: unknown) {
@@ -51,6 +57,7 @@ export async function PUT(
         currency: body.currency,
         changeSummary: body.changeSummary,
         benefits: body.benefits,
+        mediaLibraryPolicy: body.mediaLibraryPolicy,
         permissionCodes: body.permissionCodes,
       });
     await invalidateUserPermissionCacheForVersion(draft.id);
@@ -62,7 +69,7 @@ export async function PUT(
         {
           error: {
             code: 'validation_error',
-            message: 'Membership draft request is invalid.',
+            message: adminText.api.membershipDraftInvalid,
             issues: error.issues,
           },
         },

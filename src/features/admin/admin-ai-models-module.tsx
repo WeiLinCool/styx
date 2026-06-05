@@ -48,6 +48,7 @@ import type {
 } from '@/server/repositories/ai-models';
 import { AdminAiModelActions, AdminAiProviderActions } from './admin-action-controls';
 import { formatAdminAiLabel, formatAdminAiText } from './admin-ai-labels';
+import { adminText } from './admin-i18n';
 import { StatusBadge } from './status-badge';
 
 const metricToneClassName: Record<AdminMetricTone, string> = {
@@ -467,7 +468,7 @@ export function AdminAiModelsModule({
           </p>
         </div>
         <StatusBadge
-          value={source === 'database' ? '数据库' : '种子数据'}
+          value={source === 'database' ? adminText.source.database : adminText.source.seed}
           tone={source === 'database' ? 'success' : 'warning'}
         />
       </div>

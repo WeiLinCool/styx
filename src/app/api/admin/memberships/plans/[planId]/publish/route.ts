@@ -10,10 +10,10 @@ export async function POST(
   context: { params: Promise<{ planId: string }> },
 ) {
   try {
-    const session = await requireAdmin();
+    await requireAdmin();
     const { planId } = await context.params;
 
-    const published = await publishMembershipPlanDraftInDb(planId, { actorId: session.user.id });
+    const published = await publishMembershipPlanDraftInDb(planId);
     await invalidateUserPermissionCacheForPlan(planId);
 
     return NextResponse.json(published, { status: 200 });

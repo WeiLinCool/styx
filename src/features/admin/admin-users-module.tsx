@@ -13,6 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { formatAccountStateLabel } from '@/features/account/account-state';
 import { formatCredits } from '@/lib/credits';
+import { formatStorageUsage } from '@/lib/storage';
 import {
   Table,
   TableBody,
@@ -93,6 +94,22 @@ const columns: AdminColumn<AdminUserRow>[] = [
     ),
   },
   {
+    key: 'storage',
+    label: '存储',
+    render: (user) => {
+      const storage = formatStorageUsage(user.storageUsedBytes, user.storageQuotaBytes);
+
+      return (
+        <div className="space-y-1">
+          <div className="text-sm text-foreground">
+            {storage.usedLabel} / {storage.quotaLabel}
+          </div>
+          <div className="text-xs text-muted-foreground">{storage.percentLabel}</div>
+        </div>
+      );
+    },
+  },
+  {
     key: 'activity',
     label: '活动 / 审计',
     render: (user) => (
@@ -150,6 +167,8 @@ export function AdminUsersModule({
         formatAccountStateLabel(record.accountState),
         record.bindingState,
         record.membership,
+        String(record.storageUsedBytes),
+        String(record.storageQuotaBytes),
         record.activity,
         record.auditSummary,
         ...record.identities,

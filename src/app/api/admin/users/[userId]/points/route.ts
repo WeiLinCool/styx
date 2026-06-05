@@ -6,12 +6,16 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { createJsonResponse } from '@/server/encrypted-response';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const bodySchema = z.object({
   amount: z
     .number()
-    .refine((value) => Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) < 1e-9, 'Amount must use at most two decimal places.')
-    .refine((value) => value !== 0, 'Amount must be non-zero.'),
+    .refine(
+      (value) => Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) < 1e-9,
+      '金额最多保留两位小数。',
+    )
+    .refine((value) => value !== 0, '金额不能为 0。'),
   reason: z.string().trim().min(1).max(500),
 });
 
@@ -68,11 +72,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'Admin points adjustment request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.userPointsInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

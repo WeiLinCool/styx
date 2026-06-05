@@ -5,6 +5,7 @@ import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { rejectSubscriptionWorkOrder } from '@/server/auth/subscription-work-orders';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   workOrderId: z.uuid(),
@@ -51,7 +52,7 @@ export async function POST(
         {
           error: {
             code: 'validation_error',
-            message: 'Subscription work order rejection request is invalid.',
+            message: adminText.api.subscriptionRejectInvalid,
             issues: error.issues,
           },
         },

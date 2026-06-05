@@ -60,6 +60,11 @@ test('admin membership config module shows version states and onboarding guide',
             currency: 'CNY',
             changeSummary: null,
             benefits: [],
+            mediaLibraryPolicy: {
+              storageQuotaBytes: 1073741824,
+              allowUserUpload: true,
+              allowPublicSharing: false,
+            },
             permissionCodes: ['page.user_center'],
           },
           draftVersion: {
@@ -85,6 +90,11 @@ test('admin membership config module shows version states and onboarding guide',
                 unit: 'credit',
               },
             ],
+            mediaLibraryPolicy: {
+              storageQuotaBytes: 1073741824,
+              allowUserUpload: true,
+              allowPublicSharing: false,
+            },
             permissionCodes: ['page.user_center'],
           },
           scheduledVersion: null,
@@ -95,8 +105,12 @@ test('admin membership config module shows version states and onboarding guide',
   );
 
   assert.match(html, /第一次配置会员方案/);
-  assert.match(html, /基础信息与价格/);
+  assert.match(html, /基础设置/);
   assert.match(html, /权限绑定/);
   assert.match(html, /历史版本/);
   assert.match(html, /Pro Monthly V2/);
+  assert.match(html, /云资料存储额度/);
+  assert.match(html, /允许本地上传图片和视频/);
+  assert.match(html, /允许公开分享/);
+  assert.match(html, /1024/);
 });

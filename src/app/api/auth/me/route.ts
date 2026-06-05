@@ -87,6 +87,8 @@ export async function GET(request: Request) {
         displayName: session.user.displayName,
         mustResetPassword: session.user.metadata?.mustResetPassword === true,
         points: overview.points,
+        storageUsedBytes: session.user.storageUsedBytes,
+        storageQuotaBytes: session.user.storageQuotaBytes,
         permissionCodes,
         inviteSummary: overview.inviteSummary,
         checkinStatus: overview.checkinStatus,

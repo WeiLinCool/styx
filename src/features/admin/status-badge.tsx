@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { formatAccountStateLabel } from '@/features/account/account-state';
+import { formatAdminStatus } from './admin-i18n';
 import { cn } from '@/lib/utils';
 import type { DashboardTone } from '@/server/repositories/admin-dashboard';
 
@@ -71,6 +72,7 @@ export function StatusBadge({ value, label, tone, className }: StatusBadgeProps)
   const accountStateLabel = formatAccountStateLabel(value);
   const resolvedLabel =
     label ??
+    formatAdminStatus(value) ??
     statusLabels[value] ??
     (accountStateLabel === '未知状态' ? value : accountStateLabel);
 

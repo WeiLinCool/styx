@@ -6,15 +6,21 @@ import { db, schema } from '@/server/db';
 
 export type CreateSavedAssetInput = {
   userId: string;
-  runId: string;
-  conversationId: string;
-  artifactId: string;
+  runId: string | null;
+  conversationId: string | null;
+  artifactId: string | null;
   kind: GeneratedMediaAssetDto['kind'];
   title: string;
-  sourceProvider: string;
-  sourceModel: string;
+  sourceType: GeneratedMediaAssetDto['sourceType'];
+  sourceProvider: string | null;
+  sourceModel: string | null;
   sourceUrl?: string | null;
   sourceExpiresAt?: string | null;
+  originalFilename?: string | null;
+  sha256?: string | null;
+  shareId?: string | null;
+  shareStatus?: GeneratedMediaAssetDto['shareStatus'];
+  sharedAt?: string | null;
   storageProvider: string;
   bucket: string;
   region: string;
@@ -36,6 +42,14 @@ export type GeneratedMediaAssetRepository = {
     artifactId: string;
   }): Promise<GeneratedMediaAssetDto | null>;
   getSavedAssetForUser(assetId: string, userId: string): Promise<GeneratedMediaAssetDto | null>;
+  enableSharingForUser(
+    assetId: string,
+    userId: string,
+    input: { shareId: string; sharedAt: string },
+  ): Promise<GeneratedMediaAssetDto | null>;
+  disableSharingForUser(assetId: string, userId: string): Promise<GeneratedMediaAssetDto | null>;
+  getActiveSharedAssetByShareId(shareId: string): Promise<GeneratedMediaAssetDto | null>;
+  getSavedAssetForAdmin(assetId: string): Promise<GeneratedMediaAssetDto | null>;
   softDeleteSavedAssetForUser(assetId: string, userId: string): Promise<GeneratedMediaAssetDto | null>;
 };
 
@@ -64,10 +78,16 @@ function toGeneratedMediaAssetDto(
     artifactId: asset.artifactId,
     kind: asset.kind as GeneratedMediaAssetDto['kind'],
     title: asset.title,
+    sourceType: asset.sourceType,
     sourceProvider: asset.sourceProvider,
     sourceModel: asset.sourceModel,
     sourceUrl: asset.sourceUrl,
     sourceExpiresAt: toIso(asset.sourceExpiresAt),
+    originalFilename: asset.originalFilename,
+    sha256: asset.sha256,
+    shareId: asset.shareId,
+    shareStatus: asset.shareStatus,
+    sharedAt: toIso(asset.sharedAt),
     storageProvider: asset.storageProvider,
     bucket: asset.bucket,
     region: asset.region,
@@ -98,10 +118,16 @@ function createStoredAsset(input: CreateSavedAssetInput): StoredGeneratedMediaAs
     artifactId: input.artifactId,
     kind: input.kind,
     title: input.title,
+    sourceType: input.sourceType,
     sourceProvider: input.sourceProvider,
     sourceModel: input.sourceModel,
     sourceUrl: input.sourceUrl ?? null,
     sourceExpiresAt: input.sourceExpiresAt ?? null,
+    originalFilename: input.originalFilename ?? null,
+    sha256: input.sha256 ?? null,
+    shareId: input.shareId ?? null,
+    shareStatus: input.shareStatus ?? 'disabled',
+    sharedAt: input.sharedAt ?? null,
     storageProvider: input.storageProvider,
     bucket: input.bucket,
     region: input.region,
@@ -138,10 +164,16 @@ export function createDatabaseGeneratedMediaAssetRepository(): GeneratedMediaAss
           artifactId: input.artifactId,
           kind: input.kind,
           title: input.title,
+          sourceType: input.sourceType,
           sourceProvider: input.sourceProvider,
           sourceModel: input.sourceModel,
           sourceUrl: input.sourceUrl ?? null,
           sourceExpiresAt: input.sourceExpiresAt ? new Date(input.sourceExpiresAt) : null,
+          originalFilename: input.originalFilename ?? null,
+          sha256: input.sha256 ?? null,
+          shareId: input.shareId ?? null,
+          shareStatus: input.shareStatus ?? 'disabled',
+          sharedAt: input.sharedAt ? new Date(input.sharedAt) : null,
           storageProvider: input.storageProvider,
           bucket: input.bucket,
           region: input.region,
@@ -205,11 +237,83 @@ export function createDatabaseGeneratedMediaAssetRepository(): GeneratedMediaAss
 
       return asset ? toGeneratedMediaAssetDto(asset) : null;
     },
+    async enableSharingForUser(assetId, userId, input) {
+      const [asset] = await database
+        .update(schema.generatedMediaAssets)
+        .set({
+          shareId: input.shareId,
+          shareStatus: 'active',
+          sharedAt: new Date(input.sharedAt),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.generatedMediaAssets.id, assetId),
+            eq(schema.generatedMediaAssets.userId, userId),
+            eq(schema.generatedMediaAssets.status, 'ready'),
+            isNull(schema.generatedMediaAssets.deletedAt),
+          ),
+        )
+        .returning();
+
+      return asset ? toGeneratedMediaAssetDto(asset) : null;
+    },
+    async disableSharingForUser(assetId, userId) {
+      const [asset] = await database
+        .update(schema.generatedMediaAssets)
+        .set({
+          shareStatus: 'disabled',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.generatedMediaAssets.id, assetId),
+            eq(schema.generatedMediaAssets.userId, userId),
+            eq(schema.generatedMediaAssets.status, 'ready'),
+            isNull(schema.generatedMediaAssets.deletedAt),
+          ),
+        )
+        .returning();
+
+      return asset ? toGeneratedMediaAssetDto(asset) : null;
+    },
+    async getActiveSharedAssetByShareId(shareId) {
+      const [asset] = await database
+        .select()
+        .from(schema.generatedMediaAssets)
+        .where(
+          and(
+            eq(schema.generatedMediaAssets.shareId, shareId),
+            eq(schema.generatedMediaAssets.shareStatus, 'active'),
+            eq(schema.generatedMediaAssets.status, 'ready'),
+            isNull(schema.generatedMediaAssets.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      return asset ? toGeneratedMediaAssetDto(asset) : null;
+    },
+    async getSavedAssetForAdmin(assetId) {
+      const [asset] = await database
+        .select()
+        .from(schema.generatedMediaAssets)
+        .where(
+          and(
+            eq(schema.generatedMediaAssets.id, assetId),
+            eq(schema.generatedMediaAssets.status, 'ready'),
+            isNull(schema.generatedMediaAssets.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      return asset ? toGeneratedMediaAssetDto(asset) : null;
+    },
     async softDeleteSavedAssetForUser(assetId, userId) {
       const [asset] = await database
         .update(schema.generatedMediaAssets)
         .set({
           status: 'deleted',
+          shareStatus: 'disabled',
           deletedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -264,6 +368,48 @@ export function createMemoryGeneratedMediaAssetRepository(): GeneratedMediaAsset
 
       return structuredClone(asset);
     },
+    async enableSharingForUser(assetId, userId, input) {
+      const asset = assets.get(assetId);
+      if (!asset || asset.userId !== userId || asset.status !== 'ready' || asset.deletedAt) {
+        return null;
+      }
+
+      asset.shareId = input.shareId;
+      asset.shareStatus = 'active';
+      asset.sharedAt = input.sharedAt;
+      asset.updatedAt = input.sharedAt;
+      return structuredClone(asset);
+    },
+    async disableSharingForUser(assetId, userId) {
+      const asset = assets.get(assetId);
+      if (!asset || asset.userId !== userId || asset.status !== 'ready' || asset.deletedAt) {
+        return null;
+      }
+
+      asset.shareStatus = 'disabled';
+      asset.updatedAt = new Date().toISOString();
+      return structuredClone(asset);
+    },
+    async getActiveSharedAssetByShareId(shareId) {
+      const asset =
+        Array.from(assets.values()).find(
+          (item) =>
+            item.shareId === shareId &&
+            item.shareStatus === 'active' &&
+            item.status === 'ready' &&
+            !item.deletedAt,
+        ) ?? null;
+
+      return asset ? structuredClone(asset) : null;
+    },
+    async getSavedAssetForAdmin(assetId) {
+      const asset = assets.get(assetId);
+      if (!asset || asset.status !== 'ready' || asset.deletedAt) {
+        return null;
+      }
+
+      return structuredClone(asset);
+    },
     async softDeleteSavedAssetForUser(assetId, userId) {
       const asset = assets.get(assetId);
       if (!asset || asset.userId !== userId || asset.status !== 'ready' || asset.deletedAt) {
@@ -271,6 +417,7 @@ export function createMemoryGeneratedMediaAssetRepository(): GeneratedMediaAsset
       }
 
       asset.status = 'deleted';
+      asset.shareStatus = 'disabled';
       asset.deletedAt = new Date().toISOString();
       asset.updatedAt = asset.deletedAt;
       return structuredClone(asset);

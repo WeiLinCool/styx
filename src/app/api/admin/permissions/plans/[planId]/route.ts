@@ -10,6 +10,7 @@ import {
   replaceMembershipPlanPermissionBindingsByPlanId,
 } from '@/server/repositories/membership-plan-permissions';
 import { syncPermissionResourcesFromCatalog } from '@/server/repositories/permission-resources';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const bodySchema = z.object({
   permissionCodes: z.array(z.string().trim().min(1)).max(500),
@@ -78,11 +79,11 @@ export async function PUT(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'Plan permission update request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.permissionUpdateInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

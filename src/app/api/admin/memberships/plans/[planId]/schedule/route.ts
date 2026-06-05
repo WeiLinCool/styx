@@ -5,6 +5,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { invalidateUserPermissionCacheForPlan } from '@/server/auth/permission-service';
 import { scheduleMembershipPlanDraftInDb } from '@/server/repositories/membership-plan-versions';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const bodySchema = z.object({
   effectiveFrom: z.string().datetime(),
@@ -37,7 +38,7 @@ export async function POST(
         {
           error: {
             code: 'validation_error',
-            message: 'Membership schedule request is invalid.',
+            message: adminText.api.membershipScheduleInvalid,
             issues: error.issues,
           },
         },

@@ -50,19 +50,27 @@ export type AgentArtifactDto = {
 };
 
 export type GeneratedMediaAssetStatus = 'ready' | 'deleted';
+export type MediaAssetSourceType = 'ai_generated' | 'user_uploaded';
+export type MediaAssetShareStatus = 'disabled' | 'active';
 
 export type GeneratedMediaAssetDto = {
   id: string;
   userId: string;
-  runId: string;
-  conversationId: string;
-  artifactId: string;
+  runId: string | null;
+  conversationId: string | null;
+  artifactId: string | null;
   kind: Extract<AgentArtifactKind, 'image' | 'video'>;
   title: string;
-  sourceProvider: string;
-  sourceModel: string;
+  sourceType: MediaAssetSourceType;
+  sourceProvider: string | null;
+  sourceModel: string | null;
   sourceUrl: string | null;
   sourceExpiresAt: string | null;
+  originalFilename: string | null;
+  sha256: string | null;
+  shareId: string | null;
+  shareStatus: MediaAssetShareStatus;
+  sharedAt: string | null;
   storageProvider: string;
   bucket: string;
   region: string;

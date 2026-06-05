@@ -5,6 +5,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { createAiModel } from '@/server/repositories/ai-models';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const bodySchema = z.object({
   providerId: z.uuid(),
@@ -51,11 +52,11 @@ export async function POST(request: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'AI model create request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.aiModelCreateInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

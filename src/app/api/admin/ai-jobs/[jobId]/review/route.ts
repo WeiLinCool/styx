@@ -8,6 +8,7 @@ import {
   reviewAiJob,
 } from '@/server/repositories/admin-mutations';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   jobId: z.uuid(),
@@ -61,11 +62,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'AI job review request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.aiJobReviewInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

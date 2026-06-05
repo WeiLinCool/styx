@@ -5,6 +5,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { updateAgentCapabilityStatus } from '@/server/repositories/agent-capabilities';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   capabilityId: z.uuid(),
@@ -59,11 +60,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'Agent capability status request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.agentCapabilityStatusInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

@@ -97,6 +97,8 @@ export function createLoginHandler(
               email: result.user.email,
               accountState: result.user.accountState,
               mustResetPassword: result.user.metadata?.mustResetPassword === true,
+              storageUsedBytes: result.user.storageUsedBytes,
+              storageQuotaBytes: result.user.storageQuotaBytes,
             },
           });
 

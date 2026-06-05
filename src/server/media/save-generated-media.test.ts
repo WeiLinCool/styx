@@ -92,6 +92,10 @@ test('save generated media uploads to COS, creates asset, and marks artifact sav
   });
 
   assert.equal(result.asset.kind, 'image');
+  assert.equal(result.asset.sourceType, 'ai_generated');
+  assert.equal(result.asset.originalFilename, null);
+  assert.equal(result.asset.shareStatus, 'disabled');
+  assert.equal(result.asset.shareId, null);
   assert.equal(result.asset.storageProvider, 'tencent_cos');
   assert.equal(result.updatedArtifact.metadata.saveStatus, 'saved');
   assert.equal(result.updatedArtifact.metadata.savedAssetId, result.asset.id);

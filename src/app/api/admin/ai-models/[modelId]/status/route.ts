@@ -5,6 +5,7 @@ import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { updateAiModelStatus } from '@/server/repositories/ai-models';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   modelId: z.uuid(),
@@ -61,7 +62,7 @@ export async function POST(
         {
           error: {
             code: 'validation_error',
-            message: 'AI model status request is invalid.',
+            message: adminText.api.aiModelStatusInvalid,
             issues: error.issues,
           },
         },

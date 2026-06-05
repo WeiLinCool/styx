@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { HOME_CONTENT_SLUGS } from '@/features/public/home-content';
+import { adminText } from '@/features/admin/admin-i18n';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
@@ -55,11 +56,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'Content update request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.contentUpdateInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

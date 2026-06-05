@@ -21,6 +21,8 @@ export interface UserInfo {
   accountState?: AccountState;
   mustResetPassword?: boolean;
   points: number;
+  storageUsedBytes?: number;
+  storageQuotaBytes?: number;
 }
 
 const SPLASH_COOKIE_KEY = 'nfai_splash_visited';
@@ -47,6 +49,8 @@ export function saveUserToCookie(user: UserInfo): void {
     accountState: getAccountState(user),
     mustResetPassword: user.mustResetPassword,
     points: user.points,
+    storageUsedBytes: user.storageUsedBytes,
+    storageQuotaBytes: user.storageQuotaBytes,
   } satisfies UserInfo);
 
   Cookies.set(scopedUserCookieName, payload, { expires: 30, sameSite: 'lax' });

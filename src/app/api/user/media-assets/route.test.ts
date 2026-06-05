@@ -16,10 +16,16 @@ test('POST /api/user/media-assets saves a generated artifact for the current use
         artifactId,
         kind: 'image',
         title: '生成图片',
+        sourceType: 'ai_generated',
         sourceProvider: 'doubao',
         sourceModel: 'seedream-3',
         sourceUrl: 'https://provider.example/output.png',
         sourceExpiresAt: '2026-06-03T12:00:00.000Z',
+        originalFilename: null,
+        sha256: null,
+        shareId: null,
+        shareStatus: 'disabled',
+        sharedAt: null,
         storageProvider: 'tencent_cos',
         bucket: 'bucket-a',
         region: 'ap-shanghai',
@@ -65,6 +71,8 @@ test('POST /api/user/media-assets saves a generated artifact for the current use
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.asset.runId, '11111111-1111-4111-8111-111111111111');
+  assert.equal(body.asset.sourceType, 'ai_generated');
+  assert.equal(body.asset.shareStatus, 'disabled');
   assert.equal(body.artifact.metadata.saveStatus, 'saved');
 });
 
@@ -83,10 +91,16 @@ test('GET /api/user/media-assets lists saved assets for the current user', async
         artifactId: 'artifact-1',
         kind: 'image',
         title: '生成图片',
+        sourceType: 'ai_generated',
         sourceProvider: 'doubao',
         sourceModel: 'seedream-3',
         sourceUrl: null,
         sourceExpiresAt: null,
+        originalFilename: null,
+        sha256: null,
+        shareId: null,
+        shareStatus: 'disabled',
+        sharedAt: null,
         storageProvider: 'tencent_cos',
         bucket: 'bucket-a',
         region: 'ap-shanghai',

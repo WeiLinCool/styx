@@ -116,11 +116,6 @@ function writeValue(source: unknown, path: string, value: unknown): unknown {
   return clone;
 }
 
-function readString(source: unknown, path: string) {
-  const value = readValue(source, path);
-  return typeof value === 'string' ? value : '';
-}
-
 function defaultListItem(fields: ContentField[]) {
   if (fields.length === 1 && fields[0].path === '') {
     return '';
@@ -445,7 +440,7 @@ function ContentDialog({
 
           {message ? <p className="text-sm text-red-700">{message}</p> : null}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
               取消
             </Button>
             <Button type="submit" disabled={pending}>

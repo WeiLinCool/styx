@@ -79,6 +79,8 @@ export type ActivationTokenRecord = {
 
 export type SessionUser = UserRecord & {
   adminRoles: string[];
+  storageUsedBytes: number;
+  storageQuotaBytes: number;
 };
 
 export type SessionContext =
@@ -120,7 +122,7 @@ export function assertActivationTokenUsable(
   if (!token) {
     throw new AccountDomainError(
       'activation_token_invalid',
-      'Activation token is invalid.',
+      '激活令牌无效。',
       404,
     );
   }
@@ -128,7 +130,7 @@ export function assertActivationTokenUsable(
   if (token.consumedAt) {
     throw new AccountDomainError(
       'activation_token_consumed',
-      'Activation token has already been consumed.',
+      '激活令牌已被使用。',
       409,
     );
   }
@@ -136,7 +138,7 @@ export function assertActivationTokenUsable(
   if (token.expiresAt <= now) {
     throw new AccountDomainError(
       'activation_token_expired',
-      'Activation token has expired.',
+      '激活令牌已过期。',
       410,
     );
   }
@@ -152,7 +154,7 @@ export function assertIdentityCanBind(input: {
   ) {
     throw new AccountDomainError(
       'identity_conflict',
-      'Verified identity is already bound to another account.',
+      '已验证身份已绑定到其他账号。',
       409,
     );
   }
@@ -179,7 +181,7 @@ export function accountErrorToResponse(error: unknown): {
     body: {
       error: {
         code: 'internal_error',
-        message: 'Unexpected account service error.',
+        message: '账户服务发生未知错误。',
       },
     },
   };

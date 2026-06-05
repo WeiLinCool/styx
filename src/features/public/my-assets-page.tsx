@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, Image as ImageIcon, Loader2, MessageSquarePlus, Search, Trash2, Video } from 'lucide-react';
+import { ArrowLeft, Download, Image as ImageIcon, Link2, Loader2, MessageSquarePlus, Search, Trash2, Upload, Video } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth-context';
@@ -11,12 +11,19 @@ import { readJsonResponse } from '@/lib/api-response';
 import { userApiRequest } from '@/lib/user-api-client';
 import type { GeneratedMediaAssetDto } from '@/server/agent/types';
 
-import { getSavedMediaAssetAccess, listSavedMediaAssets } from './agent-runtime-client';
+import {
+  disableMediaShare,
+  enableMediaShare,
+  getSavedMediaAssetAccess,
+  listSavedMediaAssets,
+  uploadUserMedia,
+} from './agent-runtime-client';
 import { deriveMyAssetsView } from './my-assets-state';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 
 type AssetKindFilter = 'all' | 'image' | 'video';
+type AssetSourceFilter = 'all' | 'ai_generated' | 'user_uploaded';
 type AssetSort = 'newest' | 'oldest';
 
 function formatBytes(byteSize: number) {
@@ -62,14 +69,18 @@ function AssetPlaceholder({ kind }: { kind: GeneratedMediaAssetDto['kind'] }) {
 export function MyAssetsPageClient() {
   const router = useRouter();
   const { isLoggedIn, user } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [assets, setAssets] = useState<GeneratedMediaAssetDto[]>([]);
   const [search, setSearch] = useState('');
   const [kind, setKind] = useState<AssetKindFilter>('all');
+  const [sourceType, setSourceType] = useState<AssetSourceFilter>('all');
   const [sort, setSort] = useState<AssetSort>('newest');
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
+  const [sharingAssetId, setSharingAssetId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<GeneratedMediaAssetDto | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -117,9 +128,10 @@ export function MyAssetsPageClient() {
       deriveMyAssetsView(assets, {
         search,
         kind,
+        sourceType,
         sort,
       }),
-    [assets, kind, search, sort],
+    [assets, kind, search, sort, sourceType],
   );
 
   const handleDeleteAsset = async (asset: GeneratedMediaAssetDto) => {
@@ -189,6 +201,48 @@ export function MyAssetsPageClient() {
     }
   };
 
+  const handleUploadFile = async (file: File) => {
+    setUploading(true);
+    setActionMessage(null);
+    try {
+      const asset = await uploadUserMedia({ file });
+      setAssets((current) => [asset, ...current]);
+      setActionMessage('资料已上传。');
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : '资料上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleToggleShare = async (asset: GeneratedMediaAssetDto) => {
+    setSharingAssetId(asset.id);
+    setActionMessage(null);
+    try {
+      if (asset.shareStatus === 'active') {
+        const updated = await disableMediaShare(asset.id);
+        setAssets((current) => current.map((item) => (item.id === asset.id ? updated : item)));
+        setActionMessage('已关闭分享。');
+        return;
+      }
+
+      const result = await enableMediaShare(asset.id);
+      setAssets((current) =>
+        current.map((item) => (item.id === asset.id ? result.asset : item)),
+      );
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(result.share.url);
+        setActionMessage('分享链接已复制。');
+      } else {
+        setActionMessage(`分享已开启：${result.share.url}`);
+      }
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : '分享设置失败');
+    } finally {
+      setSharingAssetId(null);
+    }
+  };
+
   if (!isLoggedIn || !user) {
     return null;
   }
@@ -223,8 +277,32 @@ export function MyAssetsPageClient() {
               <p className="text-[11px] text-muted-foreground">管理你已保存到云端的图片与视频</p>
             </div>
           </div>
-          <div className="rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">
-            {assets.length} 个文件
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,video/mp4"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  void handleUploadFile(file);
+                }
+                event.currentTarget.value = '';
+              }}
+            />
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {uploading ? '上传中' : '上传资料'}
+            </button>
+            <div className="rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">
+              {assets.length} 个文件
+            </div>
           </div>
         </div>
       </header>
@@ -250,6 +328,16 @@ export function MyAssetsPageClient() {
               <option value="all">全部类型</option>
               <option value="image">图片</option>
               <option value="video">视频</option>
+            </select>
+
+            <select
+              value={sourceType}
+              onChange={(event) => setSourceType(event.target.value as AssetSourceFilter)}
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none"
+            >
+              <option value="all">全部来源</option>
+              <option value="ai_generated">AI生成</option>
+              <option value="user_uploaded">本地上传</option>
             </select>
 
             <select
@@ -359,6 +447,15 @@ export function MyAssetsPageClient() {
                     >
                       <Download className="h-3.5 w-3.5" />
                       下载
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sharingAssetId === asset.id}
+                      onClick={() => void handleToggleShare(asset)}
+                      className="flex items-center justify-center gap-1 rounded-2xl border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
+                      {asset.shareStatus === 'active' ? '关闭分享' : '开启分享'}
                     </button>
                     <button
                       type="button"

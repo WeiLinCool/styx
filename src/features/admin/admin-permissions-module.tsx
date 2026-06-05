@@ -10,6 +10,7 @@ import { readJsonResponse } from '@/lib/api-response';
 import type { MembershipPlanPermissionWorkspace } from '@/server/repositories/membership-plan-permissions';
 import type { AdminPermissionResourceOverview } from '@/server/repositories/permission-resources';
 import { StatusBadge } from './status-badge';
+import { adminText } from './admin-i18n';
 
 type AdminPermissionsModuleProps = {
   mode?: 'standalone' | 'embedded';
@@ -151,7 +152,7 @@ export function AdminPermissionsModule({
                 <h3 className="text-sm font-semibold text-foreground">会员方案</h3>
                 <p className="mt-1 text-xs text-muted-foreground">选择要配置的方案。</p>
               </div>
-              {loadingPlan ? <StatusBadge value="加载中" tone="warning" /> : null}
+              {loadingPlan ? <StatusBadge value={adminText.common.loading} tone="warning" /> : null}
             </div>
             <div className="space-y-2">
               {workspace.plans.map((plan) => (
@@ -190,7 +191,7 @@ export function AdminPermissionsModule({
               />
               {embedded ? null : (
                 <Button type="button" onClick={() => void saveBindings()} disabled={saving}>
-                  {saving ? '保存中...' : '保存'}
+                  {saving ? adminText.common.saving : adminText.common.save}
                 </Button>
               )}
             </div>

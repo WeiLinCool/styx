@@ -40,6 +40,11 @@ test('resolvePlanVersionForEntitlement uses scheduled version after its effectiv
         currency: 'CNY',
         changeSummary: null,
         benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: 1073741824,
+          allowUserUpload: true,
+          allowPublicSharing: false,
+        },
         permissionCodes: [],
       },
       {
@@ -57,6 +62,11 @@ test('resolvePlanVersionForEntitlement uses scheduled version after its effectiv
         currency: 'CNY',
         changeSummary: null,
         benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: 2147483648,
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
         permissionCodes: [],
       },
     ],
@@ -89,6 +99,11 @@ test('resolvePlanVersionForEntitlement falls back to the latest draft when no pu
         currency: 'CNY',
         changeSummary: null,
         benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: 3221225472,
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
         permissionCodes: [],
       },
     ],
@@ -125,6 +140,11 @@ test('saveMembershipPlanDraftWithLoader creates or updates a draft version', asy
           unit: 'credit',
         },
       ],
+      mediaLibraryPolicy: {
+        storageQuotaBytes: 5 * 1024 * 1024 * 1024,
+        allowUserUpload: true,
+        allowPublicSharing: true,
+      },
       permissionCodes: ['page.user_center'],
     },
     harness,
@@ -133,6 +153,7 @@ test('saveMembershipPlanDraftWithLoader creates or updates a draft version', asy
   assert.equal(draft.status, 'draft');
   assert.equal(draft.versionNumber, 2);
   assert.equal(draft.displayName, 'Pro Monthly Updated');
+  assert.equal(draft.mediaLibraryPolicy.storageQuotaBytes, 5 * 1024 * 1024 * 1024);
 });
 
 test('publishMembershipPlanDraft archives the previous published version', async () => {
@@ -148,6 +169,11 @@ test('publishMembershipPlanDraft archives the previous published version', async
       currency: 'CNY',
       changeSummary: 'price update',
       benefits: [],
+      mediaLibraryPolicy: {
+        storageQuotaBytes: 5 * 1024 * 1024 * 1024,
+        allowUserUpload: true,
+        allowPublicSharing: true,
+      },
       permissionCodes: [],
     },
     harness,
@@ -176,6 +202,11 @@ test('scheduleMembershipPlanDraft marks the draft as scheduled', async () => {
       currency: 'CNY',
       changeSummary: 'price update',
       benefits: [],
+      mediaLibraryPolicy: {
+        storageQuotaBytes: 5 * 1024 * 1024 * 1024,
+        allowUserUpload: true,
+        allowPublicSharing: true,
+      },
       permissionCodes: [],
     },
     harness,
@@ -189,6 +220,35 @@ test('scheduleMembershipPlanDraft marks the draft as scheduled', async () => {
 
   assert.equal(scheduled.status, 'scheduled');
   assert.equal(scheduled.effectiveFrom, '2026-06-15T00:00:00.000Z');
+});
+
+test('publishMembershipPlanDraft ignores admin actor ids outside users table semantics', async () => {
+  const harness = createMembershipPlanVersionHarness();
+
+  await saveMembershipPlanDraftWithLoader(
+    {
+      planId: 'seed:pro',
+      displayName: 'Pro Monthly Updated',
+      description: 'new desc',
+      billingPeriod: 'month',
+      priceCents: 12900,
+      currency: 'CNY',
+      changeSummary: 'price update',
+      benefits: [],
+      mediaLibraryPolicy: {
+        storageQuotaBytes: 100 * 1024 * 1024 * 1024,
+        allowUserUpload: true,
+        allowPublicSharing: true,
+      },
+      permissionCodes: [],
+    },
+    harness,
+  );
+
+  const published = await publishMembershipPlanDraft('seed:pro', { actorId: 'admin-only-id' }, harness);
+
+  assert.equal(published.status, 'published');
+  assert.equal(published.mediaLibraryPolicy.storageQuotaBytes, 100 * 1024 * 1024 * 1024);
 });
 
 test('duplicateMembershipPlanVersionAsDraft copies a history version into the draft slot', async () => {
@@ -209,6 +269,11 @@ test('duplicateMembershipPlanVersionAsDraft copies a history version into the dr
         currency: 'CNY',
         changeSummary: null,
         benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: 2147483648,
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
         permissionCodes: ['page.user_center'],
       },
     ],

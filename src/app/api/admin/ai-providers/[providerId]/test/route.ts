@@ -5,6 +5,7 @@ import { createAgentRunService } from '@/server/agent/run-service';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
 import { testAiProviderConfiguration } from '@/server/repositories/ai-models';
+import { adminText } from '@/features/admin/admin-i18n';
 
 const paramsSchema = z.object({
   providerId: z.uuid(),
@@ -43,11 +44,11 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'AI provider test request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.aiProviderTestInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

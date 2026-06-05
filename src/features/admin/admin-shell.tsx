@@ -20,7 +20,7 @@ export function AdminShell({ children, session, dataSource = 'database' }: Admin
               NF
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-sidebar-foreground">南风 AI Admin</p>
+              <p className="truncate text-sm font-semibold text-sidebar-foreground">南风 AI 管理端</p>
               <p className="truncate text-xs text-muted-foreground">运营控制台</p>
             </div>
           </div>

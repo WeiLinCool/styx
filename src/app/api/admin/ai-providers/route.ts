@@ -6,6 +6,7 @@ import { requireAdmin } from '@/server/auth/guards';
 import { parseProviderBillingRules } from '@/server/billing/provider-rules';
 import { createAiProvider } from '@/server/repositories/ai-models';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
+import { adminText } from '@/features/admin/admin-i18n';
 
 function parseBillingRulesAtBoundary(value: unknown, context: z.RefinementCtx) {
   try {
@@ -13,7 +14,7 @@ function parseBillingRulesAtBoundary(value: unknown, context: z.RefinementCtx) {
   } catch (error) {
     context.addIssue({
       code: 'custom',
-      message: error instanceof Error ? error.message : 'Billing rules are invalid.',
+      message: error instanceof Error ? error.message : adminText.api.billingRulesInvalid,
     });
     return z.NEVER;
   }
@@ -61,11 +62,11 @@ export async function POST(request: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: {
-            code: 'validation_error',
-            message: 'AI provider create request is invalid.',
-            issues: error.issues,
-          },
+            error: {
+              code: 'validation_error',
+              message: adminText.api.aiProviderCreateInvalid,
+              issues: error.issues,
+            },
         },
         { status: 400 },
       );

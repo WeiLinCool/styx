@@ -134,6 +134,27 @@
       "when": 1780492140486,
       "tag": "0018_cuddly_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780581805505,
+      "tag": "0019_naive_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1780588035619,
+      "tag": "0020_clear_masked_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780591890533,
+      "tag": "0021_needy_hiroim",
+      "breakpoints": true
     }
   ]
 }

@@ -13,7 +13,6 @@ import {
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import { adjustCredits, calculateCreditBalance } from '@/server/billing/credits';
 import { db, schema } from '@/server/db';
-import { formatCredits } from '@/lib/credits';
 import {
   type AdminFilter,
   type AdminMetric,
@@ -47,6 +46,7 @@ export type UserStorageQuotaSnapshot = Omit<UserStorageQuota, 'canAllocate'>;
 export type UserStorageRepository = {
   getStorageQuota(userId: string): Promise<UserStorageQuotaSnapshot | null>;
   setStorageQuota(userId: string, input: UserStorageQuotaSnapshot): Promise<UserStorageQuotaSnapshot | null>;
+  applyMembershipMediaQuota(userId: string, storageQuotaBytes: number): Promise<UserStorageQuotaSnapshot | null>;
   incrementStorageUsedBytes(userId: string, deltaBytes: number): Promise<UserStorageQuotaSnapshot | null>;
 };
 
@@ -73,6 +73,19 @@ export function createMemoryUserStorageRepository(
     },
     async setStorageQuota(userId, input) {
       const next = { ...input };
+      quotas.set(userId, next);
+      return { ...next };
+    },
+    async applyMembershipMediaQuota(userId, storageQuotaBytes) {
+      const current = quotas.get(userId);
+      if (!current) {
+        return null;
+      }
+
+      const next = {
+        storageQuotaBytes,
+        storageUsedBytes: current.storageUsedBytes,
+      };
       quotas.set(userId, next);
       return { ...next };
     },
@@ -128,6 +141,21 @@ export function getUserStorageRepository(): UserStorageRepository {
 
       return user ?? null;
     },
+    async applyMembershipMediaQuota(userId, storageQuotaBytes) {
+      const [user] = await database
+        .update(schema.users)
+        .set({
+          storageQuotaBytes,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, userId))
+        .returning({
+          storageQuotaBytes: schema.users.storageQuotaBytes,
+          storageUsedBytes: schema.users.storageUsedBytes,
+        });
+
+      return user ?? null;
+    },
     async incrementStorageUsedBytes(userId, deltaBytes) {
       const [user] = await database
         .update(schema.users)
@@ -144,6 +172,13 @@ export function getUserStorageRepository(): UserStorageRepository {
       return user ?? null;
     },
   };
+}
+
+export async function applyMembershipMediaQuota(
+  userId: string,
+  storageQuotaBytes: number,
+): Promise<UserStorageQuotaSnapshot | null> {
+  return getUserStorageRepository().applyMembershipMediaQuota(userId, storageQuotaBytes);
 }
 
 export async function getUserById(userId: string) {
@@ -455,6 +490,8 @@ export type AdminUserRow = {
   bindingState: string;
   membership: string;
   points: number;
+  storageUsedBytes: number;
+  storageQuotaBytes: number;
   activity: string;
   auditSummary: string;
   createdAt: string;
@@ -505,6 +542,21 @@ function parseCreditValue(value: unknown) {
   if (typeof value === 'string') {
     const parsed = Number(value.replaceAll(',', '').trim());
     if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
+function parseStorageValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.replaceAll(',', '').trim());
+    if (Number.isFinite(parsed) && parsed >= 0) {
       return parsed;
     }
   }
@@ -609,6 +661,8 @@ function getSeedUsers(): AdminModuleData<AdminUserRow> {
       bindingState: '2 个已验证身份',
       membership: '所有者 / 团队年付',
       points: 980,
+      storageUsedBytes: 12 * 1024 * 1024 * 1024,
+      storageQuotaBytes: 20 * 1024 * 1024 * 1024,
       activity: '登录 12 次 / 近 7 天',
       auditSummary: '最近操作: seed.database',
       createdAt: '2026-05-29T08:00:00.000Z',
@@ -623,6 +677,8 @@ function getSeedUsers(): AdminModuleData<AdminUserRow> {
       bindingState: '需要激活',
       membership: '免费 / 无有效方案',
       points: 20,
+      storageUsedBytes: 340 * 1024 * 1024,
+      storageQuotaBytes: 1024 * 1024 * 1024,
       activity: '注册后未激活',
       auditSummary: '最近操作: activation.reissued',
       createdAt: '2026-05-29T07:20:00.000Z',
@@ -637,6 +693,8 @@ function getSeedUsers(): AdminModuleData<AdminUserRow> {
       bindingState: '恢复前需复核',
       membership: '专业版月付',
       points: 0,
+      storageUsedBytes: 2.4 * 1024 * 1024 * 1024,
+      storageQuotaBytes: 5 * 1024 * 1024 * 1024,
       activity: 'AI 任务失败率过高',
       auditSummary: '最近操作: account.suspended',
       createdAt: '2026-05-28T11:10:00.000Z',
@@ -707,6 +765,8 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
           : '需要激活',
       membership: row.membership,
       points: await getAdminUserCreditBalance(row.user),
+      storageUsedBytes: parseStorageValue(row.user.storageUsedBytes),
+      storageQuotaBytes: parseStorageValue(row.user.storageQuotaBytes),
       activity:
         row.user.accountState === 'active'
           ? '账号已激活'
@@ -720,16 +780,21 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
   const pendingCount = records.filter((record) => record.accountState === 'pending_activation').length;
   const activeCount = records.filter((record) => record.accountState === 'active').length;
   const suspendedCount = records.filter((record) => record.accountState === 'suspended').length;
-  const totalPoints = records.reduce(
-    (sum, record) => sum + metadataNumber({ points: record.points }, 'points'),
-    0,
-  );
+  const totalStorageUsedBytes = records.reduce((sum, record) => sum + record.storageUsedBytes, 0);
+  const totalStorageQuotaBytes = records.reduce((sum, record) => sum + record.storageQuotaBytes, 0);
 
   const metrics: AdminMetric[] = [
     { label: '总账号', value: String(records.length), hint: '数据库', tone: 'info' },
     { label: '待激活', value: String(pendingCount), hint: '激活队列', tone: 'warning' },
     { label: '活跃账号', value: String(activeCount), hint: '已激活生命周期', tone: 'success' },
-    { label: '可用积分', value: formatCredits(totalPoints), hint: '真实 ledger 余额', tone: 'default' },
+    {
+      label: '存储占用',
+      value: `${(totalStorageUsedBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`,
+      hint: totalStorageQuotaBytes > 0
+        ? `${Math.round((totalStorageUsedBytes / totalStorageQuotaBytes) * 100)}%`
+        : '0%',
+      tone: 'default',
+    },
   ];
 
   const filters: AdminFilter[] = [

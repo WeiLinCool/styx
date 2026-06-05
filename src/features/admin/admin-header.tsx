@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { adminApiRequest } from '@/lib/admin-api-client';
 import { StatusBadge } from './status-badge';
+import { formatAdminRole, formatAdminSource, adminText } from './admin-i18n';
 import type { SessionContext } from '@/server/auth/account-types';
 
 type AdminHeaderProps = {
@@ -18,13 +19,13 @@ type AdminHeaderProps = {
 export function AdminHeader({ session, dataSource = 'database' }: AdminHeaderProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const roleLabel = session.authenticated ? session.user.adminRoles.join(', ') : '无角色';
+  const roleLabel = session.authenticated ? session.user.adminRoles.map(formatAdminRole).join('、') : '无角色';
 
   async function handleLogout() {
     setPending(true);
     try {
       await adminApiRequest('/api/admin/logout', { method: 'POST' });
-      toast.success('已退出后台登录。');
+      toast.success('已退出管理端登录。');
     } finally {
       router.push('/admin/login');
       router.refresh();
@@ -52,7 +53,7 @@ export function AdminHeader({ session, dataSource = 'database' }: AdminHeaderPro
         <div className="flex h-8 items-center gap-2 rounded-md border border-border bg-secondary/70 px-2.5">
           <Database className="h-3.5 w-3.5 text-muted-foreground" />
           <span>数据源</span>
-          <StatusBadge value={dataSource === 'database' ? '数据库' : '种子数据'} tone={dataSource === 'database' ? 'success' : 'warning'} />
+          <StatusBadge value={formatAdminSource(dataSource)} tone={dataSource === 'database' ? 'success' : 'warning'} />
         </div>
         <button
           type="button"
