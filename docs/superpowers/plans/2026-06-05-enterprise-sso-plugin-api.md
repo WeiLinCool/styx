@@ -2,6 +2,7 @@
 change: enterprise-sso-plugin-api
 design-doc: docs/superpowers/specs/2026-06-05-enterprise-sso-plugin-api-design.md
 base-ref: 21859f175d5cc897834850f3df7f15a0646dca66
+archived-with: 2026-06-06-enterprise-sso-plugin-api
 ---
 
 # Enterprise SSO Plugin API Implementation Plan
@@ -13,8 +14,6 @@ base-ref: 21859f175d5cc897834850f3df7f15a0646dca66
 **Architecture:** Add `src/server/enterprise` as the domain boundary for OAuth state, bearer validation, entitlement mapping, and gateway response shaping. Route handlers under `src/app` only parse transport input and delegate to enterprise services. Durable OAuth codes/tokens are stored hashed through repository helpers, while account identity and model access continue to use existing auth and AI repositories.
 
 **Tech Stack:** Next.js App Router, TypeScript, Zod, PostgreSQL/Drizzle, Node test runner via existing focused test scripts, existing AI provider adapters.
-
----
 
 ## File Structure
 

@@ -1,4 +1,7 @@
-## ADDED Requirements
+## Purpose
+Define AI provider/model configuration, user model availability, runtime model entitlement enforcement, real chat execution, usage-based credit billing, and billing auditability.
+
+## Requirements
 
 ### Requirement: AI Provider Configuration
 The system SHALL allow authorized admins to configure AI providers used for real chat execution.
@@ -28,7 +31,7 @@ The system SHALL allow authorized admins to configure chat-capable AI models, en
 - **AND** other enabled chat models remain selectable
 
 ### Requirement: User Model Availability
-The system SHALL expose only enabled chat-capable models from enabled providers that the active user's entitlements allow.
+The system SHALL expose only enabled chat-capable models from enabled providers that the active user's entitlements allow, including enterprise gateway model listing for bearer-token users.
 
 #### Scenario: Active user loads chat models
 - **WHEN** an authenticated active user opens the chat page
@@ -45,8 +48,13 @@ The system SHALL expose only enabled chat-capable models from enabled providers 
 - **WHEN** an active user opens chat and no enabled entitled chat model is available
 - **THEN** the system presents an unavailable state instead of allowing a fake successful conversation
 
+#### Scenario: Enterprise bearer-token user lists models
+- **WHEN** an enterprise bearer-token user calls the OpenAI-compatible model listing endpoint
+- **THEN** the system resolves enabled chat-capable models from the same model configuration and user entitlement rules used by WebUI chat
+- **AND** does not expose secret provider configuration
+
 ### Requirement: Runtime Model Entitlement Enforcement
-The system SHALL enforce model entitlement rules during chat run creation, independent of client-side model lists.
+The system SHALL enforce model entitlement rules during chat run creation and enterprise gateway requests, independent of client-side model lists.
 
 #### Scenario: User calls entitled model
 - **WHEN** an active user submits a chat request with a `modelId` allowed by their current entitlements
@@ -56,6 +64,12 @@ The system SHALL enforce model entitlement rules during chat run creation, indep
 #### Scenario: User calls premium model without entitlement
 - **WHEN** an active user submits a chat request with a `modelId` that requires an entitlement the user does not have
 - **THEN** the runtime rejects the request with a model-entitlement error
+- **AND** no provider call is made
+- **AND** no credits are charged
+
+#### Scenario: Enterprise gateway user calls unauthorized model
+- **WHEN** an enterprise bearer-token user requests a model that is unknown, disabled, or not allowed by current server-side entitlements
+- **THEN** the gateway rejects the request
 - **AND** no provider call is made
 - **AND** no credits are charged
 

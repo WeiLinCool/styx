@@ -1,6 +1,10 @@
+---
+archived-with: 2026-06-06-enterprise-sso-plugin-api
+status: final
+---
 # Enterprise SSO Plugin API Design
 
-Status: Draft
+Status: Final
 Change: enterprise-sso-plugin-api
 
 ## Context
