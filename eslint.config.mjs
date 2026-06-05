@@ -52,6 +52,7 @@ const eslintConfig = defineConfig([
     // Repository workflow artifacts:
     '.agents/**',
     '.codex/**',
+    '.opencove/**',
     'docs/**',
     'openspec/**',
     'projects/**',

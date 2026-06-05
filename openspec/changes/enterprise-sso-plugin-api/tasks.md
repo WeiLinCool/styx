@@ -24,6 +24,6 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Add focused tests for PKCE mismatch, code replay, token expiry, invalid bearer token, missing `models:proxy`, model listing, and gateway rejection of unauthorized models.
-- [ ] 5.2 Run `pnpm db:generate` and database migration checks appropriate to the environment.
-- [ ] 5.3 Run `pnpm validate` and `pnpm build`.
+- [x] 5.1 Add focused tests for PKCE mismatch, code replay, token expiry, invalid bearer token, missing `models:proxy`, model listing, and gateway rejection of unauthorized models.
+- [x] 5.2 Run `pnpm db:generate` and database migration checks appropriate to the environment.
+- [x] 5.3 Run `pnpm validate` and `pnpm build`.

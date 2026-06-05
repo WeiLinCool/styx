@@ -176,6 +176,13 @@
       "when": 1780669297543,
       "tag": "0024_pretty_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1780679778214,
+      "tag": "0025_keen_nico_minoru",
+      "breakpoints": true
     }
   ]
 }
