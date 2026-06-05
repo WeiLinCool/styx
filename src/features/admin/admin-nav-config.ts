@@ -1,10 +1,12 @@
 import {
   BookOpenText,
+  BookMarked,
   Bot,
   Boxes,
   BrainCircuit,
   FileText,
   Handshake,
+  KeyRound,
   LayoutDashboard,
   ReceiptText,
   Settings,
@@ -31,6 +33,8 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/partners', label: '合作管理', icon: Handshake, group: 'more' },
   { href: '/admin/content', label: '内容管理', icon: FileText, group: 'more' },
   { href: '/admin/settings', label: '系统设置', icon: Settings, group: 'more' },
+  { href: '/admin/docs', label: '文档中心', icon: BookMarked, group: 'more' },
+  { href: '/admin/permissions', label: '权限', icon: KeyRound, group: 'more' },
   { href: '/admin/help-center', label: '帮助中心', icon: BookOpenText, group: 'more' },
 ];
 

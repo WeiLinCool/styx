@@ -9,9 +9,12 @@ import {
 
 test('admin nav config exposes help center entry and lookup', () => {
   const helpCenterItem = getAdminNavItemByHref('/admin/help-center');
+  const docsItem = getAdminNavItemByHref('/admin/docs');
 
   assert.ok(helpCenterItem);
+  assert.ok(docsItem);
   assert.equal(helpCenterItem?.label, '帮助中心');
+  assert.equal(docsItem?.label, '文档中心');
   assert.equal(ADMIN_NAV_ITEMS.at(-1)?.href, '/admin/help-center');
 });
 
@@ -30,4 +33,10 @@ test('help center nav item matches exact and nested routes', () => {
   assert.equal(isAdminNavItemActive('/admin/help-center', '/admin/help-center'), true);
   assert.equal(isAdminNavItemActive('/admin/help-center', '/admin/help-center/overview'), true);
   assert.equal(isAdminNavItemActive('/admin/help-center', '/admin/users'), false);
+});
+
+test('docs nav item matches exact and nested routes', () => {
+  assert.equal(isAdminNavItemActive('/admin/docs', '/admin/docs'), true);
+  assert.equal(isAdminNavItemActive('/admin/docs', '/admin/docs/articles/article-1'), true);
+  assert.equal(isAdminNavItemActive('/admin/docs', '/admin/help-center'), false);
 });
