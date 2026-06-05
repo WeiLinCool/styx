@@ -176,6 +176,13 @@
       "when": 1780669297543,
       "tag": "0024_pretty_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1780675962777,
+      "tag": "0025_perfect_devos",
+      "breakpoints": true
     }
   ]
 }
