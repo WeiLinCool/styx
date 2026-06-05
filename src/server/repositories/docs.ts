@@ -22,6 +22,11 @@ import {
 export type DocsAudience = 'user' | 'admin';
 export type DocAudienceScope = 'user' | 'admin' | 'shared';
 export type DocArticleStatus = 'draft' | 'published' | 'archived';
+export type AdminDocListInput = {
+  status?: DocArticleStatus;
+  categoryId?: string;
+  search?: string;
+};
 
 export type DocCategoryInput = {
   name: string;
@@ -79,6 +84,14 @@ export type AdminDocArticleRow = {
   archivedAt: string;
   updatedAt: string;
 };
+
+function normalizeAdminDocListInput(input?: AdminDocListInput) {
+  return {
+    status: input?.status,
+    categoryId: normalizeText(input?.categoryId) || undefined,
+    search: normalizeText(input?.search) || undefined,
+  };
+}
 
 function requireDb(operation = 'docs repository') {
   const activeDb = docsRepositoryDbOverride ?? db;
@@ -405,17 +418,18 @@ export async function listAdminDocArticles(input?: {
   search?: string;
 }) {
   const database = requireDb('admin docs list');
+  const normalized = normalizeAdminDocListInput(input);
   const clauses: SQL[] = [];
 
-  if (input?.status) {
-    clauses.push(eq(schema.docArticles.status, input.status));
+  if (normalized.status) {
+    clauses.push(eq(schema.docArticles.status, normalized.status));
   }
 
-  if (input?.categoryId) {
-    clauses.push(eq(schema.docArticles.categoryId, input.categoryId));
+  if (normalized.categoryId) {
+    clauses.push(eq(schema.docArticles.categoryId, normalized.categoryId));
   }
 
-  const search = normalizeText(input?.search);
+  const search = normalized.search;
   if (search) {
     const pattern = `%${search}%`;
     clauses.push(
@@ -450,6 +464,61 @@ export async function listAdminDocArticles(input?: {
     .orderBy(desc(schema.docArticles.updatedAt), asc(schema.docArticles.title));
 
   return rows.map(mapAdminDocArticleRow);
+}
+
+async function assertCategoryParentAllowed(
+  database: ReturnType<typeof requireDb>,
+  parentId: string | null | undefined,
+) {
+  if (!parentId) {
+    return;
+  }
+
+  const [parent] = await database
+    .select({
+      id: schema.docCategories.id,
+      parentId: schema.docCategories.parentId,
+    })
+    .from(schema.docCategories)
+    .where(eq(schema.docCategories.id, parentId))
+    .limit(1);
+
+  if (!parent) {
+    throw new AccountDomainError('account_not_found', 'Parent doc category not found.', 404);
+  }
+
+  if (parent.parentId) {
+    throw new AccountDomainError('invalid_request', 'Doc categories support at most two levels.', 409);
+  }
+}
+
+async function assertCategoryDeleteAllowed(
+  database: ReturnType<typeof requireDb>,
+  categoryId: string,
+) {
+  const [childRow] = await database
+    .select({
+      id: schema.docCategories.id,
+    })
+    .from(schema.docCategories)
+    .where(eq(schema.docCategories.parentId, categoryId))
+    .limit(1);
+
+  if (childRow) {
+    throw new AccountDomainError('invalid_request', 'Doc category still has child categories.', 409);
+  }
+
+  const [articleRow] = await database
+    .select({
+      id: schema.docArticles.id,
+    })
+    .from(schema.docArticles)
+    .where(eq(schema.docArticles.categoryId, categoryId))
+    .limit(1);
+
+  if (articleRow) {
+    throw new AccountDomainError('invalid_request', 'Doc category still has linked articles.', 409);
+  }
 }
 
 export async function getAdminDocArticle(articleId: string) {
@@ -528,6 +597,7 @@ export async function listAdminDocCategories() {
 
 export async function createDocCategory(input: DocCategoryInput) {
   const database = requireDb('create doc category');
+  await assertCategoryParentAllowed(database, input.parentId);
   const [category] = await database
     .insert(schema.docCategories)
     .values({
@@ -542,6 +612,51 @@ export async function createDocCategory(input: DocCategoryInput) {
 
   if (!category) {
     throw new AccountDomainError('database_unavailable', 'Doc category could not be created.', 500);
+  }
+
+  return category;
+}
+
+export async function updateDocCategory(
+  input: DocCategoryInput & {
+    categoryId: string;
+  },
+) {
+  const database = requireDb('update doc category');
+  await assertCategoryParentAllowed(database, input.parentId);
+  const [category] = await database
+    .update(schema.docCategories)
+    .set({
+      name: normalizeText(input.name),
+      slug: normalizeText(input.slug),
+      description: normalizeText(input.description),
+      parentId: input.parentId ?? null,
+      audienceScope: input.audienceScope ?? 'shared',
+      sortOrder: input.sortOrder ?? 0,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.docCategories.id, input.categoryId))
+    .returning();
+
+  if (!category) {
+    throw new AccountDomainError('account_not_found', 'Doc category not found.', 404);
+  }
+
+  return category;
+}
+
+export async function deleteDocCategory(input: {
+  categoryId: string;
+}) {
+  const database = requireDb('delete doc category');
+  await assertCategoryDeleteAllowed(database, input.categoryId);
+  const [category] = await database
+    .delete(schema.docCategories)
+    .where(eq(schema.docCategories.id, input.categoryId))
+    .returning();
+
+  if (!category) {
+    throw new AccountDomainError('account_not_found', 'Doc category not found.', 404);
   }
 
   return category;

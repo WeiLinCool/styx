@@ -15,16 +15,20 @@ const bodySchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+export function parseAdminDocCategoryMutationBody(body: unknown) {
+  return bodySchema.parse(body);
+}
+
 export async function parseAdminDocCategoryBody(request: Pick<Request, 'json'>) {
   const body = await request.json().catch(() => null);
-  return bodySchema.parse(body);
+  return parseAdminDocCategoryMutationBody(body);
 }
 
 export async function POST(request: Request) {
   try {
     const session = await requireAdmin();
     const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
-    const body = bodySchema.parse(parsedBody);
+    const body = parseAdminDocCategoryMutationBody(parsedBody);
 
     return runProtectedMutation(
       {

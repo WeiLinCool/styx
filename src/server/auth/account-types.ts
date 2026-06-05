@@ -24,6 +24,7 @@ export type AccountErrorCode =
   | 'membership_plan_unavailable'
   | 'identity_conflict'
   | 'permission_denied'
+  | 'invalid_request'
   | 'session_required'
   | 'admin_required'
   | 'database_unavailable';

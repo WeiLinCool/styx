@@ -6,6 +6,7 @@ import {
   createDocArticle,
   createDocCategory,
   createDocImportJob,
+  deleteDocCategory,
   getAdminDocArticle,
   getPublishedDocArticle,
   listAdminDocCategories,
@@ -27,6 +28,7 @@ function createDocsDbStub() {
   const selectResults: unknown[][] = [];
   const insertResults: unknown[][] = [];
   const updateResults: unknown[][] = [];
+  const deleteResults: unknown[][] = [];
   type WrappedSelectResult = unknown[] & {
     orderBy: () => WrappedSelectResult;
     limit: () => WrappedSelectResult;
@@ -45,7 +47,7 @@ function createDocsDbStub() {
     };
     insert: () => { values: () => { returning: () => unknown[] } };
     update: () => { set: () => { where: () => { returning: () => unknown[] } } };
-    delete: () => { where: () => Promise<void> };
+    delete: () => { where: () => { returning: () => unknown[] } };
     query: {
       docCategories: {
         findMany: () => Promise<unknown[]>;
@@ -104,7 +106,9 @@ function createDocsDbStub() {
     delete() {
       calls.push({ kind: 'delete' });
       return {
-        where: () => Promise.resolve(),
+        where: () => ({
+          returning: () => deleteResults.shift() ?? [null],
+        }),
       };
     },
     query: {
@@ -127,6 +131,7 @@ function createDocsDbStub() {
     selectResults,
     insertResults,
     updateResults,
+    deleteResults,
   };
 }
 
@@ -246,6 +251,50 @@ test('normalizeDocImportJobInput normalizes import job payloads', () => {
   assert.equal(job.sourceChecksum, 'checksum');
   assert.equal(job.errorSummary, null);
   assert.equal(job.importStatus, 'parsed');
+});
+
+test('listAdminDocArticles applies combined status category and search filters', async () => {
+  const { stub, selectResults } = createDocsDbStub();
+  setDocsRepositoryDbForTest(stub as never);
+  selectResults.push([
+    {
+      articleId: 'article-1',
+      categoryId: 'category-2',
+      categoryName: '入门指南',
+      categorySlug: 'guides',
+      title: '快速开始',
+      slug: 'quick-start',
+      summary: '适合新运营',
+      status: 'draft',
+      publishedAt: null,
+      archivedAt: null,
+      updatedAt: new Date('2026-06-05T00:00:00.000Z'),
+    },
+  ]);
+
+  const rows = await listAdminDocArticles({
+    status: 'draft',
+    categoryId: 'category-2',
+    search: '快速',
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.articleId, 'article-1');
+
+  setDocsRepositoryDbForTest(null);
+});
+
+test('deleteDocCategory rejects categories that still have children or articles', async () => {
+  const { stub, selectResults } = createDocsDbStub();
+  setDocsRepositoryDbForTest(stub as never);
+  selectResults.push([{ id: 'child-1' }]);
+
+  await assert.rejects(
+    () => deleteDocCategory({ categoryId: 'category-1' }),
+    /still has child categories|still has linked articles/,
+  );
+
+  setDocsRepositoryDbForTest(null);
 });
 
 test('docs repository entry points call through the expected query surfaces', async () => {
