@@ -32,8 +32,13 @@ export type AdminDocCategoryCreateInput = {
   name: string;
   slug: string;
   description?: string;
+  parentId?: string | null;
   audienceScope?: DocAudienceScope;
   sortOrder?: number;
+};
+
+export type AdminDocCategoryTreeNode = AdminDocCategoryRow & {
+  children: AdminDocCategoryRow[];
 };
 
 export type AdminDocTableRow = AdminDocArticleRow;
