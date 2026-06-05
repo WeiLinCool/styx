@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import {
   createChatProviderAdapter,
+  ProviderConfigurationError,
+  ProviderRequestError,
   type ChatProviderAdapter,
   type ChatProviderMessage,
   type ChatProviderStreamEvent,
@@ -14,6 +16,8 @@ import {
 } from '@/server/enterprise/entitlements';
 import {
   listAvailableChatModelsForUser,
+  ModelEntitlementRequiredError,
+  ModelNotAvailableError,
   resolveChatModelForUser,
   type PublicChatModelDto,
   type ResolvedChatModel,
@@ -154,12 +158,17 @@ export async function createEnterpriseChatCompletion(
   const resolvedDeps = resolveDeps(deps);
   const model = await resolveModel(input.userId, input.request.model, resolvedDeps);
   const adapter = resolvedDeps.createChatProviderAdapter(model);
-  const result = await adapter.runChat({
-    runId: resolvedDeps.createId(),
-    userId: input.userId,
-    model,
-    messages: input.request.messages,
-  });
+  let result;
+  try {
+    result = await adapter.runChat({
+      runId: resolvedDeps.createId(),
+      userId: input.userId,
+      model,
+      messages: input.request.messages,
+    });
+  } catch (error) {
+    throw mapProviderError(error);
+  }
 
   return {
     id: resolvedDeps.createId(),
@@ -264,7 +273,12 @@ async function* runChatAsStream(
   adapter: ChatProviderAdapter,
   request: Parameters<ChatProviderAdapter['runChat']>[0],
 ): AsyncGenerator<ChatProviderStreamEvent, void, void> {
-  const result = await adapter.runChat(request);
+  let result;
+  try {
+    result = await adapter.runChat(request);
+  } catch (error) {
+    throw mapProviderError(error);
+  }
   yield { type: 'delta', delta: result.finalMessage };
   yield { type: 'final', ...result };
 }
@@ -281,12 +295,48 @@ async function resolveModel(
       throw error;
     }
 
+    if (error instanceof ModelEntitlementRequiredError) {
+      throw new EnterpriseGatewayError(
+        'model_entitlement_required',
+        error.message,
+        403,
+      );
+    }
+
+    if (error instanceof ModelNotAvailableError) {
+      throw new EnterpriseGatewayError(
+        'model_not_found',
+        'Model is not available for this user.',
+        404,
+      );
+    }
+
     throw new EnterpriseGatewayError(
       'model_not_found',
       'Model is not available for this user.',
       404,
     );
   }
+}
+
+function mapProviderError(error: unknown) {
+  if (error instanceof EnterpriseGatewayError) {
+    return error;
+  }
+
+  if (error instanceof ProviderConfigurationError) {
+    return new EnterpriseGatewayError('provider_unconfigured', error.message, 503);
+  }
+
+  if (error instanceof ProviderRequestError) {
+    return new EnterpriseGatewayError('provider_error', error.message, 502);
+  }
+
+  return new EnterpriseGatewayError(
+    'provider_error',
+    'Enterprise model provider request failed.',
+    502,
+  );
 }
 
 function toOpenAiUsage(usage: AiUsage): OpenAiUsage {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import {
+  EnterpriseGatewayError,
   createEnterpriseChatCompletion,
   parseOpenAiChatCompletionBody,
   requireEnterpriseModelProxy,
@@ -26,7 +27,7 @@ export function createEnterpriseChatCompletionsRoutePost({
     try {
       const resolved = await resolveBearer(request);
       await requireModelProxy(resolved.user.id);
-      const parsedBody = parseOpenAiChatCompletionBody(await request.json());
+      const parsedBody = parseOpenAiChatCompletionBody(await readJsonBody(request));
 
       if (parsedBody.stream) {
         const stream = await streamCompletion({
@@ -56,3 +57,11 @@ export function createEnterpriseChatCompletionsRoutePost({
 }
 
 export const POST = createEnterpriseChatCompletionsRoutePost();
+
+export async function readJsonBody(request: Request) {
+  try {
+    return await request.json();
+  } catch {
+    throw new EnterpriseGatewayError('invalid_request', 'Request body must be valid JSON.', 400);
+  }
+}
