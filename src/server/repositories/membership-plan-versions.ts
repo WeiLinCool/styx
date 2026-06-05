@@ -6,6 +6,10 @@ import {
   getAdminPermissionResourceOverview,
   type AdminPermissionResourceOverview,
 } from './permission-resources';
+import {
+  getVideoGenerationConfigRepository,
+  type VideoPlanConfig,
+} from './video-generation-config';
 
 export type MembershipPlanVersionStatus = 'draft' | 'scheduled' | 'published' | 'archived';
 
@@ -39,6 +43,7 @@ export type MembershipPlanVersionRecord = {
   changeSummary: string | null;
   benefits: MembershipVersionBenefitInput[];
   mediaLibraryPolicy: MembershipMediaLibraryPolicy;
+  videoGenerationPolicy: VideoPlanConfig | null;
   permissionCodes: string[];
 };
 
@@ -60,6 +65,7 @@ type DraftInput = {
   changeSummary: string | null;
   benefits: MembershipVersionBenefitInput[];
   mediaLibraryPolicy: MembershipMediaLibraryPolicy;
+  videoGenerationPolicy: VideoPlanConfig | null;
   permissionCodes: string[];
 };
 
@@ -122,11 +128,24 @@ function cloneMediaPolicy(policy: MembershipMediaLibraryPolicy): MembershipMedia
   };
 }
 
+function cloneVideoPolicy(policy: VideoPlanConfig | null): VideoPlanConfig | null {
+  return policy
+    ? {
+        enabled: policy.enabled,
+        allowedDurations: [...policy.allowedDurations],
+        allowedResolutions: [...policy.allowedResolutions],
+        defaultDuration: policy.defaultDuration,
+        defaultResolution: policy.defaultResolution,
+      }
+    : null;
+}
+
 function cloneVersion(version: MembershipPlanVersionRecord): MembershipPlanVersionRecord {
   return {
     ...version,
     benefits: version.benefits.map(cloneBenefit),
     mediaLibraryPolicy: cloneMediaPolicy(version.mediaLibraryPolicy),
+    videoGenerationPolicy: cloneVideoPolicy(version.videoGenerationPolicy),
     permissionCodes: [...version.permissionCodes].sort(),
   };
 }
@@ -139,6 +158,7 @@ function toMembershipPlanVersionRecord(params: {
   plan: { id: string; code: string };
   version: typeof schema.membershipPlanVersions.$inferSelect;
   benefits: MembershipVersionBenefitInput[];
+  videoGenerationPolicy?: VideoPlanConfig | null;
   permissionCodes: string[];
 }): MembershipPlanVersionRecord {
   return {
@@ -161,6 +181,7 @@ function toMembershipPlanVersionRecord(params: {
       allowUserUpload: params.version.mediaAllowUserUpload,
       allowPublicSharing: params.version.mediaAllowPublicSharing,
     },
+    videoGenerationPolicy: cloneVideoPolicy(params.videoGenerationPolicy ?? null),
     permissionCodes: [...params.permissionCodes].sort(),
   };
 }
@@ -205,6 +226,7 @@ function buildSeedVersions(plans = buildSeedPlans()): MembershipPlanVersionRecor
         allowUserUpload: true,
         allowPublicSharing: false,
       },
+      videoGenerationPolicy: null,
       permissionCodes: ['action.user_center.copy_invite_code', 'page.user_center'],
     },
     {
@@ -235,6 +257,7 @@ function buildSeedVersions(plans = buildSeedPlans()): MembershipPlanVersionRecor
         allowUserUpload: true,
         allowPublicSharing: true,
       },
+      videoGenerationPolicy: null,
       permissionCodes: ['page.user_center'],
     },
   ];
@@ -303,6 +326,7 @@ export function createMembershipPlanVersionHarness(input: HarnessInput = {}): Mu
         changeSummary: inputDraft.changeSummary,
         benefits: inputDraft.benefits.map(cloneBenefit),
         mediaLibraryPolicy: cloneMediaPolicy(inputDraft.mediaLibraryPolicy),
+        videoGenerationPolicy: cloneVideoPolicy(inputDraft.videoGenerationPolicy),
         permissionCodes: [...new Set(inputDraft.permissionCodes)].sort(),
       };
 
@@ -510,6 +534,22 @@ async function listVersionPermissionCodes(versionIds: string[]) {
   return grouped;
 }
 
+async function listVersionVideoPolicies(versionIds: string[]) {
+  const policies = new Map<string, VideoPlanConfig | null>();
+  if (versionIds.length === 0) {
+    return policies;
+  }
+
+  const repository = getVideoGenerationConfigRepository();
+  await Promise.all(
+    versionIds.map(async (versionId) => {
+      policies.set(versionId, await repository.getVideoPlanConfigByVersionId(versionId));
+    }),
+  );
+
+  return policies;
+}
+
 export async function listVersionsByPlanCode(planCode: string): Promise<MembershipPlanVersionRecord[]> {
   const database = requireDb('membership plan versions');
   const rows = await database
@@ -526,12 +566,14 @@ export async function listVersionsByPlanCode(planCode: string): Promise<Membersh
   const versionIds = rows.map((row) => row.version.id);
   const benefitsByVersion = await listVersionBenefits(versionIds);
   const permissionCodesByVersion = await listVersionPermissionCodes(versionIds);
+  const videoPoliciesByVersion = await listVersionVideoPolicies(versionIds);
 
   return rows.map((row) =>
     toMembershipPlanVersionRecord({
       plan: { id: row.planId, code: row.planCode },
       version: row.version,
       benefits: benefitsByVersion.get(row.version.id) ?? [],
+      videoGenerationPolicy: videoPoliciesByVersion.get(row.version.id) ?? null,
       permissionCodes: permissionCodesByVersion.get(row.version.id) ?? [],
     }),
   );
@@ -565,11 +607,13 @@ export async function getMembershipPlanVersionById(
 
   const benefitsByVersion = await listVersionBenefits([row.version.id]);
   const permissionCodesByVersion = await listVersionPermissionCodes([row.version.id]);
+  const videoPoliciesByVersion = await listVersionVideoPolicies([row.version.id]);
 
   return toMembershipPlanVersionRecord({
     plan: { id: row.planId, code: row.planCode },
     version: row.version,
     benefits: benefitsByVersion.get(row.version.id) ?? [],
+    videoGenerationPolicy: videoPoliciesByVersion.get(row.version.id) ?? null,
     permissionCodes: permissionCodesByVersion.get(row.version.id) ?? [],
   });
 }
@@ -594,11 +638,13 @@ export async function getMembershipPlanWorkspace(planId: string): Promise<Member
   const versionIds = versions.map((version) => version.id);
   const benefitsByVersion = await listVersionBenefits(versionIds);
   const permissionCodesByVersion = await listVersionPermissionCodes(versionIds);
+  const videoPoliciesByVersion = await listVersionVideoPolicies(versionIds);
   const records = versions.map((version) =>
     toMembershipPlanVersionRecord({
       plan,
       version,
       benefits: benefitsByVersion.get(version.id) ?? [],
+      videoGenerationPolicy: videoPoliciesByVersion.get(version.id) ?? null,
       permissionCodes: permissionCodesByVersion.get(version.id) ?? [],
     }),
   );
@@ -727,20 +773,6 @@ export async function getAdminMembershipWorkspacePageData(): Promise<AdminMember
   };
 }
 
-function toDraftBody(input: DraftInput) {
-  return {
-    displayName: input.displayName,
-    description: input.description,
-    billingPeriod: input.billingPeriod,
-    priceCents: input.priceCents,
-    currency: input.currency,
-    changeSummary: input.changeSummary,
-    benefits: input.benefits.map(cloneBenefit),
-    mediaLibraryPolicy: cloneMediaPolicy(input.mediaLibraryPolicy),
-    permissionCodes: [...new Set(input.permissionCodes)].sort(),
-  };
-}
-
 export async function createOrUpdateMembershipPlanDraft(
   input: DraftInput,
 ): Promise<MembershipPlanVersionRecord> {
@@ -832,16 +864,20 @@ export async function createOrUpdateMembershipPlanDraft(
     );
   }
 
-  return {
-    id: draft.id,
-    planId: input.planId,
-    planCode: workspace.plan.code,
-    versionNumber: draft.versionNumber,
-    status: 'draft',
-    effectiveFrom: null,
-    publishedAt: null,
-    ...toDraftBody(input),
-  };
+  if (input.videoGenerationPolicy) {
+    const videoRepository = getVideoGenerationConfigRepository();
+    if (!videoRepository.upsertVideoPlanConfig) {
+      throw new Error('Video plan config repository does not support draft updates.');
+    }
+    await videoRepository.upsertVideoPlanConfig(draft.id, input.videoGenerationPolicy);
+  }
+
+  const savedDraft = (await getMembershipPlanWorkspace(input.planId)).draftVersion;
+  if (!savedDraft) {
+    throw new Error(`Draft ${draft.id} could not be loaded after save.`);
+  }
+
+  return savedDraft;
 }
 
 export async function publishMembershipPlanDraftInDb(
@@ -940,6 +976,7 @@ export async function duplicateMembershipPlanVersionAsDraftInDb(
     changeSummary: source.changeSummary,
     benefits: source.benefits,
     mediaLibraryPolicy: source.mediaLibraryPolicy,
+    videoGenerationPolicy: source.videoGenerationPolicy,
     permissionCodes: source.permissionCodes,
   });
 }

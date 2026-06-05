@@ -31,6 +31,17 @@ const membershipDraftSchema = z.object({
     allowUserUpload: z.boolean(),
     allowPublicSharing: z.boolean(),
   }),
+  videoGenerationPolicy: z
+    .object({
+      enabled: z.boolean(),
+      allowedDurations: z.array(z.coerce.number().int().positive()).min(1),
+      allowedResolutions: z.array(z.string().trim().min(1)).min(1),
+      defaultDuration: z.coerce.number().int().positive(),
+      defaultResolution: z.string().trim().min(1),
+    })
+    .nullable()
+    .optional()
+    .default(null),
 });
 
 export function parseMembershipDraftBody(input: unknown) {
@@ -58,6 +69,7 @@ export async function PUT(
         changeSummary: body.changeSummary,
         benefits: body.benefits,
         mediaLibraryPolicy: body.mediaLibraryPolicy,
+        videoGenerationPolicy: body.videoGenerationPolicy,
         permissionCodes: body.permissionCodes,
       });
     await invalidateUserPermissionCacheForVersion(draft.id);

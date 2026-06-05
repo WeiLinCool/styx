@@ -45,6 +45,7 @@ test('resolvePlanVersionForEntitlement uses scheduled version after its effectiv
           allowUserUpload: true,
           allowPublicSharing: false,
         },
+        videoGenerationPolicy: null,
         permissionCodes: [],
       },
       {
@@ -67,6 +68,7 @@ test('resolvePlanVersionForEntitlement uses scheduled version after its effectiv
           allowUserUpload: true,
           allowPublicSharing: true,
         },
+        videoGenerationPolicy: null,
         permissionCodes: [],
       },
     ],
@@ -104,6 +106,7 @@ test('resolvePlanVersionForEntitlement falls back to the latest draft when no pu
           allowUserUpload: true,
           allowPublicSharing: true,
         },
+        videoGenerationPolicy: null,
         permissionCodes: [],
       },
     ],
@@ -145,6 +148,7 @@ test('saveMembershipPlanDraftWithLoader creates or updates a draft version', asy
         allowUserUpload: true,
         allowPublicSharing: true,
       },
+      videoGenerationPolicy: null,
       permissionCodes: ['page.user_center'],
     },
     harness,
@@ -154,6 +158,51 @@ test('saveMembershipPlanDraftWithLoader creates or updates a draft version', asy
   assert.equal(draft.versionNumber, 2);
   assert.equal(draft.displayName, 'Pro Monthly Updated');
   assert.equal(draft.mediaLibraryPolicy.storageQuotaBytes, 5 * 1024 * 1024 * 1024);
+});
+
+test('saveMembershipPlanDraftWithLoader stores videoGenerationPolicy', async () => {
+  const harness = createMembershipPlanVersionHarness();
+
+  const draft = await saveMembershipPlanDraftWithLoader(
+    {
+      planId: 'seed:pro',
+      displayName: 'Pro Monthly Updated',
+      description: 'new desc',
+      billingPeriod: 'month',
+      priceCents: 12900,
+      currency: 'CNY',
+      changeSummary: 'video entitlements',
+      benefits: [],
+      mediaLibraryPolicy: {
+        storageQuotaBytes: 5 * 1024 * 1024 * 1024,
+        allowUserUpload: true,
+        allowPublicSharing: true,
+      },
+      videoGenerationPolicy: {
+        enabled: true,
+        allowedDurations: [5, 10],
+        allowedResolutions: ['720p', '1080p'],
+        defaultDuration: 10,
+        defaultResolution: '1080p',
+      },
+      permissionCodes: [],
+    },
+    harness,
+  );
+
+  assert.deepEqual(draft.videoGenerationPolicy, {
+    enabled: true,
+    allowedDurations: [5, 10],
+    allowedResolutions: ['720p', '1080p'],
+    defaultDuration: 10,
+    defaultResolution: '1080p',
+  });
+
+  const versions = await harness.listVersionsByPlanId('seed:pro');
+  assert.deepEqual(
+    versions.find((version) => version.id === draft.id)?.videoGenerationPolicy,
+    draft.videoGenerationPolicy,
+  );
 });
 
 test('publishMembershipPlanDraft archives the previous published version', async () => {
@@ -174,6 +223,7 @@ test('publishMembershipPlanDraft archives the previous published version', async
         allowUserUpload: true,
         allowPublicSharing: true,
       },
+      videoGenerationPolicy: null,
       permissionCodes: [],
     },
     harness,
@@ -207,6 +257,7 @@ test('scheduleMembershipPlanDraft marks the draft as scheduled', async () => {
         allowUserUpload: true,
         allowPublicSharing: true,
       },
+      videoGenerationPolicy: null,
       permissionCodes: [],
     },
     harness,
@@ -240,6 +291,7 @@ test('publishMembershipPlanDraft ignores admin actor ids outside users table sem
         allowUserUpload: true,
         allowPublicSharing: true,
       },
+      videoGenerationPolicy: null,
       permissionCodes: [],
     },
     harness,
@@ -274,6 +326,7 @@ test('duplicateMembershipPlanVersionAsDraft copies a history version into the dr
           allowUserUpload: true,
           allowPublicSharing: true,
         },
+        videoGenerationPolicy: null,
         permissionCodes: ['page.user_center'],
       },
     ],
@@ -284,4 +337,50 @@ test('duplicateMembershipPlanVersionAsDraft copies a history version into the dr
   assert.equal(draft.status, 'draft');
   assert.equal(draft.versionNumber, 2);
   assert.equal(draft.permissionCodes[0], 'page.user_center');
+});
+
+test('duplicateMembershipPlanVersionAsDraft carries videoGenerationPolicy forward', async () => {
+  const harness = createMembershipPlanVersionHarness({
+    versions: [
+      {
+        id: 'v1',
+        planId: 'seed:pro',
+        planCode: 'pro-monthly',
+        versionNumber: 1,
+        status: 'archived',
+        effectiveFrom: '2026-06-01T00:00:00.000Z',
+        publishedAt: '2026-06-01T00:00:00.000Z',
+        displayName: 'Pro Monthly',
+        description: 'v1',
+        billingPeriod: 'month',
+        priceCents: 9900,
+        currency: 'CNY',
+        changeSummary: null,
+        benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: 2147483648,
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
+        videoGenerationPolicy: {
+          enabled: true,
+          allowedDurations: [5, 10],
+          allowedResolutions: ['720p', '1080p'],
+          defaultDuration: 5,
+          defaultResolution: '720p',
+        },
+        permissionCodes: ['page.user_center'],
+      },
+    ],
+  });
+
+  const draft = await duplicateMembershipPlanVersionAsDraft('seed:pro', 'v1', harness);
+
+  assert.deepEqual(draft.videoGenerationPolicy, {
+    enabled: true,
+    allowedDurations: [5, 10],
+    allowedResolutions: ['720p', '1080p'],
+    defaultDuration: 5,
+    defaultResolution: '720p',
+  });
 });

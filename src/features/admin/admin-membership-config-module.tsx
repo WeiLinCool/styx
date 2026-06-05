@@ -69,12 +69,36 @@ type DraftFormState = {
     allowUserUpload: boolean;
     allowPublicSharing: boolean;
   };
+  videoGenerationPolicy: {
+    enabled: boolean;
+    allowedDurationsCsv: string;
+    allowedResolutionsCsv: string;
+    defaultDuration: string;
+    defaultResolution: string;
+  };
   permissionCodes: string[];
 };
 
 function toStorageQuotaGbString(policy: MembershipMediaLibraryPolicy | undefined) {
   const bytes = policy?.storageQuotaBytes ?? 0;
   return String(bytes / (1024 * 1024 * 1024));
+}
+
+function formatCsv(values: Array<string | number>) {
+  return values.join(', ');
+}
+
+function parseCsv(value: string) {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseDurationCsv(value: string) {
+  return parseCsv(value)
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,6 +130,8 @@ function MembershipMetricCards({
 }
 
 function buildFormState(version: MembershipPlanVersionRecord | null): DraftFormState {
+  const videoPolicy = version?.videoGenerationPolicy;
+
   return {
     displayName: version?.displayName ?? '',
     description: version?.description ?? '',
@@ -119,11 +145,37 @@ function buildFormState(version: MembershipPlanVersionRecord | null): DraftFormS
       allowUserUpload: version?.mediaLibraryPolicy.allowUserUpload ?? false,
       allowPublicSharing: version?.mediaLibraryPolicy.allowPublicSharing ?? false,
     },
+    videoGenerationPolicy: {
+      enabled: videoPolicy?.enabled ?? false,
+      allowedDurationsCsv: formatCsv(videoPolicy?.allowedDurations ?? [5, 10]),
+      allowedResolutionsCsv: formatCsv(videoPolicy?.allowedResolutions ?? ['720p', '1080p']),
+      defaultDuration: String(videoPolicy?.defaultDuration ?? 5),
+      defaultResolution: videoPolicy?.defaultResolution ?? '720p',
+    },
     permissionCodes: [...(version?.permissionCodes ?? [])],
   };
 }
 
 function buildDraftPayload(formState: DraftFormState) {
+  const parsedDurations = parseDurationCsv(
+    formState.videoGenerationPolicy.allowedDurationsCsv,
+  );
+  const parsedResolutions = parseCsv(formState.videoGenerationPolicy.allowedResolutionsCsv);
+  const defaultDuration =
+    Number(formState.videoGenerationPolicy.defaultDuration) ||
+    parsedDurations[0] ||
+    5;
+  const defaultResolution =
+    formState.videoGenerationPolicy.defaultResolution.trim() ||
+    parsedResolutions[0] ||
+    '720p';
+  const allowedDurations = parsedDurations.includes(defaultDuration)
+    ? parsedDurations
+    : [...parsedDurations, defaultDuration];
+  const allowedResolutions = parsedResolutions.includes(defaultResolution)
+    ? parsedResolutions
+    : [...parsedResolutions, defaultResolution];
+
   return {
     displayName: formState.displayName,
     description: formState.description || null,
@@ -144,6 +196,13 @@ function buildDraftPayload(formState: DraftFormState) {
         1024,
       allowUserUpload: formState.mediaLibraryPolicy.allowUserUpload,
       allowPublicSharing: formState.mediaLibraryPolicy.allowPublicSharing,
+    },
+    videoGenerationPolicy: {
+      enabled: formState.videoGenerationPolicy.enabled,
+      allowedDurations: allowedDurations.length > 0 ? allowedDurations : [5],
+      allowedResolutions: allowedResolutions.length > 0 ? allowedResolutions : ['720p'],
+      defaultDuration,
+      defaultResolution,
     },
   };
 }
@@ -616,6 +675,97 @@ export function AdminMembershipConfigModule({ data }: AdminMembershipConfigModul
                           />
                           允许公开分享
                         </label>
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-border bg-card p-4">
+                      <div className="grid gap-3 md:grid-cols-4">
+                        <label className="flex items-center gap-2 text-sm text-foreground md:col-span-4">
+                          <input
+                            type="checkbox"
+                            checked={formState.videoGenerationPolicy.enabled}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                videoGenerationPolicy: {
+                                  ...currentState.videoGenerationPolicy,
+                                  enabled: event.target.checked,
+                                },
+                              }))
+                            }
+                          />
+                          启用视频生成权益
+                        </label>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            可选时长（秒）
+                          </label>
+                          <Input
+                            value={formState.videoGenerationPolicy.allowedDurationsCsv}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                videoGenerationPolicy: {
+                                  ...currentState.videoGenerationPolicy,
+                                  allowedDurationsCsv: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <p className="text-[11px] text-muted-foreground">逗号分隔，例如：5, 10</p>
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            可选分辨率
+                          </label>
+                          <Input
+                            value={formState.videoGenerationPolicy.allowedResolutionsCsv}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                videoGenerationPolicy: {
+                                  ...currentState.videoGenerationPolicy,
+                                  allowedResolutionsCsv: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <p className="text-[11px] text-muted-foreground">逗号分隔，例如：720p, 1080p</p>
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            默认时长（秒）
+                          </label>
+                          <Input
+                            type="number"
+                            value={formState.videoGenerationPolicy.defaultDuration}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                videoGenerationPolicy: {
+                                  ...currentState.videoGenerationPolicy,
+                                  defaultDuration: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            默认分辨率
+                          </label>
+                          <Input
+                            value={formState.videoGenerationPolicy.defaultResolution}
+                            onChange={(event) =>
+                              setFormState((currentState) => ({
+                                ...currentState,
+                                videoGenerationPolicy: {
+                                  ...currentState.videoGenerationPolicy,
+                                  defaultResolution: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between rounded-md border border-border bg-card p-3">
