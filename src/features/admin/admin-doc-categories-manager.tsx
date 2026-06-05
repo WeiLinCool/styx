@@ -38,6 +38,16 @@ function groupCategories(categories: AdminDocCategoryRow[]) {
   }));
 }
 
+function formatAudienceScope(scope: AdminDocCategoryRow['audienceScope']) {
+  if (scope === 'user') {
+    return '用户可见';
+  }
+  if (scope === 'admin') {
+    return '管理端可见';
+  }
+  return '全部可见';
+}
+
 async function sendJson(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: Record<string, unknown>) {
   const response = await adminApiRequest(url, {
     method,
@@ -156,12 +166,15 @@ function CategoryForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>Slug</Label>
+          <Label>访问路径标识</Label>
           <Input
             value={draft.slug}
             onChange={(event) => setDraft((current) => ({ ...current, slug: event.target.value }))}
             disabled={pending}
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            用于组成分类访问地址，通常按分类名称自动填写后保持不变。
+          </p>
         </div>
       </div>
 
@@ -258,7 +271,7 @@ function CategoryEditor({
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-sm font-semibold text-foreground">{category.name}</div>
             <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              {category.audienceScope}
+              {formatAudienceScope(category.audienceScope)}
             </span>
           </div>
           <div className="text-xs text-muted-foreground">{category.slug}</div>

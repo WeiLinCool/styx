@@ -49,5 +49,5 @@ test('category manager explains the empty category state', () => {
   assert.match(html, /还没有分类/);
   assert.match(html, /先创建一级分类/);
   assert.match(html, /分类名/);
-  assert.match(html, /Slug/);
+  assert.match(html, /访问路径标识/);
 });

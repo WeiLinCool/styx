@@ -55,6 +55,16 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, '');
 }
 
+function formatAudienceScope(scope: AdminDocEditorData['categories'][number]['audienceScope']) {
+  if (scope === 'user') {
+    return '用户可见';
+  }
+  if (scope === 'admin') {
+    return '管理端可见';
+  }
+  return '全部可见';
+}
+
 async function postJson(url: string, body: Record<string, unknown>) {
   const response = await adminApiRequest(url, {
     method: 'POST',
@@ -85,7 +95,7 @@ export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
     () =>
       data.categories.map((category) => ({
         value: category.id,
-        label: `${category.name} · ${category.audienceScope}`,
+        label: `${category.name} · ${formatAudienceScope(category.audienceScope)}`,
       })),
     [data.categories],
   );
@@ -140,7 +150,12 @@ export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
     <form onSubmit={submit} className="space-y-4 rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label>所属分类</Label>
+          <div className="flex items-center justify-between gap-3">
+            <Label>所属分类</Label>
+            <Link href="/admin/docs/categories" className="text-xs font-medium text-primary hover:underline">
+              维护分类
+            </Link>
+          </div>
           <Select
             value={state.categoryId}
             onValueChange={(value) => setState((current) => ({ ...current, categoryId: value }))}
@@ -196,13 +211,16 @@ export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="doc-slug">Slug</Label>
+          <Label htmlFor="doc-slug">访问路径标识</Label>
           <Input
             id="doc-slug"
             value={state.slug}
             onChange={(event) => setState((current) => ({ ...current, slug: event.target.value }))}
             disabled={pending}
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            用于生成和定位文档访问地址。通常保留标题自动生成的默认值即可；仅在需要固定访问地址时修改，保存后不要频繁变更。
+          </p>
         </div>
       </div>
 

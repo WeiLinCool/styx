@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Archive, Loader2, PencilLine, Rocket, SquarePlus } from 'lucide-react';
+import { Archive, FileInput, FolderTree, Loader2, PencilLine, Rocket, SquarePlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { adminApiRequest } from '@/lib/admin-api-client';
@@ -35,6 +35,26 @@ export function CreateDocArticleButton() {
         新建文档
       </Link>
     </Button>
+  );
+}
+
+export function DocCenterActionButtons() {
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      <Button asChild variant="outline">
+        <Link href="/admin/docs/categories">
+          <FolderTree className="h-4 w-4" />
+          维护分类
+        </Link>
+      </Button>
+      <Button asChild variant="outline">
+        <Link href="/admin/docs/import">
+          <FileInput className="h-4 w-4" />
+          导入文档
+        </Link>
+      </Button>
+      <CreateDocArticleButton />
+    </div>
   );
 }
 

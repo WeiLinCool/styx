@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { FileUp, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,16 @@ type ImportState = {
   markdown: string;
 };
 
+function formatAudienceScope(scope: AdminDocCategoryRow['audienceScope']) {
+  if (scope === 'user') {
+    return '用户可见';
+  }
+  if (scope === 'admin') {
+    return '管理端可见';
+  }
+  return '全部可见';
+}
+
 async function postJson(url: string, body: Record<string, unknown>) {
   const response = await adminApiRequest(url, {
     method: 'POST',
@@ -38,7 +48,7 @@ async function postJson(url: string, body: Record<string, unknown>) {
 
   if (!response.ok) {
     const message =
-      typeof payload?.error?.message === 'string' ? payload.error.message : 'Markdown 导入失败。';
+      typeof payload?.error?.message === 'string' ? payload.error.message : '文档导入失败。';
     throw new Error(message);
   }
 
@@ -65,7 +75,7 @@ export function AdminDocImportModule({
     () =>
       categories.map((category) => ({
         value: category.id,
-        label: `${category.name} · ${category.audienceScope}`,
+        label: `${category.name} · ${formatAudienceScope(category.audienceScope)}`,
       })),
     [categories],
   );
@@ -83,9 +93,27 @@ export function AdminDocImportModule({
         startTransition(() => router.push(`/admin/docs/articles/${articleId}`));
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Markdown 导入失败。');
+      setMessage(error instanceof Error ? error.message : '文档导入失败。');
     } finally {
       setPending(false);
+    }
+  }
+
+  async function readMarkdownFile(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    setMessage(null);
+    try {
+      const markdown = await file.text();
+      setState((current) => ({
+        ...current,
+        sourceFilename: file.name,
+        markdown,
+      }));
+    } catch {
+      setMessage('文档文件读取失败，请改为手动粘贴内容。');
     }
   }
 
@@ -126,7 +154,27 @@ export function AdminDocImportModule({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="markdown-source">Markdown 内容</Label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label htmlFor="markdown-source">文档内容</Label>
+            <Label
+              htmlFor="markdown-file"
+              className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground"
+            >
+              <FileUp className="h-3.5 w-3.5" />
+              选择文档文件
+            </Label>
+            <Input
+              id="markdown-file"
+              type="file"
+              accept=".md,.markdown,text/markdown,text/plain"
+              className="sr-only"
+              disabled={pending}
+              onChange={(event) => {
+                void readMarkdownFile(event.target.files?.[0]);
+                event.target.value = '';
+              }}
+            />
+          </div>
           <Textarea
             id="markdown-source"
             value={state.markdown}
@@ -134,6 +182,9 @@ export function AdminDocImportModule({
             disabled={pending}
             className="min-h-[28rem] font-mono text-xs"
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            可直接选择本地文档文件，系统会填入文件名和内容；导入后会生成草稿，再进入编辑页校对内容结构。
+          </p>
         </div>
 
         <div className="flex items-center justify-between gap-3">

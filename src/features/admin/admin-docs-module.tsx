@@ -4,7 +4,7 @@ import { AdminModuleGuide } from '@/features/admin/admin-module-guide';
 import { AdminModulePage, type AdminColumn } from '@/features/admin/module-page';
 import { StatusBadge } from '@/features/admin/status-badge';
 import type { AdminDocArticleRow, AdminDocCategoryRow } from '@/server/repositories/docs';
-import { AdminDocRowActions, CreateDocArticleButton } from './admin-docs-actions';
+import { AdminDocRowActions, DocCenterActionButtons } from './admin-docs-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -13,6 +13,16 @@ type ActiveFilters = {
   categoryId: string;
   search: string;
 };
+
+function formatAudienceScope(scope: AdminDocCategoryRow['audienceScope']) {
+  if (scope === 'user') {
+    return '用户可见';
+  }
+  if (scope === 'admin') {
+    return '管理端可见';
+  }
+  return '全部可见';
+}
 
 const columns: AdminColumn<AdminDocArticleRow>[] = [
   {
@@ -73,7 +83,7 @@ function CategoryStrip({ categories }: { categories: AdminDocCategoryRow[] }) {
               <div className="text-sm font-semibold text-foreground">{category.name}</div>
               <div className="text-xs text-muted-foreground">{category.slug}</div>
             </div>
-            <StatusBadge value={category.audienceScope} tone="info" />
+            <StatusBadge value={formatAudienceScope(category.audienceScope)} tone="info" />
           </div>
           <p className="mt-3 text-sm text-muted-foreground">{category.description || '暂无分类说明。'}</p>
           <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
@@ -119,7 +129,7 @@ function DocsToolbar({
           <Input
             name="search"
             defaultValue={activeFilters.search}
-            placeholder="搜索分类、标题、slug 或摘要..."
+            placeholder="搜索分类、标题、访问路径标识或摘要..."
             className="h-9 rounded-md border-input bg-background text-sm"
           />
         </div>
@@ -191,33 +201,31 @@ export function AdminDocsModule({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <CreateDocArticleButton />
-      </div>
+      <DocCenterActionButtons />
       <CategoryStrip categories={categories} />
       <AdminModulePage
         title="文档中心"
-        description="统一维护用户端与管理端操作说明，按角色控制可见范围，支持 Markdown 导入为多模态块内容。"
+        description="统一维护用户端与管理端操作说明，按可见范围控制查阅对象，支持导入文档并生成多模态块内容。"
         source={source}
         metrics={metrics}
         filters={filters}
         records={records}
         columns={columns}
-        searchPlaceholder="搜索分类、标题、slug 或摘要..."
+        searchPlaceholder="搜索分类、标题、访问路径标识或摘要..."
         toolbar={<DocsToolbar filters={filters} categories={categories} activeFilters={activeFilters} />}
         guide={
           <AdminModuleGuide
             title="文档运维建议"
             description="一套文档中心按角色切换内容；管理端负责结构维护、草稿校对、发布与下线。"
             steps={[
-              '先维护分类与 audience 范围，确保用户端和管理端查阅路径清晰。',
-              '新文档优先通过 Markdown 导入生成草稿，再到编辑页校对块结构、摘要和封面。',
+              '先维护分类与可见范围，确保用户端和管理端查阅路径清晰。',
+              '新文档优先通过导入文档生成草稿，再到编辑页校对块结构、摘要和封面。',
               '发布前检查目标角色、分类归属和步骤图文/FAQ/媒体块是否完整，再执行发布。',
             ]}
             risks={[
-              '已发布文档会立即影响 /docs 可见内容，错误 audience 可能导致角色错看或漏看。',
+              '已发布文档会立即影响 /docs 可见内容，错误可见范围可能导致角色错看或漏看。',
               'JSON 块内容是当前唯一权威内容源，手改时必须保持合法 block 结构。',
-              'Markdown 导入只做一次转换，导入后需要在编辑页复核复杂媒体或流程图内容。',
+              '文档导入只做一次转换，导入后需要在编辑页复核复杂媒体或流程图内容。',
             ]}
             defaultOpen
           />

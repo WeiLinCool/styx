@@ -30,5 +30,27 @@ test('admin docs module reflects active filters in links and empty state', () =>
 
   assert.match(html, /value="快速"/);
   assert.match(html, /草稿/);
+  assert.match(html, /全部可见/);
+  assert.match(html, /访问路径标识/);
   assert.match(html, /暂无记录/);
+});
+
+test('admin docs module exposes document center maintenance actions', () => {
+  const html = renderToStaticMarkup(
+    <AdminDocsModule
+      source="database"
+      metrics={[]}
+      filters={[]}
+      records={[]}
+      categories={[]}
+      activeFilters={{ status: 'all', categoryId: '', search: '' }}
+    />,
+  );
+
+  assert.match(html, /维护分类/);
+  assert.match(html, /href="\/admin\/docs\/categories"/);
+  assert.match(html, /导入文档/);
+  assert.match(html, /href="\/admin\/docs\/import"/);
+  assert.match(html, /新建文档/);
+  assert.match(html, /href="\/admin\/docs\/articles\/new"/);
 });
