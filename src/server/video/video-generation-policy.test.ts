@@ -198,6 +198,62 @@ test('resolveVideoGenerationPolicy keeps valid member policy enabled with no ena
   });
 });
 
+test('resolveVideoGenerationPolicy returns fresh disabled defaults for each policy', () => {
+  const firstPolicy = resolveVideoGenerationPolicy({
+    entitlement: null,
+    planConfig: null,
+    styles: [],
+  });
+
+  firstPolicy.defaults.styleCode = 'mutated';
+  firstPolicy.defaults.durationSeconds = 99;
+  firstPolicy.defaults.resolution = 'mutated';
+
+  const secondPolicy = resolveVideoGenerationPolicy({
+    entitlement: null,
+    planConfig: null,
+    styles: [],
+  });
+
+  assert.deepEqual(secondPolicy.defaults, {
+    styleCode: null,
+    durationSeconds: null,
+    resolution: null,
+  });
+});
+
+test('resolveVideoGenerationPolicy returns policy data without caller-owned aliases', () => {
+  const planConfig = {
+    enabled: true,
+    allowedDurations: [5, 10],
+    allowedResolutions: ['720p'],
+    defaultDuration: 5,
+    defaultResolution: '720p',
+  };
+  const styles = [
+    {
+      id: 'style-1',
+      code: 'stone',
+      name: '石头印画',
+      prompt: '石头印画动态短片',
+      enabled: true,
+      sortOrder: 1,
+    },
+  ];
+
+  const policy = resolveVideoGenerationPolicy({
+    entitlement: { planCode: 'pro-monthly', planVersionId: 'version-1' },
+    planConfig,
+    styles,
+  });
+
+  policy.durations.push(15);
+  policy.styles[0]!.name = 'mutated';
+
+  assert.deepEqual(planConfig.allowedDurations, [5, 10]);
+  assert.equal(styles[0]!.name, '石头印画');
+});
+
 test('validateVideoGenerationSelection rejects options outside member policy', () => {
   const result = validateVideoGenerationSelection({
     policy: {

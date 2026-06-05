@@ -52,11 +52,13 @@ type VideoGenerationEntitlement = {
   planVersionId: string | null;
 };
 
-const DISABLED_DEFAULTS: VideoGenerationPolicy['defaults'] = {
-  styleCode: null,
-  durationSeconds: null,
-  resolution: null,
-};
+function createDisabledDefaults(): VideoGenerationPolicy['defaults'] {
+  return {
+    styleCode: null,
+    durationSeconds: null,
+    resolution: null,
+  };
+}
 
 function createDisabledPolicy(input: {
   upgradeRequired: boolean;
@@ -70,7 +72,7 @@ function createDisabledPolicy(input: {
     styles: input.styles ?? [],
     durations: [],
     resolutions: [],
-    defaults: DISABLED_DEFAULTS,
+    defaults: createDisabledDefaults(),
   };
 }
 
@@ -89,7 +91,8 @@ function normalizeResolutionLabel(resolution: string) {
 function resolveEnabledStyles(styles: VideoStylePreset[]) {
   return styles
     .filter((style) => style.enabled)
-    .toSorted((left, right) => left.sortOrder - right.sortOrder);
+    .toSorted((left, right) => left.sortOrder - right.sortOrder)
+    .map((style) => ({ ...style }));
 }
 
 function isValidPlanConfig(planConfig: VideoPlanConfig) {
@@ -140,7 +143,7 @@ export function resolveVideoGenerationPolicy(input: {
     upgradeRequired: false,
     message: null,
     styles,
-    durations: input.planConfig.allowedDurations,
+    durations: [...input.planConfig.allowedDurations],
     resolutions: input.planConfig.allowedResolutions.map((resolution) => ({
       value: resolution,
       label: normalizeResolutionLabel(resolution),
