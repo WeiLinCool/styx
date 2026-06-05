@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   check,
   date,
@@ -15,6 +16,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { DOC_BLOCK_TYPES } from '@/server/docs/constants';
 
 export const userAccountState = pgEnum('user_account_state', [
   'pending_activation',
@@ -251,6 +253,14 @@ export const requestIdempotencyStatus = pgEnum('request_idempotency_status', [
   'failed',
 ]);
 
+export const docAudienceScope = pgEnum('doc_audience_scope', ['user', 'admin', 'shared']);
+
+export const docArticleStatus = pgEnum('doc_article_status', ['draft', 'published', 'archived']);
+
+export const docArticleBlockType = pgEnum('doc_article_block_type', DOC_BLOCK_TYPES);
+
+export const docImportStatus = pgEnum('doc_import_status', ['parsed', 'failed', 'imported']);
+
 const id = uuid('id').primaryKey().defaultRandom();
 const now = timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updated = timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -286,6 +296,88 @@ export const users = pgTable(
       .on(table.phone)
       .where(sql`${table.phone} is not null`),
   ],
+);
+
+export const docCategories = pgTable(
+  'doc_categories',
+  {
+    id,
+    parentId: uuid('parent_id').references((): AnyPgColumn => docCategories.id, {
+      onDelete: 'set null',
+    }),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    description: text('description').notNull().default(''),
+    audienceScope: docAudienceScope('audience_scope').notNull().default('shared'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('doc_categories_slug_idx').on(table.slug),
+    index('doc_categories_audience_sort_idx').on(table.audienceScope, table.sortOrder),
+  ],
+);
+
+export const docArticles = pgTable(
+  'doc_articles',
+  {
+    id,
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => docCategories.id, { onDelete: 'restrict' }),
+    title: text('title').notNull(),
+    slug: text('slug').notNull(),
+    summary: text('summary').notNull().default(''),
+    coverImage: text('cover_image'),
+    status: docArticleStatus('status').notNull().default('draft'),
+    searchText: text('search_text').notNull().default(''),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('doc_articles_category_slug_idx').on(table.categoryId, table.slug),
+    index('doc_articles_status_updated_idx').on(table.status, table.updatedAt),
+  ],
+);
+
+export const docArticleBlocks = pgTable(
+  'doc_article_blocks',
+  {
+    id,
+    articleId: uuid('article_id')
+      .notNull()
+      .references(() => docArticles.id, { onDelete: 'cascade' }),
+    blockType: docArticleBlockType('block_type').notNull(),
+    sortOrder: integer('sort_order').notNull(),
+    payload: jsonb('payload').notNull(),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('doc_article_blocks_article_sort_idx').on(table.articleId, table.sortOrder),
+  ],
+);
+
+export const docImportJobs = pgTable(
+  'doc_import_jobs',
+  {
+    id,
+    sourceFilename: text('source_filename').notNull(),
+    sourceChecksum: text('source_checksum').notNull(),
+    importStatus: docImportStatus('import_status').notNull(),
+    errorSummary: text('error_summary'),
+    previewSnapshot: jsonb('preview_snapshot').notNull(),
+    createdArticleId: uuid('created_article_id').references(() => docArticles.id, {
+      onDelete: 'set null',
+    }),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: now,
+  },
 );
 
 export const userIdentities = pgTable(
