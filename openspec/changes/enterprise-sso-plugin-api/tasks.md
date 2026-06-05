@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add schema and migration support for enterprise OAuth authorization codes and access tokens with hashed secrets, expiry, user binding, client binding, redirect binding, PKCE challenge, and consumed state.
 - [x] 1.2 Implement repository helpers for creating, consuming, and resolving enterprise OAuth records.
-- [ ] 1.3 Implement enterprise OAuth domain logic for authorize validation, account/password authentication, code issuance, token exchange, PKCE S256 verification, token hashing, and bearer validation.
+- [x] 1.3 Implement enterprise OAuth domain logic for authorize validation, account/password authentication, code issuance, token exchange, PKCE S256 verification, token hashing, and bearer validation.
 
 ## 2. Entitlement And Identity Mapping
 
