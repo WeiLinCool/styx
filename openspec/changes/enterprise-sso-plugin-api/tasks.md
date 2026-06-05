@@ -6,9 +6,9 @@
 
 ## 2. Entitlement And Identity Mapping
 
-- [ ] 2.1 Implement userinfo mapping from existing user account fields into OpenPawz-compatible claims.
-- [ ] 2.2 Implement enterprise entitlement mapping from existing user entitlement/model-access configuration into reserved names such as `models:proxy` and `all`.
-- [ ] 2.3 Add tests for active-user requirements, bearer-token failure modes, and entitlement mapping for users with and without cloud model access.
+- [x] 2.1 Implement userinfo mapping from existing user account fields into OpenPawz-compatible claims.
+- [x] 2.2 Implement enterprise entitlement mapping from existing user entitlement/model-access configuration into reserved names such as `models:proxy` and `all`.
+- [x] 2.3 Add tests for active-user requirements, bearer-token failure modes, and entitlement mapping for users with and without cloud model access.
 
 ## 3. Route Handlers
 
