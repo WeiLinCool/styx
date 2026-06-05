@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 
 import { AdminDocEditor } from '@/features/admin/admin-doc-editor';
 import type { AdminDocEditorData } from '@/features/admin/admin-docs-types';
+import { createStarterDocBlocks } from '@/features/admin/admin-doc-blocks';
 import {
   getAdminDocArticle,
   listAdminDocCategories,
@@ -47,7 +48,7 @@ export default async function AdminDocArticleEditorPage({
           summary: '',
           coverImage: '',
           status: 'draft',
-          blocks: [],
+          blocks: createStarterDocBlocks(),
         },
       };
 

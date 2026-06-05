@@ -17,6 +17,12 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { adminApiRequest } from '@/lib/admin-api-client';
 import { readJsonResponse } from '@/lib/api-response';
+import { AdminDocBlockEditor } from './admin-doc-block-editor';
+import {
+  fromDocBlocks,
+  toDocBlocks,
+  validateAdminEditableBlocks,
+} from './admin-doc-blocks';
 import type { AdminDocEditorData } from './admin-docs-types';
 
 type EditorState = {
@@ -26,7 +32,6 @@ type EditorState = {
   summary: string;
   coverImage: string;
   status: 'draft' | 'published' | 'archived';
-  blocksJson: string;
 };
 
 function buildInitialState(data: AdminDocEditorData): EditorState {
@@ -37,8 +42,15 @@ function buildInitialState(data: AdminDocEditorData): EditorState {
     summary: data.article.summary,
     coverImage: data.article.coverImage,
     status: data.article.status,
-    blocksJson: JSON.stringify(data.article.blocks, null, 2),
   };
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 async function postJson(url: string, body: Record<string, unknown>) {
@@ -61,7 +73,9 @@ async function postJson(url: string, body: Record<string, unknown>) {
 export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
   const router = useRouter();
   const [state, setState] = useState<EditorState>(() => buildInitialState(data));
+  const [blocks, setBlocks] = useState(() => fromDocBlocks(data.article.blocks));
   const [message, setMessage] = useState<string | null>(null);
+  const [blockErrors, setBlockErrors] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -79,16 +93,22 @@ export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
     setPending(true);
     setMessage(null);
 
+    const validation = validateAdminEditableBlocks(blocks);
+    setBlockErrors(validation.errors);
+    if (!validation.ok) {
+      setPending(false);
+      return;
+    }
+
     try {
-      const blocks = JSON.parse(state.blocksJson);
       const payload = {
         categoryId: state.categoryId,
         title: state.title,
-        slug: state.slug,
+        slug: state.slug || slugify(state.title),
         summary: state.summary,
         coverImage: state.coverImage || null,
         status: state.status,
-        blocks,
+        blocks: toDocBlocks(blocks),
       };
       const url = data.article.id
         ? `/api/admin/docs/articles/${data.article.id}`
@@ -163,7 +183,13 @@ export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
           <Input
             id="doc-title"
             value={state.title}
-            onChange={(event) => setState((current) => ({ ...current, title: event.target.value }))}
+            onChange={(event) =>
+              setState((current) => ({
+                ...current,
+                title: event.target.value,
+                slug: current.slug || slugify(event.target.value),
+              }))
+            }
             disabled={pending}
           />
         </div>
@@ -198,19 +224,7 @@ export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="doc-blocks-json">内容块 JSON</Label>
-        <Textarea
-          id="doc-blocks-json"
-          value={state.blocksJson}
-          onChange={(event) => setState((current) => ({ ...current, blocksJson: event.target.value }))}
-          disabled={pending}
-          className="min-h-96 font-mono text-xs"
-        />
-        <p className="text-xs text-muted-foreground">
-          当前版本先以结构化 JSON 维护块内容；Markdown 导入会自动生成这一格式。
-        </p>
-      </div>
+      <AdminDocBlockEditor blocks={blocks} onChange={setBlocks} errorMessages={blockErrors} />
 
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm text-destructive">{message}</div>
