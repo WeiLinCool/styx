@@ -42,9 +42,28 @@ const defaultExistingUserPasswordAuthDeps: ExistingUserPasswordAuthDeps = {
   verifyPassword: verifyStoredUserPassword,
 };
 
+let existingUserPasswordAuthDeps = defaultExistingUserPasswordAuthDeps;
+
+export function setExistingUserPasswordAuthDepsForTesting(
+  deps: Partial<ExistingUserPasswordAuthDeps>,
+) {
+  const previous = existingUserPasswordAuthDeps;
+  existingUserPasswordAuthDeps = {
+    ...defaultExistingUserPasswordAuthDeps,
+    ...deps,
+  };
+  return () => {
+    existingUserPasswordAuthDeps = previous;
+  };
+}
+
+function createCredentialFailure() {
+  return new AccountDomainError('session_required', '账号或密码错误。', 401);
+}
+
 export async function authenticateExistingUserWithPassword(
   input: { login: string; password: string },
-  deps: ExistingUserPasswordAuthDeps = defaultExistingUserPasswordAuthDeps,
+  deps: ExistingUserPasswordAuthDeps = existingUserPasswordAuthDeps,
 ) {
   const login = input.login.trim();
   const user = login.includes('@')
@@ -52,7 +71,7 @@ export async function authenticateExistingUserWithPassword(
     : await deps.getUserByPhone(login);
 
   if (!user) {
-    throw new AccountDomainError('session_required', '手机号或密码错误。', 401);
+    throw createCredentialFailure();
   }
 
   if (!('passwordHash' in (user.metadata ?? {}))) {
@@ -63,8 +82,15 @@ export async function authenticateExistingUserWithPassword(
     );
   }
 
-  if (!deps.verifyPassword(input.password, user.metadata)) {
-    throw new AccountDomainError('session_required', '手机号或密码错误。', 401);
+  let passwordMatches = false;
+  try {
+    passwordMatches = deps.verifyPassword(input.password, user.metadata);
+  } catch {
+    passwordMatches = false;
+  }
+
+  if (!passwordMatches) {
+    throw createCredentialFailure();
   }
 
   return user;

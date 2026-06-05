@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   authenticateExistingUserWithPassword,
+  setExistingUserPasswordAuthDepsForTesting,
   type ExistingUserPasswordAuthDeps,
 } from './account-service';
 import { AccountDomainError, type UserRecord } from './account-types';
@@ -122,11 +123,44 @@ test('authenticateExistingUserWithPassword rejects wrong password', async () => 
         { login: '13800138000', password: 'wrong-password' },
         deps,
       ),
-    (error) =>
-      error instanceof AccountDomainError &&
-      error.code === 'session_required' &&
-      error.status === 401,
+    (error) => {
+      assert.equal(error instanceof AccountDomainError, true);
+      assert.equal((error as AccountDomainError).code, 'session_required');
+      assert.equal((error as AccountDomainError).status, 401);
+      assert.equal((error as AccountDomainError).message, '账号或密码错误。');
+      return true;
+    },
   );
+});
+
+test('authenticateExistingUserWithPassword converts malformed password hash to auth failure', async () => {
+  const user = createUser({ metadata: { passwordHash: 'malformed-hash' } });
+  const restore = setExistingUserPasswordAuthDepsForTesting({
+    async getUserByEmail() {
+      return null;
+    },
+    async getUserByPhone() {
+      return user;
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        authenticateExistingUserWithPassword({
+          login: '13800138000',
+          password: 'User@123456',
+        }),
+      (error) => {
+        assert.equal(error instanceof AccountDomainError, true);
+        assert.equal((error as AccountDomainError).code, 'session_required');
+        assert.equal((error as AccountDomainError).status, 401);
+        return true;
+      },
+    );
+  } finally {
+    restore();
+  }
 });
 
 test('authenticateExistingUserWithPassword rejects missing user without registering or creating a session', async () => {
