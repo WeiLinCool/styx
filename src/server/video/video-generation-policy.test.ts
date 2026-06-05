@@ -114,7 +114,57 @@ test('resolveVideoGenerationPolicy disables plans with invalid defaults', () => 
   });
 });
 
-test('resolveVideoGenerationPolicy disables plans with no enabled styles', () => {
+test('resolveVideoGenerationPolicy blocks members when plan config is missing', () => {
+  const policy = resolveVideoGenerationPolicy({
+    entitlement: { planCode: 'pro-monthly', planVersionId: 'version-1' },
+    planConfig: null,
+    styles: [
+      {
+        id: 'style-1',
+        code: 'stone',
+        name: '石头印画',
+        prompt: '石头印画动态短片',
+        enabled: true,
+        sortOrder: 1,
+      },
+    ],
+  });
+
+  assert.equal(policy.enabled, false);
+  assert.equal(policy.upgradeRequired, false);
+  assert.deepEqual(policy.durations, []);
+  assert.deepEqual(policy.resolutions, []);
+});
+
+test('resolveVideoGenerationPolicy blocks members when plan config is disabled', () => {
+  const policy = resolveVideoGenerationPolicy({
+    entitlement: { planCode: 'pro-monthly', planVersionId: 'version-1' },
+    planConfig: {
+      enabled: false,
+      allowedDurations: [5],
+      allowedResolutions: ['720p'],
+      defaultDuration: 5,
+      defaultResolution: '720p',
+    },
+    styles: [
+      {
+        id: 'style-1',
+        code: 'stone',
+        name: '石头印画',
+        prompt: '石头印画动态短片',
+        enabled: true,
+        sortOrder: 1,
+      },
+    ],
+  });
+
+  assert.equal(policy.enabled, false);
+  assert.equal(policy.upgradeRequired, false);
+  assert.deepEqual(policy.durations, []);
+  assert.deepEqual(policy.resolutions, []);
+});
+
+test('resolveVideoGenerationPolicy keeps valid member policy enabled with no enabled styles', () => {
   const policy = resolveVideoGenerationPolicy({
     entitlement: { planCode: 'pro-monthly', planVersionId: 'version-1' },
     planConfig: {
@@ -136,9 +186,16 @@ test('resolveVideoGenerationPolicy disables plans with no enabled styles', () =>
     ],
   });
 
-  assert.equal(policy.enabled, false);
+  assert.equal(policy.enabled, true);
   assert.equal(policy.upgradeRequired, false);
   assert.deepEqual(policy.styles, []);
+  assert.deepEqual(policy.durations, [5]);
+  assert.deepEqual(policy.resolutions, [{ value: '720p', label: '720P' }]);
+  assert.deepEqual(policy.defaults, {
+    styleCode: null,
+    durationSeconds: 5,
+    resolution: '720p',
+  });
 });
 
 test('validateVideoGenerationSelection rejects options outside member policy', () => {
@@ -170,6 +227,68 @@ test('validateVideoGenerationSelection rejects options outside member policy', (
 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'invalid_duration');
+});
+
+test('validateVideoGenerationSelection rejects styles outside member policy', () => {
+  const result = validateVideoGenerationSelection({
+    policy: {
+      enabled: true,
+      upgradeRequired: false,
+      message: null,
+      styles: [
+        {
+          id: 'style-1',
+          code: 'stone',
+          name: '石头印画',
+          prompt: 'prompt',
+          enabled: true,
+          sortOrder: 1,
+        },
+      ],
+      durations: [5],
+      resolutions: [{ value: '720p', label: '720P' }],
+      defaults: {
+        styleCode: 'stone',
+        durationSeconds: 5,
+        resolution: '720p',
+      },
+    },
+    selection: { styleCode: 'ink', durationSeconds: 5, resolution: '720p' },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_style');
+});
+
+test('validateVideoGenerationSelection rejects resolutions outside member policy', () => {
+  const result = validateVideoGenerationSelection({
+    policy: {
+      enabled: true,
+      upgradeRequired: false,
+      message: null,
+      styles: [
+        {
+          id: 'style-1',
+          code: 'stone',
+          name: '石头印画',
+          prompt: 'prompt',
+          enabled: true,
+          sortOrder: 1,
+        },
+      ],
+      durations: [5],
+      resolutions: [{ value: '720p', label: '720P' }],
+      defaults: {
+        styleCode: 'stone',
+        durationSeconds: 5,
+        resolution: '720p',
+      },
+    },
+    selection: { styleCode: 'stone', durationSeconds: 5, resolution: '1080p' },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_resolution');
 });
 
 test('validateVideoGenerationSelection rejects disabled policy', () => {

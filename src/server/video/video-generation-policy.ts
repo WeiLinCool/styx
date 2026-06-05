@@ -127,7 +127,7 @@ export function resolveVideoGenerationPolicy(input: {
     });
   }
 
-  if (!isValidPlanConfig(input.planConfig) || styles.length === 0) {
+  if (!isValidPlanConfig(input.planConfig)) {
     return createDisabledPolicy({
       upgradeRequired: false,
       message: 'Video generation is not available for this membership plan.',
