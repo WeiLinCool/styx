@@ -3,6 +3,14 @@ import { AdminModulePage, type AdminColumn } from '@/features/admin/module-page'
 import { StatusBadge } from '@/features/admin/status-badge';
 import type { AdminDocArticleRow, AdminDocCategoryRow } from '@/server/repositories/docs';
 import { AdminDocRowActions, CreateDocArticleButton } from './admin-docs-actions';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+type ActiveFilters = {
+  status: 'all' | 'draft' | 'published' | 'archived';
+  categoryId: string;
+  search: string;
+};
 
 const columns: AdminColumn<AdminDocArticleRow>[] = [
   {
@@ -76,18 +84,108 @@ function CategoryStrip({ categories }: { categories: AdminDocCategoryRow[] }) {
   );
 }
 
+function buildDocListHref(filters: ActiveFilters) {
+  const params = new URLSearchParams();
+  if (filters.status !== 'all') {
+    params.set('status', filters.status);
+  }
+  if (filters.categoryId) {
+    params.set('categoryId', filters.categoryId);
+  }
+  if (filters.search) {
+    params.set('search', filters.search);
+  }
+
+  const query = params.toString();
+  return query ? `/admin/docs?${query}` : '/admin/docs';
+}
+
+function DocsToolbar({
+  filters,
+  categories,
+  activeFilters,
+}: {
+  filters: Parameters<typeof AdminModulePage<AdminDocArticleRow>>[0]['filters'];
+  categories: AdminDocCategoryRow[];
+  activeFilters: ActiveFilters;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <form action="/admin/docs" className="flex flex-col gap-2 md:flex-row md:items-center">
+        {activeFilters.status !== 'all' ? <input type="hidden" name="status" value={activeFilters.status} /> : null}
+        <div className="relative w-full md:w-80">
+          <Input
+            name="search"
+            defaultValue={activeFilters.search}
+            placeholder="搜索分类、标题、slug 或摘要..."
+            className="h-9 rounded-md border-input bg-background text-sm"
+          />
+        </div>
+        <select
+          name="categoryId"
+          defaultValue={activeFilters.categoryId}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs"
+        >
+          <option value="">全部分类</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="outline" className="h-9 rounded-md">
+          筛选
+        </Button>
+        <Button type="button" variant="outline" className="h-9 rounded-md" asChild>
+          <a href="/admin/docs">清除</a>
+        </Button>
+      </form>
+      <div className="flex flex-wrap gap-1.5">
+        {filters.map((filter) => {
+          const nextFilters: ActiveFilters = {
+            ...activeFilters,
+            status:
+              filter.value === 'draft' || filter.value === 'published' || filter.value === 'archived'
+                ? filter.value
+                : 'all',
+          };
+          const active = nextFilters.status === activeFilters.status;
+
+          return (
+            <Button
+              key={filter.value}
+              type="button"
+              size="sm"
+              variant={active ? 'default' : 'outline'}
+              className="h-7 rounded-md px-2 text-xs"
+              asChild
+            >
+              <a href={buildDocListHref(nextFilters)}>
+                {filter.label}
+                {typeof filter.count === 'number' ? ` ${filter.count}` : ''}
+              </a>
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function AdminDocsModule({
   source,
   metrics,
   filters,
   records,
   categories,
+  activeFilters,
 }: {
   source: 'database' | 'seed';
   metrics: Parameters<typeof AdminModulePage<AdminDocArticleRow>>[0]['metrics'];
   filters: Parameters<typeof AdminModulePage<AdminDocArticleRow>>[0]['filters'];
   records: AdminDocArticleRow[];
   categories: AdminDocCategoryRow[];
+  activeFilters: ActiveFilters;
 }) {
   return (
     <div className="space-y-4">
@@ -104,6 +202,7 @@ export function AdminDocsModule({
         records={records}
         columns={columns}
         searchPlaceholder="搜索分类、标题、slug 或摘要..."
+        toolbar={<DocsToolbar filters={filters} categories={categories} activeFilters={activeFilters} />}
         guide={
           <AdminModuleGuide
             title="文档运维建议"

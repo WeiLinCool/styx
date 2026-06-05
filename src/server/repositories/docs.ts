@@ -412,11 +412,7 @@ export async function getPublishedDocArticle(input: {
   };
 }
 
-export async function listAdminDocArticles(input?: {
-  status?: DocArticleStatus;
-  categoryId?: string;
-  search?: string;
-}) {
+export async function listAdminDocArticles(input?: AdminDocListInput) {
   const database = requireDb('admin docs list');
   const normalized = normalizeAdminDocListInput(input);
   const clauses: SQL[] = [];
@@ -773,14 +769,20 @@ export async function updateDocArticleStatus(input: {
   return article;
 }
 
-export async function getAdminDocsModuleData(): Promise<
+export async function getAdminDocsModuleData(input?: AdminDocListInput): Promise<
   AdminModuleData<AdminDocArticleRow> & {
     categories: AdminDocCategoryRow[];
+    activeFilters: {
+      status: 'all' | DocArticleStatus;
+      categoryId: string;
+      search: string;
+    };
   }
 > {
+  const normalized = normalizeAdminDocListInput(input);
   const [categories, records] = await Promise.all([
     listAdminDocCategories(),
-    listAdminDocArticles(),
+    listAdminDocArticles(normalized),
   ]);
 
   const draftCount = records.filter((record) => record.status === 'draft').length;
@@ -803,6 +805,11 @@ export async function getAdminDocsModuleData(): Promise<
       { label: '已发布', value: 'published', count: publishedCount },
       { label: '已下线', value: 'archived', count: archivedCount },
     ],
+    activeFilters: {
+      status: normalized.status ?? 'all',
+      categoryId: normalized.categoryId ?? '',
+      search: normalized.search ?? '',
+    },
   };
 }
 

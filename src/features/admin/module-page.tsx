@@ -50,6 +50,7 @@ type AdminModulePageProps<TRecord extends { id: string }> = {
   searchPlaceholder: string;
   emptyLabel?: string;
   guide?: ReactNode;
+  toolbar?: ReactNode;
 };
 
 export function AdminActionBar({ actions }: { actions: string[] }) {
@@ -97,6 +98,7 @@ export function AdminModulePage<TRecord extends { id: string }>({
   searchPlaceholder,
   emptyLabel = '暂无记录',
   guide,
+  toolbar,
 }: AdminModulePageProps<TRecord>) {
   return (
     <div className="space-y-4">
@@ -134,20 +136,22 @@ export function AdminModulePage<TRecord extends { id: string }>({
         <CardHeader className="gap-3 border-b border-border px-4 py-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <CardTitle className="text-sm font-semibold">运营队列</CardTitle>
-            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-              <div className="relative w-full md:w-80">
-                <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  disabled
-                  placeholder={searchPlaceholder}
-                  className="h-9 rounded-md border-border pl-8 text-sm"
-                />
+            {toolbar ?? (
+              <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                <div className="relative w-full md:w-80">
+                  <Search className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    disabled
+                    placeholder={searchPlaceholder}
+                    className="h-9 rounded-md border-border pl-8 text-sm"
+                  />
+                </div>
+                <Button type="button" variant="outline" disabled className="h-9 rounded-md">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  筛选
+                </Button>
               </div>
-              <Button type="button" variant="outline" disabled className="h-9 rounded-md">
-                <SlidersHorizontal className="h-4 w-4" />
-                筛选
-              </Button>
-            </div>
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {filters.map((filter) => (
