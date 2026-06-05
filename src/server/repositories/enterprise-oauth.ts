@@ -12,7 +12,7 @@ export type EnterpriseAuthorizationCodeRecord = {
   codeChallenge: string;
   codeChallengeMethod: string;
   scope: string;
-  state: string | null;
+  state: string;
   expiresAt: Date;
   consumedAt: Date | null;
   createdAt: Date;
@@ -39,7 +39,7 @@ export type CreateEnterpriseAuthorizationCodeInput = {
   codeChallenge: string;
   codeChallengeMethod: string;
   scope?: string;
-  state?: string | null;
+  state: string;
   expiresAt: Date;
   now?: Date;
 };
@@ -86,7 +86,7 @@ export function createInMemoryEnterpriseOAuthRepository(): EnterpriseOAuthReposi
         codeChallenge: input.codeChallenge,
         codeChallengeMethod: input.codeChallengeMethod,
         scope: input.scope ?? '',
-        state: input.state ?? null,
+        state: input.state,
         expiresAt: input.expiresAt,
         consumedAt: null,
         createdAt,
@@ -156,7 +156,7 @@ export function createDatabaseEnterpriseOAuthRepository(): EnterpriseOAuthReposi
           codeChallenge: input.codeChallenge,
           codeChallengeMethod: input.codeChallengeMethod,
           scope: input.scope ?? '',
-          state: input.state ?? null,
+          state: input.state,
           expiresAt: input.expiresAt,
           createdAt,
           updatedAt: createdAt,

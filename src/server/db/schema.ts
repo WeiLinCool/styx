@@ -542,7 +542,7 @@ export const enterpriseOauthAuthorizationCodes = pgTable(
     codeChallenge: text('code_challenge').notNull(),
     codeChallengeMethod: text('code_challenge_method').notNull(),
     scope: text('scope').notNull().default(''),
-    state: text('state'),
+    state: text('state').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     createdAt: now,

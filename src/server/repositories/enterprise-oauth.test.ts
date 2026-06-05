@@ -24,6 +24,7 @@ test('in-memory enterprise OAuth repository consumes authorization codes exactly
   const replay = await repo.consumeEnterpriseAuthorizationCode('sha256-code-1', now);
 
   assert.equal(consumed?.id, created.id);
+  assert.equal(consumed?.state, 'state-1');
   assert.equal(consumed?.consumedAt?.toISOString(), now.toISOString());
   assert.equal(replay, null);
 });
