@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { EnterpriseOAuthError, type EnterpriseTokenRequest } from '@/server/enterprise/oauth';
 import {
+  parseBearerAuthorizationHeader,
   createOAuthErrorJsonResponse,
   createProtectedEnterpriseJsonGet,
 } from '@/server/enterprise/oauth-route-responses';
@@ -88,6 +89,23 @@ test('parseOAuthTokenRequestBody returns URLSearchParams for URL-encoded request
   assert.equal(params.get('code'), 'code-1');
 });
 
+test('parseOAuthTokenRequestBody rejects unsupported content types with OAuth invalid_request', async () => {
+  await assert.rejects(
+    () =>
+      parseOAuthTokenRequestBody(
+        new Request('http://localhost/oauth/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ grant_type: 'authorization_code' }),
+        }),
+      ),
+    {
+      name: 'EnterpriseOAuthError',
+      code: 'invalid_request',
+    },
+  );
+});
+
 test('createProtectedEnterpriseJsonGet rejects invalid bearer token errors', async () => {
   const GET = createProtectedEnterpriseJsonGet({
     async resolveEnterpriseBearerToken() {
@@ -106,8 +124,21 @@ test('createProtectedEnterpriseJsonGet rejects invalid bearer token errors', asy
   const body = await response.json();
 
   assert.equal(response.status, 401);
+  assert.equal(
+    response.headers.get('www-authenticate'),
+    'Bearer error="invalid_token", error_description="Bearer token is invalid."',
+  );
   assert.deepEqual(body, {
     error: 'invalid_token',
     error_description: 'Bearer token is invalid.',
   });
+});
+
+test('parseBearerAuthorizationHeader creates bearer challenge for invalid token errors', () => {
+  assert.equal(
+    parseBearerAuthorizationHeader(
+      new EnterpriseOAuthError('invalid_token', 'Bearer token is invalid.', 401),
+    ),
+    'Bearer error="invalid_token", error_description="Bearer token is invalid."',
+  );
 });

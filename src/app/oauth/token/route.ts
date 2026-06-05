@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import {
+  EnterpriseOAuthError,
   exchangeEnterpriseAuthorizationCode,
   validateTokenRequest,
   type EnterpriseTokenRequest,
@@ -21,14 +22,22 @@ export async function parseOAuthTokenRequestBody(request: Request): Promise<URLS
     return new URLSearchParams(await request.text());
   }
 
-  const formData = await request.formData();
-  const params = new URLSearchParams();
-  for (const [key, value] of formData.entries()) {
-    if (typeof value === 'string') {
-      params.set(key, value);
+  if (!contentType || contentType.toLowerCase().includes('multipart/form-data')) {
+    const formData = await request.formData();
+    const params = new URLSearchParams();
+    for (const [key, value] of formData.entries()) {
+      if (typeof value === 'string') {
+        params.set(key, value);
+      }
     }
+    return params;
   }
-  return params;
+
+  throw new EnterpriseOAuthError(
+    'invalid_request',
+    'Token request content-type must be application/x-www-form-urlencoded.',
+    400,
+  );
 }
 
 export function createTokenRoutePost({
