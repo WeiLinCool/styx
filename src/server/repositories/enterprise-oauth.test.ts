@@ -29,6 +29,32 @@ test('in-memory enterprise OAuth repository consumes authorization codes exactly
   assert.equal(replay, null);
 });
 
+test('in-memory enterprise OAuth repository can read an active code before consuming it', async () => {
+  const repo = createInMemoryEnterpriseOAuthRepository();
+  const now = new Date('2026-06-01T12:00:00.000Z');
+
+  const created = await repo.createEnterpriseAuthorizationCode({
+    userId: 'user-1',
+    codeHash: 'sha256-code-read',
+    clientId: 'enterprise-client',
+    redirectUri: 'http://127.0.0.1:49231/callback',
+    codeChallenge: 'challenge-1',
+    codeChallengeMethod: 'S256',
+    scope: 'plugin:read',
+    state: 'state-1',
+    expiresAt: new Date('2026-06-01T12:05:00.000Z'),
+    now,
+  });
+
+  const active = await repo.getEnterpriseAuthorizationCodeByHash(
+    'sha256-code-read',
+    now,
+  );
+
+  assert.equal(active?.id, created.id);
+  assert.equal(active?.consumedAt, null);
+});
+
 test('in-memory enterprise OAuth repository resolves only active access tokens', async () => {
   const repo = createInMemoryEnterpriseOAuthRepository();
   const issuedAt = new Date('2026-06-01T12:00:00.000Z');

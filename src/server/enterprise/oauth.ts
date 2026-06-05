@@ -7,6 +7,7 @@ import {
   createEnterpriseAccessToken,
   createEnterpriseAuthorizationCode,
   consumeEnterpriseAuthorizationCode,
+  getEnterpriseAuthorizationCodeByHash,
   getEnterpriseAccessTokenByHash,
   type EnterpriseAccessTokenRecord,
   type EnterpriseOAuthRepository,
@@ -17,6 +18,7 @@ export type EnterpriseOAuthErrorCode =
   | 'invalid_request'
   | 'invalid_client'
   | 'invalid_grant'
+  | 'invalid_token'
   | 'unauthorized_client'
   | 'access_denied';
 
@@ -87,6 +89,7 @@ const ACCESS_TOKEN_TTL_MS = ACCESS_TOKEN_TTL_SECONDS * 1000;
 
 const defaultRepository: EnterpriseOAuthRepository = {
   createEnterpriseAuthorizationCode,
+  getEnterpriseAuthorizationCodeByHash,
   consumeEnterpriseAuthorizationCode,
   createEnterpriseAccessToken,
   getEnterpriseAccessTokenByHash,
@@ -258,25 +261,35 @@ export async function exchangeEnterpriseAuthorizationCode(
 ): Promise<EnterpriseTokenResponse> {
   const resolvedDeps = resolveDeps(deps);
   assertTokenRequest(input);
+  const redirectUri = validateLoopbackRedirectUri(input.redirectUri);
+  const codeHash = resolvedDeps.hashSecret(input.code);
+
+  const authorizationCode = await resolvedDeps.repository.getEnterpriseAuthorizationCodeByHash(
+    codeHash,
+    resolvedDeps.now(),
+  );
+  if (!authorizationCode) {
+    throw new EnterpriseOAuthError('invalid_grant', 'Authorization code is invalid.', 400);
+  }
+
+  if (
+    authorizationCode.clientId !== input.clientId ||
+    authorizationCode.redirectUri !== redirectUri ||
+    authorizationCode.codeChallengeMethod !== 'S256' ||
+    !verifyPkceS256(input.codeVerifier, authorizationCode.codeChallenge)
+  ) {
+    throw new EnterpriseOAuthError('invalid_grant', 'Authorization code binding is invalid.');
+  }
 
   const consumed = await resolvedDeps.repository.consumeEnterpriseAuthorizationCode(
-    resolvedDeps.hashSecret(input.code),
+    codeHash,
     resolvedDeps.now(),
   );
   if (!consumed) {
     throw new EnterpriseOAuthError('invalid_grant', 'Authorization code is invalid.', 400);
   }
 
-  if (
-    consumed.clientId !== input.clientId ||
-    consumed.redirectUri !== input.redirectUri ||
-    consumed.codeChallengeMethod !== 'S256' ||
-    !verifyPkceS256(input.codeVerifier, consumed.codeChallenge)
-  ) {
-    throw new EnterpriseOAuthError('invalid_grant', 'Authorization code binding is invalid.');
-  }
-
-  const user = await resolvedDeps.getUserById(consumed.userId);
+  const user = await resolvedDeps.getUserById(authorizationCode.userId);
   if (!user) {
     throw new EnterpriseOAuthError('invalid_grant', 'Authorization code user is missing.');
   }
@@ -285,10 +298,10 @@ export async function exchangeEnterpriseAuthorizationCode(
   const issuedAt = resolvedDeps.now();
   const accessToken = resolvedDeps.createToken();
   await resolvedDeps.repository.createEnterpriseAccessToken({
-    userId: consumed.userId,
+    userId: authorizationCode.userId,
     tokenHash: resolvedDeps.hashSecret(accessToken),
     clientId: input.clientId,
-    scope: consumed.scope,
+    scope: authorizationCode.scope,
     expiresAt: new Date(issuedAt.getTime() + ACCESS_TOKEN_TTL_MS),
     now: issuedAt,
   });
@@ -297,7 +310,7 @@ export async function exchangeEnterpriseAuthorizationCode(
     access_token: accessToken,
     token_type: 'Bearer',
     expires_in: ACCESS_TOKEN_TTL_SECONDS,
-    scope: consumed.scope,
+    scope: authorizationCode.scope,
   };
 }
 
@@ -313,12 +326,12 @@ export async function resolveEnterpriseBearerToken(
   );
 
   if (!token) {
-    throw new EnterpriseOAuthError('invalid_grant', 'Bearer token is invalid.', 401);
+    throw new EnterpriseOAuthError('invalid_token', 'Bearer token is invalid.', 401);
   }
 
   const user = await resolvedDeps.getUserById(token.userId);
   if (!user) {
-    throw new EnterpriseOAuthError('invalid_grant', 'Bearer token user is missing.', 401);
+    throw new EnterpriseOAuthError('invalid_token', 'Bearer token user is missing.', 401);
   }
   assertActiveUser(user);
 

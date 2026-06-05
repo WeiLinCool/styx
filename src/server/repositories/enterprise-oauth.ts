@@ -57,6 +57,10 @@ export type EnterpriseOAuthRepository = {
   createEnterpriseAuthorizationCode(
     input: CreateEnterpriseAuthorizationCodeInput,
   ): Promise<EnterpriseAuthorizationCodeRecord>;
+  getEnterpriseAuthorizationCodeByHash(
+    codeHash: string,
+    now?: Date,
+  ): Promise<EnterpriseAuthorizationCodeRecord | null>;
   consumeEnterpriseAuthorizationCode(
     codeHash: string,
     now?: Date,
@@ -94,6 +98,14 @@ export function createInMemoryEnterpriseOAuthRepository(): EnterpriseOAuthReposi
       };
       authorizationCodes.set(record.codeHash, cloneAuthorizationCode(record));
       return cloneAuthorizationCode(record);
+    },
+
+    async getEnterpriseAuthorizationCodeByHash(codeHash, now = new Date()) {
+      const existing = authorizationCodes.get(codeHash);
+      if (!existing || existing.consumedAt || existing.expiresAt <= now) {
+        return null;
+      }
+      return cloneAuthorizationCode(existing);
     },
 
     async consumeEnterpriseAuthorizationCode(codeHash, consumedAt = new Date()) {
@@ -165,6 +177,21 @@ export function createDatabaseEnterpriseOAuthRepository(): EnterpriseOAuthReposi
       return record;
     },
 
+    async getEnterpriseAuthorizationCodeByHash(codeHash, now = new Date()) {
+      const [record] = await db!
+        .select()
+        .from(schema.enterpriseOauthAuthorizationCodes)
+        .where(
+          and(
+            eq(schema.enterpriseOauthAuthorizationCodes.codeHash, codeHash),
+            isNull(schema.enterpriseOauthAuthorizationCodes.consumedAt),
+            gt(schema.enterpriseOauthAuthorizationCodes.expiresAt, now),
+          ),
+        )
+        .limit(1);
+      return record ?? null;
+    },
+
     async consumeEnterpriseAuthorizationCode(codeHash, consumedAt = new Date()) {
       const [record] = await db!
         .update(schema.enterpriseOauthAuthorizationCodes)
@@ -230,6 +257,10 @@ export function createEnterpriseAuthorizationCode(
   input: CreateEnterpriseAuthorizationCodeInput,
 ) {
   return getEnterpriseOAuthRepository().createEnterpriseAuthorizationCode(input);
+}
+
+export function getEnterpriseAuthorizationCodeByHash(codeHash: string, now?: Date) {
+  return getEnterpriseOAuthRepository().getEnterpriseAuthorizationCodeByHash(codeHash, now);
 }
 
 export function consumeEnterpriseAuthorizationCode(codeHash: string, now?: Date) {

@@ -13,6 +13,7 @@ import {
   type ExchangeEnterpriseAuthorizationCodeInput,
   validateAuthorizeRequest,
   validateLoopbackRedirectUri,
+  validateTokenRequest,
   verifyPkceS256,
 } from './oauth';
 
@@ -60,12 +61,55 @@ test('validateLoopbackRedirectUri rejects unsafe callback URLs', () => {
   assert.throws(() => validateLoopbackRedirectUri('http://localhost:49231/other'), {
     code: 'invalid_request',
   });
+  assert.throws(() => validateLoopbackRedirectUri('http://localhost/callback'), {
+    code: 'invalid_request',
+  });
 });
 
 test('verifyPkceS256 accepts a matching verifier and rejects mismatch', () => {
   const verifier = 'correct-horse-battery-staple';
   assert.equal(verifyPkceS256(verifier, pkceChallenge(verifier)), true);
   assert.equal(verifyPkceS256('wrong-verifier', pkceChallenge(verifier)), false);
+});
+
+test('validateTokenRequest parses authorization-code form requests for desktop client', () => {
+  const parsed = validateTokenRequest(
+    new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: 'code-1',
+      redirect_uri: 'http://127.0.0.1:49231/callback',
+      client_id: 'openpawz-desktop',
+      code_verifier: 'verifier-1',
+    }),
+  );
+
+  assert.deepEqual(parsed, {
+    grantType: 'authorization_code',
+    code: 'code-1',
+    redirectUri: 'http://127.0.0.1:49231/callback',
+    clientId: 'openpawz-desktop',
+    codeVerifier: 'verifier-1',
+  });
+
+  for (const [key, value] of [
+    ['grant_type', 'client_credentials'],
+    ['client_id', 'other-client'],
+    ['code', ''],
+    ['code_verifier', ''],
+  ]) {
+    const params = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: 'code-1',
+      redirect_uri: 'http://127.0.0.1:49231/callback',
+      client_id: 'openpawz-desktop',
+      code_verifier: 'verifier-1',
+    });
+    params.set(key, value);
+
+    assert.throws(() => validateTokenRequest(params), {
+      name: 'EnterpriseOAuthError',
+    });
+  }
 });
 
 test('validateAuthorizeRequest requires the desktop client, safe redirect, S256 PKCE, and state', () => {
@@ -314,6 +358,21 @@ test('exchangeEnterpriseAuthorizationCode rejects replay, binding mismatches, ex
       ),
       { code: 'invalid_grant' },
     );
+
+    const stillUsable = await exchangeEnterpriseAuthorizationCode(
+      {
+        grantType: 'authorization_code',
+        code: scenario.code,
+        redirectUri: 'http://127.0.0.1:49231/callback',
+        clientId: 'openpawz-desktop',
+        codeVerifier: `${scenario.code}-verifier`,
+      },
+      {
+        ...deps,
+        createToken: () => `access-token-for-${scenario.code}`,
+      },
+    );
+    assert.equal(stillUsable.access_token, `access-token-for-${scenario.code}`);
   }
 });
 
@@ -343,12 +402,22 @@ test('resolveEnterpriseBearerToken rejects malformed, unknown, expired, and inac
     expiresAt: new Date('2026-06-01T13:00:00.000Z'),
     now,
   });
+  await repo.createEnterpriseAccessToken({
+    userId: 'missing-user',
+    tokenHash: hashSecret('missing-user-token'),
+    clientId: 'openpawz-desktop',
+    scope: '',
+    expiresAt: new Date('2026-06-01T13:00:00.000Z'),
+    now,
+  });
 
   const deps = {
     repository: repo,
     getUserById: async (id: string) =>
       id === 'inactive-user'
         ? createUser({ id, accountState: 'suspended' })
+        : id === 'missing-user'
+          ? null
         : createUser({ id }),
     hashSecret,
     now: () => now,
@@ -361,10 +430,13 @@ test('resolveEnterpriseBearerToken rejects malformed, unknown, expired, and inac
   }
 
   await assert.rejects(resolveEnterpriseBearerToken('Bearer unknown-token', deps), {
-    code: 'invalid_grant',
+    code: 'invalid_token',
   });
   await assert.rejects(resolveEnterpriseBearerToken('Bearer expired-token', deps), {
-    code: 'invalid_grant',
+    code: 'invalid_token',
+  });
+  await assert.rejects(resolveEnterpriseBearerToken('Bearer missing-user-token', deps), {
+    code: 'invalid_token',
   });
   await assert.rejects(resolveEnterpriseBearerToken('Bearer inactive-token', deps), {
     code: 'access_denied',
