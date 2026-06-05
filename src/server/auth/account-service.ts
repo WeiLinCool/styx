@@ -3,6 +3,7 @@ import {
   assertActivationTokenUsable,
   type BindIdentityInput,
   type IdentityProvider,
+  type UserRecord,
 } from './account-types';
 import { createOpaqueToken, hashSecret } from './account-crypto';
 import { hashUserPassword, verifyStoredUserPassword } from './public-auth';
@@ -25,6 +26,49 @@ import {
 
 const DEFAULT_ACTIVATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+
+export type ExistingUserPasswordAuthDeps = {
+  getUserByEmail: (email: string) => Promise<UserRecord | null>;
+  getUserByPhone: (phone: string) => Promise<UserRecord | null>;
+  verifyPassword: (
+    password: string,
+    metadata: Record<string, unknown> | null | undefined,
+  ) => boolean;
+};
+
+const defaultExistingUserPasswordAuthDeps: ExistingUserPasswordAuthDeps = {
+  getUserByEmail,
+  getUserByPhone,
+  verifyPassword: verifyStoredUserPassword,
+};
+
+export async function authenticateExistingUserWithPassword(
+  input: { login: string; password: string },
+  deps: ExistingUserPasswordAuthDeps = defaultExistingUserPasswordAuthDeps,
+) {
+  const login = input.login.trim();
+  const user = login.includes('@')
+    ? await deps.getUserByEmail(login.toLowerCase())
+    : await deps.getUserByPhone(login);
+
+  if (!user) {
+    throw new AccountDomainError('session_required', '手机号或密码错误。', 401);
+  }
+
+  if (!('passwordHash' in (user.metadata ?? {}))) {
+    throw new AccountDomainError(
+      'password_setup_required',
+      '当前账号尚未设置密码，请先设置密码后再登录。',
+      403,
+    );
+  }
+
+  if (!deps.verifyPassword(input.password, user.metadata)) {
+    throw new AccountDomainError('session_required', '手机号或密码错误。', 401);
+  }
+
+  return user;
+}
 
 export async function activateAccountWithToken(input: {
   token: string;
