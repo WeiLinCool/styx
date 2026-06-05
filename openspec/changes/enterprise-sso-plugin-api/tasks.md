@@ -12,9 +12,9 @@
 
 ## 3. Route Handlers
 
-- [ ] 3.1 Add `/oauth/authorize` route support for validating OAuth query parameters, rendering/handling account-password login, and redirecting success or OAuth errors to loopback callbacks.
-- [ ] 3.2 Add `/oauth/token` route support for `application/x-www-form-urlencoded` token exchange and standard OAuth error responses.
-- [ ] 3.3 Add `/oauth/userinfo` and `/api/entitlements` route handlers protected by enterprise bearer validation.
+- [x] 3.1 Add `/oauth/authorize` route support for validating OAuth query parameters, rendering/handling account-password login, and redirecting success or OAuth errors to loopback callbacks.
+- [x] 3.2 Add `/oauth/token` route support for `application/x-www-form-urlencoded` token exchange and standard OAuth error responses.
+- [x] 3.3 Add `/oauth/userinfo` and `/api/entitlements` route handlers protected by enterprise bearer validation.
 
 ## 4. OpenAI-Compatible Gateway
 
