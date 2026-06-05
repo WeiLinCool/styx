@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { AdminModuleGuide } from '@/features/admin/admin-module-guide';
 import { AdminModulePage, type AdminColumn } from '@/features/admin/module-page';
 import { StatusBadge } from '@/features/admin/status-badge';
@@ -137,7 +139,7 @@ function DocsToolbar({
           筛选
         </Button>
         <Button type="button" variant="outline" className="h-9 rounded-md" asChild>
-          <a href="/admin/docs">清除</a>
+          <Link href="/admin/docs">清除</Link>
         </Button>
       </form>
       <div className="flex flex-wrap gap-1.5">
@@ -160,10 +162,10 @@ function DocsToolbar({
               className="h-7 rounded-md px-2 text-xs"
               asChild
             >
-              <a href={buildDocListHref(nextFilters)}>
+              <Link href={buildDocListHref(nextFilters)}>
                 {filter.label}
                 {typeof filter.count === 'number' ? ` ${filter.count}` : ''}
-              </a>
+              </Link>
             </Button>
           );
         })}

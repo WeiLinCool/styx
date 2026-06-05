@@ -71,6 +71,15 @@ export type AgentRunRepository = {
   listRunsForUser(userId: string): Promise<AgentRunDto[]>;
   softDeleteRunForUser(id: string, userId: string): Promise<AgentRunDto | null>;
   markRunRunning(runId: string): Promise<AgentRunDto | null>;
+  patchRun(
+    runId: string,
+    input: {
+      finalMessage?: string | null;
+      errorMessage?: string | null;
+      capabilitySnapshot?: AgentCapabilitySnapshot & Record<string, unknown>;
+      input?: Record<string, unknown>;
+    },
+  ): Promise<AgentRunDto | null>;
   completeRun(
     runId: string,
     input: {
@@ -434,6 +443,10 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       return {
         run: toAgentRunDtoFromDatabase({ run, artifacts }),
         events: streamEvents.map((event) => toStreamEventDto(event)),
+        internal: {
+          capabilitySnapshot: cloneRecord(run.capabilitySnapshot as Record<string, unknown>),
+          input: cloneRecord(run.input as Record<string, unknown>),
+        },
       };
     },
     async listConversationRunsForUser(conversationId, userId) {
@@ -499,6 +512,21 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       await database
         .update(schema.agentRuns)
         .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
+        .where(eq(schema.agentRuns.id, runId));
+      return getDatabaseRunDto(database, runId);
+    },
+    async patchRun(runId, input) {
+      await database
+        .update(schema.agentRuns)
+        .set({
+          ...(input.finalMessage !== undefined ? { finalMessage: input.finalMessage } : {}),
+          ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage } : {}),
+          ...(input.capabilitySnapshot
+            ? { capabilitySnapshot: input.capabilitySnapshot as Record<string, unknown> }
+            : {}),
+          ...(input.input ? { input: input.input } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(schema.agentRuns.id, runId));
       return getDatabaseRunDto(database, runId);
     },
@@ -701,6 +729,10 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
       return {
         run: toAgentRunDto(run),
         events: [...(streamEvents.get(id) ?? [])],
+        internal: {
+          capabilitySnapshot: cloneRecord(run.capabilitySnapshot),
+          input: cloneRecord(run.input),
+        },
       };
     },
     async listConversationRunsForUser(conversationId, userId) {
@@ -743,6 +775,28 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
       }
 
       run.status = 'running';
+      touch(run);
+      return toAgentRunDto(run);
+    },
+    async patchRun(runId, input) {
+      const run = runs.get(runId);
+      if (!run) {
+        return null;
+      }
+
+      if (input.finalMessage !== undefined) {
+        run.finalMessage = input.finalMessage;
+      }
+      if (input.errorMessage !== undefined) {
+        run.errorMessage = input.errorMessage;
+      }
+      if (input.capabilitySnapshot) {
+        run.capabilitySnapshot = structuredClone(input.capabilitySnapshot);
+        run.capabilitySummary = toCapabilitySummary(input.capabilitySnapshot);
+      }
+      if (input.input) {
+        run.input = cloneRecord(input.input);
+      }
       touch(run);
       return toAgentRunDto(run);
     },

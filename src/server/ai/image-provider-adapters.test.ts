@@ -26,6 +26,7 @@ function makeResolvedImageModel(overrides: Partial<ResolvedImageModel> = {}): Re
     baseUrl: 'https://ark.example/api/v3/',
     credentialEnvKey: 'DOUBAO_IMAGE_KEY',
     model: 'doubao-seedream',
+    executionProtocol: 'image_openai_compatible',
     pricing: {
       unit: 'token',
       promptCreditsPer1k: 1,

@@ -25,6 +25,7 @@ function resolvedModel(overrides: Partial<ResolvedChatModel> = {}): ResolvedChat
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-chat',
+    executionProtocol: 'chat_openai_compatible',
     pricing: {
       unit: 'token',
       promptCreditsPer1k: 1,

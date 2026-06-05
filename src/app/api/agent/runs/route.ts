@@ -54,6 +54,14 @@ const createAgentRunBodySchema = z
       });
     }
 
+    if (body.taskType === 'video' && !body.modelId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['modelId'],
+        message: 'modelId is required for video requests.',
+      });
+    }
+
     if (body.taskType !== 'image') {
       return;
     }

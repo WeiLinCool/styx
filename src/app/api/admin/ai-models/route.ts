@@ -7,18 +7,54 @@ import { createAiModel } from '@/server/repositories/ai-models';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { adminText } from '@/features/admin/admin-i18n';
 
-const bodySchema = z.object({
-  providerId: z.uuid(),
-  code: z.string().trim().min(1),
-  name: z.string().trim().min(1),
-  model: z.string().trim().min(1),
-  status: z.enum(['enabled', 'disabled']),
-  supportsChat: z.boolean(),
-  supportsImageGeneration: z.boolean(),
-  supportsImageEdit: z.boolean(),
-  supportsImageUpscale: z.boolean(),
-  supportsVideoGeneration: z.boolean(),
-});
+const executionProtocolSchema = z.enum([
+  'chat_openai_compatible',
+  'image_openai_compatible',
+  'video_task_polling',
+]);
+
+const bodySchema = z
+  .object({
+    providerId: z.uuid(),
+    code: z.string().trim().min(1),
+    name: z.string().trim().min(1),
+    model: z.string().trim().min(1),
+    status: z.enum(['enabled', 'disabled']),
+    executionProtocol: executionProtocolSchema,
+    supportsChat: z.boolean(),
+    supportsImageGeneration: z.boolean(),
+    supportsImageEdit: z.boolean(),
+    supportsImageUpscale: z.boolean(),
+    supportsVideoGeneration: z.boolean(),
+  })
+  .superRefine((body, context) => {
+    if (body.supportsChat && body.executionProtocol !== 'chat_openai_compatible') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['executionProtocol'],
+        message: 'Chat-capable models must use a chat execution protocol.',
+      });
+    }
+
+    if (
+      (body.supportsImageGeneration || body.supportsImageEdit || body.supportsImageUpscale) &&
+      body.executionProtocol !== 'image_openai_compatible'
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['executionProtocol'],
+        message: 'Image-capable models must use an image execution protocol.',
+      });
+    }
+
+    if (body.supportsVideoGeneration && body.executionProtocol !== 'video_task_polling') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['executionProtocol'],
+        message: 'Video-capable models must use a video execution protocol.',
+      });
+    }
+  });
 
 export async function parseAiModelCreateBody(request: Pick<Request, 'json'>) {
   const body = await request.json().catch(() => null);

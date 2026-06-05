@@ -17,6 +17,7 @@ import {
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
   saveGeneratedMedia,
+  syncAgentRun,
   type VideoModelOption,
 } from '@/features/public/agent-runtime-client';
 import {
@@ -143,9 +144,13 @@ export default function VideoGenPage() {
       setGenerationMessage('视频已生成，请及时下载。');
     });
     eventSource.addEventListener('run_completed', () => {
-      eventSource.close();
-      setIsGenerating(false);
-      setStreamRunId((current) => (current === streamRunId ? null : current));
+      void syncAgentRun(streamRunId)
+        .catch(() => null)
+        .finally(() => {
+          eventSource.close();
+          setIsGenerating(false);
+          setStreamRunId((current) => (current === streamRunId ? null : current));
+        });
     });
     eventSource.addEventListener('run_failed', (event) => {
       const payload = parseStreamEventPayload(event);
@@ -171,6 +176,41 @@ export default function VideoGenPage() {
 
     return () => {
       eventSource.close();
+    };
+  }, [streamRunId]);
+
+  useEffect(() => {
+    if (!streamRunId) {
+      return;
+    }
+
+    let cancelled = false;
+    const intervalId = window.setInterval(() => {
+      void syncAgentRun(streamRunId)
+        .then((run) => {
+          if (cancelled || (run.status !== 'succeeded' && run.status !== 'failed')) {
+            return;
+          }
+
+          setIsGenerating(false);
+          setStreamRunId((current) => (current === streamRunId ? null : current));
+          if (run.status === 'failed') {
+            setGenerationError(run.errorMessage ?? '视频生成请求失败');
+          }
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+          setGenerationError('视频任务同步失败，请稍后重试。');
+          setIsGenerating(false);
+          setStreamRunId((current) => (current === streamRunId ? null : current));
+        });
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, [streamRunId]);
 

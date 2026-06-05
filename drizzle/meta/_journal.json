@@ -155,6 +155,20 @@
       "when": 1780591890533,
       "tag": "0021_needy_hiroim",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1780629435864,
+      "tag": "0022_orange_mentallo",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780663105890,
+      "tag": "0023_fearless_misty_knight",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@ import {
   normalizeDocImportJobInput,
   resolveAudienceVisibility,
   setDocsRepositoryDbForTest,
+  updateDocCategory,
   updateDocArticle,
   updateDocArticleStatus,
 } from './docs';
@@ -292,6 +293,44 @@ test('deleteDocCategory rejects categories that still have children or articles'
   await assert.rejects(
     () => deleteDocCategory({ categoryId: 'category-1' }),
     /still has child categories|still has linked articles/,
+  );
+
+  setDocsRepositoryDbForTest(null);
+});
+
+test('updateDocCategory rejects setting a category as its own parent', async () => {
+  const { stub, selectResults } = createDocsDbStub();
+  setDocsRepositoryDbForTest(stub as never);
+  selectResults.push([{ id: 'category-1', parentId: null }]);
+
+  await assert.rejects(
+    () =>
+      updateDocCategory({
+        categoryId: 'category-1',
+        name: 'Guides',
+        slug: 'guides',
+        parentId: 'category-1',
+      }),
+    /cannot be its own parent/,
+  );
+
+  setDocsRepositoryDbForTest(null);
+});
+
+test('updateDocCategory rejects moving a parent under an existing child category', async () => {
+  const { stub, selectResults } = createDocsDbStub();
+  setDocsRepositoryDbForTest(stub as never);
+  selectResults.push([{ id: 'child-1', parentId: 'category-1' }]);
+
+  await assert.rejects(
+    () =>
+      updateDocCategory({
+        categoryId: 'category-1',
+        name: 'Guides',
+        slug: 'guides',
+        parentId: 'child-1',
+      }),
+    /support at most two levels|cannot be moved under its child/,
   );
 
   setDocsRepositoryDbForTest(null);

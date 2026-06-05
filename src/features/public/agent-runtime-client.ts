@@ -247,6 +247,20 @@ export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailDt
   return payload;
 }
 
+export async function syncAgentRun(runId: string): Promise<AgentRunDto> {
+  const response = await userApiRequest(`/api/agent/runs/${runId}/sync`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '任务同步失败');
+  }
+
+  return payload.run;
+}
+
 export async function saveGeneratedMedia(input: {
   runId: string;
   artifactId: string;

@@ -18,6 +18,7 @@ import {
   parseVideoModel,
   parseStreamEventPayload,
   saveGeneratedMedia,
+  syncAgentRun,
   selectImageModelId,
   selectChatModelId,
   uploadUserMedia,
@@ -361,6 +362,37 @@ test('getAgentRunDetail returns typed run detail payload from API', async () => 
     assert.equal(detail.run.id, 'run-1');
     assert.equal(detail.events.length, 1);
     assert.equal(detail.events[0]?.eventType, 'assistant_delta');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('syncAgentRun returns synced run payload from API', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      run: {
+        id: 'run-video-1',
+        conversationId: 'run-video-1',
+        taskType: 'video',
+        status: 'running',
+        prompt: 'stone video',
+        finalMessage: null,
+        errorMessage: null,
+        capabilitySummary: { provider: 'doubao', model: 'seedance', capabilities: [] },
+        selectedModel: null,
+        usage: null,
+        billing: null,
+        artifacts: [],
+        createdAt: '2026-06-05T00:00:00.000Z',
+        updatedAt: '2026-06-05T00:00:01.000Z',
+      },
+    });
+
+  try {
+    const run = await syncAgentRun('run-video-1');
+    assert.equal(run.id, 'run-video-1');
+    assert.equal(run.taskType, 'video');
   } finally {
     globalThis.fetch = originalFetch;
   }

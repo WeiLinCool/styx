@@ -73,6 +73,10 @@ export function createStarterDocBlocks(): DocBlock[] {
   ];
 }
 
+export function createVisibleDocBlocks(blocks: DocBlock[]): DocBlock[] {
+  return blocks.length > 0 ? blocks : createStarterDocBlocks();
+}
+
 export function createEmptyAdminBlock(
   kind: Exclude<AdminEditableDocBlock['kind'], 'unsupported'>,
 ): AdminEditableDocBlock {

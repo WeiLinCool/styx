@@ -5,6 +5,7 @@ import { getTableConfig } from 'drizzle-orm/pg-core';
 import { DOC_BLOCK_TYPES } from '../docs/constants';
 import { docBlockSchema } from '../docs/schema';
 import {
+  aiModels,
   docArticleBlocks,
   docArticleBlockType,
   docArticles,
@@ -89,6 +90,10 @@ test('docs tables expose expected key columns and ordering constraints', () => {
     (articleSortIndex.config.columns as Array<{ name?: string }>).map((column) => column.name),
     ['article_id', 'sort_order'],
   );
+});
+
+test('ai models schema exposes execution protocol column', () => {
+  assert.equal(aiModels.executionProtocol.name, 'execution_protocol');
 });
 
 test('runtime block schema accepts every supported block variant', () => {

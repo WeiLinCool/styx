@@ -1,7 +1,8 @@
 'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Loader2, PencilLine, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +61,7 @@ function CategoryForm({
   title,
   submitLabel,
   canDelete,
+  deleteDisabledReason,
   onSaved,
 }: {
   category?: AdminDocCategoryRow;
@@ -67,6 +69,7 @@ function CategoryForm({
   title: string;
   submitLabel: string;
   canDelete: boolean;
+  deleteDisabledReason?: string;
   onSaved: () => void;
 }) {
   const [draft, setDraft] = useState<CategoryDraft>(() => createDraft(category));
@@ -124,17 +127,22 @@ function CategoryForm({
           {category ? <div className="text-xs text-muted-foreground">已关联 {category.articleCount} 篇文档</div> : null}
         </div>
         {category ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 rounded-md px-2 text-xs"
-            disabled={pending || !canDelete}
-            onClick={handleDelete}
-          >
-            {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            删除
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-md px-2 text-xs"
+              disabled={pending || !canDelete}
+              onClick={handleDelete}
+            >
+              {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              删除
+            </Button>
+            {!canDelete && deleteDisabledReason ? (
+              <p className="max-w-44 text-right text-[11px] text-muted-foreground">{deleteDisabledReason}</p>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -207,13 +215,83 @@ function CategoryForm({
   );
 }
 
-export function AdminDocCategoriesManager({ categories }: { categories: AdminDocCategoryRow[] }) {
+function CategoryEditor({
+  category,
+  parentId,
+  title,
+  submitLabel,
+  canDelete,
+  deleteDisabledReason,
+  onSaved,
+}: {
+  category: AdminDocCategoryRow;
+  parentId: string | null;
+  title: string;
+  submitLabel: string;
+  canDelete: boolean;
+  deleteDisabledReason?: string;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <CategoryForm
+        category={category}
+        parentId={parentId}
+        title={title}
+        submitLabel={submitLabel}
+        canDelete={canDelete}
+        deleteDisabledReason={deleteDisabledReason}
+        onSaved={() => {
+          setEditing(false);
+          onSaved();
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold text-foreground">{category.name}</div>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+              {category.audienceScope}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground">{category.slug}</div>
+          <p className="text-sm text-muted-foreground">{category.description || '暂无分类说明。'}</p>
+          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+            <span>排序 {category.sortOrder}</span>
+            <span>{category.articleCount} 篇文档</span>
+            {deleteDisabledReason ? <span>{deleteDisabledReason}</span> : null}
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 rounded-md px-2 text-xs"
+          onClick={() => setEditing(true)}
+        >
+          <PencilLine className="h-3.5 w-3.5" />
+          {title}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function AdminDocCategoriesManagerView({
+  categories,
+  onRefresh,
+}: {
+  categories: AdminDocCategoryRow[];
+  onRefresh: () => void;
+}) {
   const tree = useMemo(() => groupCategories(categories), [categories]);
-  const refresh = () => {
-    if (typeof window !== 'undefined') {
-      window.location.reload();
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -222,30 +300,45 @@ export function AdminDocCategoriesManager({ categories }: { categories: AdminDoc
         title="新增一级分类"
         submitLabel="创建一级分类"
         canDelete={false}
-        onSaved={refresh}
+        onSaved={onRefresh}
       />
+
+      {tree.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+          <div className="font-medium text-foreground">还没有分类</div>
+          <p className="mt-1">先创建一级分类，再在一级分类下维护二级目录。</p>
+        </div>
+      ) : null}
 
       {tree.map((parent) => (
         <section key={parent.id} className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
-          <CategoryForm
+          <CategoryEditor
             category={parent}
             parentId={null}
-            title={parent.name}
+            title="编辑一级分类"
             submitLabel="保存一级分类"
             canDelete={parent.articleCount === 0 && parent.children.length === 0}
-            onSaved={refresh}
+            deleteDisabledReason={
+              parent.children.length > 0
+                ? '已有二级分类，不能删除'
+                : parent.articleCount > 0
+                  ? '已有文档，不能删除'
+                  : undefined
+            }
+            onSaved={onRefresh}
           />
           <div className="space-y-3 rounded-lg border border-dashed border-border p-4">
             <div className="text-sm font-medium text-foreground">二级分类</div>
             {parent.children.map((child) => (
-              <CategoryForm
+              <CategoryEditor
                 key={child.id}
                 category={child}
                 parentId={parent.id}
-                title={child.name}
+                title="编辑二级分类"
                 submitLabel="保存二级分类"
                 canDelete={child.articleCount === 0}
-                onSaved={refresh}
+                deleteDisabledReason={child.articleCount > 0 ? '已有文档，不能删除' : undefined}
+                onSaved={onRefresh}
               />
             ))}
             <CategoryForm
@@ -253,11 +346,17 @@ export function AdminDocCategoriesManager({ categories }: { categories: AdminDoc
               title="新增二级分类"
               submitLabel="创建二级分类"
               canDelete={false}
-              onSaved={refresh}
+              onSaved={onRefresh}
             />
           </div>
         </section>
       ))}
     </div>
   );
+}
+
+export function AdminDocCategoriesManager({ categories }: { categories: AdminDocCategoryRow[] }) {
+  const router = useRouter();
+
+  return <AdminDocCategoriesManagerView categories={categories} onRefresh={() => router.refresh()} />;
 }

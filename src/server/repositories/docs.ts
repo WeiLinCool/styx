@@ -465,9 +465,14 @@ export async function listAdminDocArticles(input?: AdminDocListInput) {
 async function assertCategoryParentAllowed(
   database: ReturnType<typeof requireDb>,
   parentId: string | null | undefined,
+  categoryId?: string,
 ) {
   if (!parentId) {
     return;
+  }
+
+  if (categoryId && parentId === categoryId) {
+    throw new AccountDomainError('invalid_request', 'Doc category cannot be its own parent.', 409);
   }
 
   const [parent] = await database
@@ -619,7 +624,7 @@ export async function updateDocCategory(
   },
 ) {
   const database = requireDb('update doc category');
-  await assertCategoryParentAllowed(database, input.parentId);
+  await assertCategoryParentAllowed(database, input.parentId, input.categoryId);
   const [category] = await database
     .update(schema.docCategories)
     .set({

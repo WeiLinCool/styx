@@ -85,6 +85,7 @@ type ModelFormValues = {
   name: string;
   model: string;
   status: 'enabled' | 'disabled';
+  executionProtocol: 'chat_openai_compatible' | 'image_openai_compatible' | 'video_task_polling';
   supportsChat: boolean;
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
@@ -131,6 +132,27 @@ function parseResolutionMultipliers(value: string) {
       .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
       .map(([key, item]) => [key, item]),
   );
+}
+
+function getModelProtocolWarnings(values: ModelFormValues) {
+  const warnings: string[] = [];
+
+  if (
+    (values.supportsImageGeneration || values.supportsImageEdit || values.supportsImageUpscale) &&
+    values.executionProtocol !== 'image_openai_compatible'
+  ) {
+    warnings.push('图像能力模型必须使用图像执行协议。');
+  }
+
+  if (values.supportsVideoGeneration && values.executionProtocol !== 'video_task_polling') {
+    warnings.push('视频能力模型必须使用视频任务轮询协议。');
+  }
+
+  if (values.supportsChat && values.executionProtocol !== 'chat_openai_compatible') {
+    warnings.push('对话模型必须使用对话执行协议。');
+  }
+
+  return warnings;
 }
 
 function BillingSection({
@@ -735,6 +757,7 @@ function ModelDialog({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isSubmitting = form.formState.isSubmitting;
+  const protocolWarnings = getModelProtocolWarnings(form.watch());
 
   useEffect(() => {
     form.reset(initialValues);
@@ -872,6 +895,34 @@ function ModelDialog({
               />
               <FormField
                 control={form.control}
+                name="executionProtocol"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>执行协议</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="chat_openai_compatible">
+                          {formatAdminAiLabel('chat_openai_compatible')}
+                        </SelectItem>
+                        <SelectItem value="image_openai_compatible">
+                          {formatAdminAiLabel('image_openai_compatible')}
+                        </SelectItem>
+                        <SelectItem value="video_task_polling">
+                          {formatAdminAiLabel('video_task_polling')}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
                 name="supportsChat"
                 render={({ field }) => (
                   <FormItem>
@@ -949,6 +1000,12 @@ function ModelDialog({
                 )}
               />
             </div>
+
+            {protocolWarnings.length > 0 ? (
+              <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                {protocolWarnings.join(' ')}
+              </div>
+            ) : null}
 
             {error ? <p className="text-sm text-red-700">{error}</p> : null}
             <DialogFooter>
@@ -1058,6 +1115,7 @@ export function CreateAiModelDialog({
         name: '',
         model: '',
         status: 'disabled',
+        executionProtocol: 'chat_openai_compatible',
         supportsChat: true,
         supportsImageGeneration: false,
         supportsImageEdit: false,
@@ -1105,6 +1163,7 @@ export function EditAiModelDialog({
         name: model.name,
         model: model.model,
         status: model.status === 'archived' ? 'disabled' : model.status,
+        executionProtocol: model.executionProtocol,
         supportsChat: model.supportsChat,
         supportsImageGeneration: model.supportsImageGeneration,
         supportsImageEdit: model.supportsImageEdit,

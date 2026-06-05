@@ -11,6 +11,7 @@ import {
   ModelNotAvailableError,
   type ResolvedChatModel,
   type ResolvedImageModel,
+  type ResolvedVideoModel,
 } from '@/server/repositories/ai-models';
 import type { DirectMediaArtifactCompletedPayload, AgentTaskType } from './types';
 import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
@@ -38,6 +39,7 @@ function resolvedChatModel(overrides: Partial<ResolvedChatModel> = {}): Resolved
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-free-chat',
+    executionProtocol: 'chat_openai_compatible',
     pricing: {
       unit: 'token',
       promptCreditsPer1k: 1,
@@ -64,6 +66,31 @@ function resolvedImageModel(overrides: Partial<ResolvedImageModel> = {}): Resolv
       },
     }),
     supportedModes: ['generate', 'edit'],
+    ...overrides,
+  };
+}
+
+function resolvedVideoModel(overrides: Partial<ResolvedVideoModel> = {}): ResolvedVideoModel {
+  return {
+    ...resolvedChatModel({
+      id: 'seed-model-free-video',
+      code: 'dev-free-video',
+      name: 'Development Free Video',
+      model: 'development-free-video',
+      executionProtocol: 'video_task_polling',
+      providerType: 'openai_compatible',
+      providerCode: 'doubao',
+      providerName: 'Doubao',
+      baseUrl: 'https://ark.example/api/v3/',
+      credentialEnvKey: 'DOUBAO_KEY',
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 0,
+        completionCreditsPer1k: 1,
+        minimumCredits: 3,
+      },
+    }),
+    supportsVideoGeneration: true,
     ...overrides,
   };
 }
@@ -220,51 +247,63 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
   const repository = createMemoryAgentRunRepository();
   const service = createAgentRunService({
     repository,
-    runtime: {
-      async run() {
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
         return {
-          finalMessage: '视频已生成',
-          artifacts: [
-            {
-              kind: 'video',
-              title: '生成视频',
-              url: 'https://provider.example/video.mp4',
-              metadata: {
-                mimeType: 'video/mp4',
-                filename: 'video.mp4',
-                durationSeconds: 5,
-                providerExpiresAt: '2026-06-01T10:00:00.000Z',
-              },
-            },
-          ],
+          providerTaskId: 'task-1',
+          rawMetadata: { created: true },
         };
       },
-    },
+      async getVideoTask() {
+        return {
+          providerTaskId: 'task-1',
+          status: 'succeeded',
+          outputUrl: 'https://provider.example/video.mp4',
+          rawMetadata: {
+            usage: { output_seconds: 5 },
+            providerExpiresAt: '2026-06-01T10:00:00.000Z',
+          },
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-video', balanceAfter: 88 }),
   });
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'video',
     prompt: '石头印画动起来',
+    modelId: 'model-video',
     input: { duration: '5秒' },
   });
 
   assert.equal(result.run.status, 'running');
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  const pending = await repository.getRunDetailForUser(result.run.id, 'user-1');
+  assert.equal(
+    (pending?.internal?.capabilitySnapshot as Record<string, unknown>)?.providerTaskId,
+    'task-1',
+  );
 
-  const completed = await repository.getRunForUser(result.run.id, 'user-1');
+  const completed = await service.syncVideoAgentRunForUser('user-1', result.run.id);
   const events = await repository.listRunEvents(result.run.id);
 
-  assert.equal(completed?.status, 'succeeded');
-  assert.equal(completed?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
-  assert.equal(events[1]?.eventType, 'artifact_completed');
-  assert.equal(directMediaPayload(events[1]?.payload ?? {}).artifact.kind, 'video');
-  assert.equal(directMediaPayload(events[1]?.payload ?? {}).artifact.delivery.mode, 'provider_url');
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(completed.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],
+  );
+  assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.kind, 'video');
+  assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.mode, 'provider_url');
   assert.equal(
-    directMediaPayload(events[1]?.payload ?? {}).artifact.delivery.url,
+    directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.url,
     'https://provider.example/video.mp4',
   );
-  assert.equal(typeof directMediaPayload(events[1]?.payload ?? {}).artifact.metadata.artifactId, 'string');
+  assert.equal(typeof directMediaPayload(events[2]?.payload ?? {}).artifact.metadata.artifactId, 'string');
 });
 
 test('createAndRunAgentRun returns transient image artifact from provider URL output', async () => {
@@ -343,23 +382,36 @@ test('createAndRunAgentRun marks media run failed when run_failed event persiste
   };
   const service = createAgentRunService({
     repository,
-    runtime: {
-      async run() {
-        throw new Error('pi unavailable');
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        return { providerTaskId: 'task-failed', rawMetadata: {} };
       },
-    },
+      async getVideoTask() {
+        return {
+          providerTaskId: 'task-failed',
+          status: 'failed',
+          rawMetadata: {},
+          errorMessage: 'provider failed',
+        };
+      },
+    }),
   });
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'video',
     prompt: 'hello',
+    modelId: 'model-video',
     input: {},
   });
 
-  const failed = await waitForRunStatus(repository, result.run.id, 'user-1', 'failed');
+  const failed = await service.syncVideoAgentRunForUser('user-1', result.run.id);
   assert.equal(failed?.status, 'failed');
-  assert.equal(failed?.errorMessage, 'pi unavailable');
+  assert.equal(failed?.errorMessage, 'provider failed');
 });
 
 test('createAndRunAgentRun marks media run failed when artifact_completed event persistence fails', async () => {
@@ -386,33 +438,37 @@ test('createAndRunAgentRun marks media run failed when artifact_completed event 
   };
   const service = createAgentRunService({
     repository,
-    runtime: {
-      async run() {
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        return { providerTaskId: 'task-artifact', rawMetadata: {} };
+      },
+      async getVideoTask() {
         return {
-          finalMessage: '图片已生成',
-          artifacts: [
-            {
-              kind: 'image',
-              title: '生成图片',
-              body: 'data:image/png;base64,abc',
-              metadata: { mimeType: 'image/png' },
-            },
-          ],
+          providerTaskId: 'task-artifact',
+          status: 'succeeded',
+          outputUrl: 'https://provider.example/video.mp4',
+          rawMetadata: {},
         };
       },
-    },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-video', balanceAfter: 90 }),
   });
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'video',
     prompt: '山谷里的石头印画',
+    modelId: 'model-video',
     input: {},
   });
 
   assert.equal(result.run.status, 'running');
 
-  const failed = await waitForRunStatus(repository, result.run.id, 'user-1', 'failed');
+  const failed = await service.syncVideoAgentRunForUser('user-1', result.run.id);
   const events = await repository.listRunEvents(result.run.id);
 
   assert.equal(failed?.status, 'failed');
@@ -420,7 +476,7 @@ test('createAndRunAgentRun marks media run failed when artifact_completed event 
   assert.equal(failed?.errorMessage, '图片或视频结果推送失败，请重试。');
   assert.deepEqual(
     events.map((event) => event.eventType),
-    ['artifact_started', 'run_failed'],
+    ['artifact_started', 'billing_recorded', 'run_failed'],
   );
 });
 
@@ -470,18 +526,39 @@ test('createAndRunAgentRun keeps media run succeeded when run_completed event pe
       return appended;
     },
   };
-  const service = createAgentRunService({ repository, runtime: createDeterministicPiRuntime() });
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        return { providerTaskId: 'task-completed', rawMetadata: {} };
+      },
+      async getVideoTask() {
+        return {
+          providerTaskId: 'task-completed',
+          status: 'succeeded',
+          outputUrl: 'https://provider.example/video.mp4',
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-video', balanceAfter: 90 }),
+  });
 
   const result = await service.createAndRunAgentRun({
     userId: 'user-1',
     taskType: 'video',
     prompt: 'hello',
+    modelId: 'model-video',
     input: {},
   });
 
-  const completed = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
-  assert.equal(completed?.status, 'succeeded');
-  assert.equal(completed?.errorMessage, null);
+  const completed = await service.syncVideoAgentRunForUser('user-1', result.run.id);
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(completed.errorMessage, null);
 });
 
 test('createAndRunAgentRun clones runtime request input and capabilities', async () => {

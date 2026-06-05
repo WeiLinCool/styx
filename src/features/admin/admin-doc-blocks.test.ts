@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   createStarterDocBlocks,
+  createVisibleDocBlocks,
   fromDocBlocks,
   toDocBlocks,
 } from './admin-doc-blocks';
@@ -19,4 +20,11 @@ test('unsupported blocks round-trip as readonly fallback items', () => {
 
   assert.equal(state[0]?.kind, 'unsupported');
   assert.deepEqual(toDocBlocks(state), [{ type: 'flowchart', source: 'graph TD;A-->B', format: 'mermaid' }]);
+});
+
+test('empty article blocks fall back to one visible starter block', () => {
+  const state = fromDocBlocks(createVisibleDocBlocks([]));
+
+  assert.equal(state.length, 1);
+  assert.equal(state[0]?.kind, 'rich_text');
 });

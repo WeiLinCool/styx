@@ -46,6 +46,7 @@ function buildDatabaseImageModelRow(input: {
   status?: 'enabled' | 'disabled' | 'archived';
   providerStatus?: 'enabled' | 'disabled' | 'archived';
   providerMetadata?: Record<string, unknown>;
+  executionProtocol?: 'chat_openai_compatible' | 'image_openai_compatible' | 'video_task_polling';
   supportsImageGeneration?: boolean;
   supportsImageEdit?: boolean;
   supportsImageUpscale?: boolean;
@@ -64,6 +65,7 @@ function buildDatabaseImageModelRow(input: {
       supportsImageGeneration: input.supportsImageGeneration ?? false,
       supportsImageEdit: input.supportsImageEdit ?? false,
       supportsImageUpscale: input.supportsImageUpscale ?? false,
+      executionProtocol: input.executionProtocol ?? 'image_openai_compatible',
       isDefaultChat: false,
       isDefaultImage: input.isDefaultImage ?? false,
       pricing: {
@@ -93,6 +95,7 @@ function buildDatabaseChatModelRow(input: {
   status?: 'enabled' | 'disabled' | 'archived';
   providerStatus?: 'enabled' | 'disabled' | 'archived';
   providerMetadata?: Record<string, unknown>;
+  executionProtocol?: 'chat_openai_compatible' | 'image_openai_compatible' | 'video_task_polling';
   supportsImageGeneration?: boolean;
   supportsImageEdit?: boolean;
   supportsImageUpscale?: boolean;
@@ -112,6 +115,7 @@ function buildDatabaseChatModelRow(input: {
       supportsImageEdit: input.supportsImageEdit ?? false,
       supportsImageUpscale: input.supportsImageUpscale ?? false,
       supportsVideoGeneration: false,
+      executionProtocol: input.executionProtocol ?? 'chat_openai_compatible',
       isDefaultChat: input.isDefaultChat ?? false,
       isDefaultImage: false,
       isDefaultVideo: false,
@@ -142,6 +146,7 @@ function buildDatabaseVideoModelRow(input: {
   status?: 'enabled' | 'disabled' | 'archived';
   providerStatus?: 'enabled' | 'disabled' | 'archived';
   providerMetadata?: Record<string, unknown>;
+  executionProtocol?: 'chat_openai_compatible' | 'image_openai_compatible' | 'video_task_polling';
   supportsVideoGeneration?: boolean;
   isDefaultVideo?: boolean;
   requirement?: DatabaseVideoModelRow['requirement'];
@@ -159,6 +164,7 @@ function buildDatabaseVideoModelRow(input: {
       supportsImageEdit: false,
       supportsImageUpscale: false,
       supportsVideoGeneration: input.supportsVideoGeneration ?? false,
+      executionProtocol: input.executionProtocol ?? 'video_task_polling',
       isDefaultChat: false,
       isDefaultImage: false,
       isDefaultVideo: input.isDefaultVideo ?? false,
@@ -245,6 +251,21 @@ test('resolveDatabaseChatModelForUserFromRows rejects multimodal model ids', () 
 
   assert.throws(
     () => resolveDatabaseChatModelForUserFromRows(rows, 'model-multimodal', []),
+    /Model is not available/,
+  );
+});
+
+test('resolveDatabaseChatModelForUserFromRows rejects chat rows with image execution protocol', () => {
+  const rows: DatabaseChatModelRow[] = [
+    buildDatabaseChatModelRow({
+      id: 'model-chat-wrong-protocol',
+      code: 'db-chat-wrong-protocol',
+      executionProtocol: 'image_openai_compatible',
+    }),
+  ];
+
+  assert.throws(
+    () => resolveDatabaseChatModelForUserFromRows(rows, 'model-chat-wrong-protocol', []),
     /Model is not available/,
   );
 });
@@ -367,6 +388,26 @@ test('listDatabaseVideoModelsForUserFromRows filters status, support and entitle
   assert.equal(models[0]?.isDefault, true);
 });
 
+test('listDatabaseVideoModelsForUserFromRows excludes rows with non-video execution protocol', () => {
+  const rows: DatabaseVideoModelRow[] = [
+    buildDatabaseVideoModelRow({
+      id: 'model-video-wrong-protocol',
+      code: 'db-video-wrong-protocol',
+      supportsVideoGeneration: true,
+      executionProtocol: 'image_openai_compatible',
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+  ];
+
+  const models = listDatabaseVideoModelsForUserFromRows(rows, []);
+
+  assert.deepEqual(models, []);
+});
+
 test('resolveDatabaseVideoModelForUserFromRows allows entitled premium video model', () => {
   const rows: DatabaseVideoModelRow[] = [
     buildDatabaseVideoModelRow({
@@ -439,6 +480,26 @@ test('listDatabaseImageModelsForUserFromRows filters provider status, model stat
   assert.deepEqual(models.map((model) => model.code), ['db-free-generate']);
   assert.equal(models[0]?.isDefault, true);
   assert.deepEqual(models[0]?.supportedModes, ['generate', 'edit']);
+});
+
+test('listDatabaseImageModelsForUserFromRows excludes rows with chat execution protocol', () => {
+  const rows: DatabaseImageModelRow[] = [
+    buildDatabaseImageModelRow({
+      id: 'model-image-wrong-protocol',
+      code: 'db-image-wrong-protocol',
+      supportsImageGeneration: true,
+      executionProtocol: 'chat_openai_compatible',
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+  ];
+
+  const models = listDatabaseImageModelsForUserFromRows(rows, 'generate', []);
+
+  assert.deepEqual(models, []);
 });
 
 test('resolveDatabaseImageModelForUserFromRows rejects unavailable mode before entitlement', () => {
@@ -701,6 +762,7 @@ test('updateAiModel updates model summary in seed mode', async () => {
     name: 'Development Free Chat Updated',
     model: 'development-free-chat-updated',
     status: 'enabled',
+    executionProtocol: 'chat_openai_compatible',
     supportsChat: true,
     supportsImageGeneration: false,
     supportsImageEdit: false,
@@ -720,6 +782,7 @@ test('updateAiModel accepts image capability flags in seed mode', async () => {
     name: 'Development Free Image Updated',
     model: 'development-free-image-updated',
     status: 'enabled',
+    executionProtocol: 'image_openai_compatible',
     supportsChat: false,
     supportsImageGeneration: true,
     supportsImageEdit: false,
@@ -740,6 +803,7 @@ test('createAiModel returns a new model summary in seed mode', async () => {
     name: 'Development Preview Chat',
     model: 'development-preview-chat',
     status: 'disabled',
+    executionProtocol: 'chat_openai_compatible',
     supportsChat: true,
     supportsImageGeneration: false,
     supportsImageEdit: false,
@@ -758,6 +822,7 @@ test('createAiModel accepts image capability flags in seed mode', async () => {
     name: 'Development Image Extra',
     model: 'development-image-extra',
     status: 'enabled',
+    executionProtocol: 'image_openai_compatible',
     supportsChat: false,
     supportsImageGeneration: true,
     supportsImageEdit: false,

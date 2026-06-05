@@ -35,3 +35,11 @@ test('parseAdminDocCategoryMutationBody rejects a non-integer sortOrder', () => 
     ZodError,
   );
 });
+
+test('DELETE reads the request body before mutation protection', async () => {
+  const source = await import('node:fs/promises').then((fs) => fs.readFile(new URL('./route.ts', import.meta.url), 'utf8'));
+
+  assert.match(source, /export async function DELETE/);
+  assert.match(source, /readJsonBody\(request\)/);
+  assert.doesNotMatch(source, /rawBody:\s*''/);
+});

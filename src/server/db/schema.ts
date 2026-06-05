@@ -178,6 +178,12 @@ export const aiModelStatus = pgEnum('ai_model_status', [
   'archived',
 ]);
 
+export const aiModelExecutionProtocol = pgEnum('ai_model_execution_protocol', [
+  'chat_openai_compatible',
+  'image_openai_compatible',
+  'video_task_polling',
+]);
+
 export const aiModelEntitlementRequirementType = pgEnum(
   'ai_model_entitlement_requirement_type',
   ['none', 'membership_plan', 'benefit_code', 'user_grant'],
@@ -1023,6 +1029,9 @@ export const aiModels = pgTable(
     supportsImageEdit: boolean('supports_image_edit').notNull().default(false),
     supportsImageUpscale: boolean('supports_image_upscale').notNull().default(false),
     supportsVideoGeneration: boolean('supports_video_generation').notNull().default(false),
+    executionProtocol: aiModelExecutionProtocol('execution_protocol')
+      .notNull()
+      .default('chat_openai_compatible'),
     isDefaultChat: boolean('is_default_chat').notNull().default(false),
     isDefaultImage: boolean('is_default_image').notNull().default(false),
     isDefaultVideo: boolean('is_default_video').notNull().default(false),

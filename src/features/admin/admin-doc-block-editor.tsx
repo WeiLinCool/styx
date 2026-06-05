@@ -9,6 +9,15 @@ import {
   createEmptyAdminBlock,
 } from './admin-doc-blocks';
 
+const ADDABLE_BLOCK_TYPES = [
+  { kind: 'rich_text', label: '正文' },
+  { kind: 'faq', label: 'FAQ' },
+  { kind: 'step_media', label: '步骤图文' },
+  { kind: 'gallery', label: '图集' },
+  { kind: 'video', label: '视频' },
+  { kind: 'audio', label: '音频' },
+] as const;
+
 function BlockCard({
   block,
   index,
@@ -223,7 +232,7 @@ export function AdminDocBlockEditor({
           <p className="text-xs text-muted-foreground">按块维护文档内容，避免直接编辑底层 JSON。</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {(['rich_text', 'faq', 'step_media', 'gallery', 'video', 'audio'] as const).map((kind) => (
+          {ADDABLE_BLOCK_TYPES.map(({ kind, label }) => (
             <Button
               key={kind}
               type="button"
@@ -231,7 +240,7 @@ export function AdminDocBlockEditor({
               size="sm"
               onClick={() => onChange([...blocks, createEmptyAdminBlock(kind)])}
             >
-              新增内容块
+              新增{label}
             </Button>
           ))}
         </div>

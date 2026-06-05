@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { AdminDocCategoriesManager } from './admin-doc-categories-manager';
+import { AdminDocCategoriesManagerView } from './admin-doc-categories-manager';
 
 test('category manager renders grouped parent and child categories', () => {
   const html = renderToStaticMarkup(
-    <AdminDocCategoriesManager
+    <AdminDocCategoriesManagerView
+      onRefresh={() => {}}
       categories={[
         {
           id: 'parent-1',
@@ -37,4 +38,16 @@ test('category manager renders grouped parent and child categories', () => {
   assert.match(html, /新手入门/);
   assert.match(html, /账号操作/);
   assert.match(html, /新增二级分类/);
+  assert.match(html, /编辑一级分类/);
+  assert.match(html, /编辑二级分类/);
+  assert.match(html, /已有文档，不能删除/);
+});
+
+test('category manager explains the empty category state', () => {
+  const html = renderToStaticMarkup(<AdminDocCategoriesManagerView categories={[]} onRefresh={() => {}} />);
+
+  assert.match(html, /还没有分类/);
+  assert.match(html, /先创建一级分类/);
+  assert.match(html, /分类名/);
+  assert.match(html, /Slug/);
 });

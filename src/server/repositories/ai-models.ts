@@ -51,6 +51,8 @@ export type PublicImageModelDto = PublicChatModelDto & {
 
 export type PublicVideoModelDto = PublicChatModelDto;
 
+export type AiModelExecutionProtocol = typeof schema.aiModels.$inferSelect.executionProtocol;
+
 export type ResolvedChatModel = PublicChatModelDto & {
   providerId: string;
   providerCode: string;
@@ -58,6 +60,7 @@ export type ResolvedChatModel = PublicChatModelDto & {
   baseUrl: string | null;
   credentialEnvKey: string | null;
   model: string;
+  executionProtocol: AiModelExecutionProtocol;
   pricing: AiModelPricing;
   billingRules?: ProviderBillingRuleConfig;
   entitlement: ModelEntitlementResult;
@@ -93,6 +96,7 @@ export type AdminAiModelRow = {
   code: string;
   name: string;
   model: string;
+  executionProtocol: AiModelExecutionProtocol;
   status: AiModelStatus;
   supportsChat: boolean;
   isDefaultChat: boolean;
@@ -180,6 +184,42 @@ export class ModelEntitlementRequiredError extends Error {
   }
 }
 
+function isChatExecutionProtocol(protocol: AiModelExecutionProtocol) {
+  return protocol === 'chat_openai_compatible';
+}
+
+function isImageExecutionProtocol(protocol: AiModelExecutionProtocol) {
+  return protocol === 'image_openai_compatible';
+}
+
+function isVideoExecutionProtocol(protocol: AiModelExecutionProtocol) {
+  return protocol === 'video_task_polling';
+}
+
+function validateModelCapabilityProtocol(input: {
+  supportsChat: boolean;
+  supportsImageGeneration: boolean;
+  supportsImageEdit: boolean;
+  supportsImageUpscale: boolean;
+  supportsVideoGeneration: boolean;
+  executionProtocol: AiModelExecutionProtocol;
+}) {
+  if (input.supportsChat && !isChatExecutionProtocol(input.executionProtocol)) {
+    throw new Error('Chat-capable models must use a chat execution protocol.');
+  }
+
+  if (
+    (input.supportsImageGeneration || input.supportsImageEdit || input.supportsImageUpscale) &&
+    !isImageExecutionProtocol(input.executionProtocol)
+  ) {
+    throw new Error('Image-capable models must use an image execution protocol.');
+  }
+
+  if (input.supportsVideoGeneration && !isVideoExecutionProtocol(input.executionProtocol)) {
+    throw new Error('Video-capable models must use a video execution protocol.');
+  }
+}
+
 export function buildModelRequirementSeedKey(input: {
   modelId: string;
   requirementType: ModelEntitlementRequirement['type'];
@@ -210,6 +250,7 @@ const seedModels: ResolvedChatModel[] = [
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-free-chat',
+    executionProtocol: 'chat_openai_compatible',
     pricing: defaultPricing,
     entitlement: { allowed: true, basis: 'none', label: 'Free', value: null },
   },
@@ -227,6 +268,7 @@ const seedModels: ResolvedChatModel[] = [
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-pro-chat',
+    executionProtocol: 'chat_openai_compatible',
     pricing: {
       unit: 'token',
       promptCreditsPer1k: 2,
@@ -264,6 +306,7 @@ const seedImageModels: ResolvedImageModel[] = [
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-free-image',
+    executionProtocol: 'image_openai_compatible',
     pricing: imageSeedFreePricing,
     entitlement: { allowed: true, basis: 'none', label: 'Free', value: null },
     supportedModes: ['generate', 'edit'],
@@ -282,6 +325,7 @@ const seedImageModels: ResolvedImageModel[] = [
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-pro-image',
+    executionProtocol: 'image_openai_compatible',
     pricing: {
       unit: 'token',
       promptCreditsPer1k: 4,
@@ -320,6 +364,7 @@ const seedVideoModels: ResolvedVideoModel[] = [
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-free-video',
+    executionProtocol: 'video_task_polling',
     pricing: videoSeedPricing,
     entitlement: { allowed: true, basis: 'none', label: 'Free', value: null },
     supportsVideoGeneration: true,
@@ -338,6 +383,7 @@ const seedVideoModels: ResolvedVideoModel[] = [
     baseUrl: null,
     credentialEnvKey: null,
     model: 'development-pro-video',
+    executionProtocol: 'video_task_polling',
     pricing: {
       unit: 'token',
       promptCreditsPer1k: 0,
@@ -386,6 +432,7 @@ export type DatabaseChatModelRow = {
     | 'code'
     | 'name'
     | 'model'
+    | 'executionProtocol'
     | 'status'
     | 'supportsChat'
     | 'supportsImageGeneration'
@@ -420,6 +467,7 @@ export type DatabaseImageModelRow = {
     | 'code'
     | 'name'
     | 'model'
+    | 'executionProtocol'
     | 'status'
     | 'supportsChat'
     | 'supportsImageGeneration'
@@ -880,6 +928,7 @@ export async function updateAiModelStatus(input: {
         code: seed.code,
         name: seed.name,
         model: seed.model,
+        executionProtocol: seed.executionProtocol,
         status: input.status,
         supportsChat: true,
         isDefaultChat: seed.isDefault,
@@ -944,6 +993,7 @@ export async function setDefaultAiChatModel(input: {
         code: seed.code,
         name: seed.name,
         model: seed.model,
+        executionProtocol: seed.executionProtocol,
         status: 'enabled',
         supportsChat: true,
         isDefaultChat: true,
@@ -1189,6 +1239,7 @@ export async function createAiModel(input: {
   name: string;
   model: string;
   status: Extract<AiModelStatus, 'enabled' | 'disabled'>;
+  executionProtocol: AiModelExecutionProtocol;
   supportsChat: boolean;
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
@@ -1196,6 +1247,7 @@ export async function createAiModel(input: {
   supportsVideoGeneration: boolean;
 }): Promise<AdminAiModelRow> {
   const database = requireAiModelDatabase('AI model create');
+  validateModelCapabilityProtocol(input);
 
   if (!database) {
     const provider = seedProviders.find((item) => item.id === input.providerId);
@@ -1210,6 +1262,7 @@ export async function createAiModel(input: {
         code: input.code.trim(),
         name: input.name.trim(),
         model: input.model.trim(),
+        executionProtocol: input.executionProtocol,
         status: input.status,
         supportsChat: input.supportsChat,
         isDefaultChat: false,
@@ -1234,6 +1287,7 @@ export async function createAiModel(input: {
       code: input.code.trim(),
       name: input.name.trim(),
       model: input.model.trim(),
+      executionProtocol: input.executionProtocol,
       status: input.status,
       supportsChat: input.supportsChat,
       isDefaultChat: false,
@@ -1265,6 +1319,7 @@ export async function updateAiModel(input: {
   name: string;
   model: string;
   status: Extract<AiModelStatus, 'enabled' | 'disabled'>;
+  executionProtocol: AiModelExecutionProtocol;
   supportsChat: boolean;
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
@@ -1272,6 +1327,7 @@ export async function updateAiModel(input: {
   supportsVideoGeneration: boolean;
 }): Promise<AdminAiModelRow> {
   const database = requireAiModelDatabase('AI model update');
+  validateModelCapabilityProtocol(input);
 
   if (!database) {
     const provider = seedProviders.find((item) => item.id === input.providerId);
@@ -1286,6 +1342,7 @@ export async function updateAiModel(input: {
         code: input.code.trim(),
         name: input.name.trim(),
         model: input.model.trim(),
+        executionProtocol: input.executionProtocol,
         status: input.status,
         supportsChat: input.supportsChat,
         isDefaultChat: input.modelId === 'seed-model-free',
@@ -1309,6 +1366,7 @@ export async function updateAiModel(input: {
       code: input.code.trim(),
       name: input.name.trim(),
       model: input.model.trim(),
+      executionProtocol: input.executionProtocol,
       status: input.status,
       supportsChat: input.supportsChat,
       supportsImageGeneration: input.supportsImageGeneration,
@@ -1525,6 +1583,7 @@ export function getSeedAiModelAdminData(): AdminAiModelData {
         code: model.code,
         name: model.name,
         model: model.model,
+        executionProtocol: model.executionProtocol,
         status: 'enabled',
         supportsChat: true,
         isDefaultChat: model.isDefault,
@@ -1548,6 +1607,7 @@ export function getSeedAiModelAdminData(): AdminAiModelData {
         code: model.code,
         name: model.name,
         model: model.model,
+        executionProtocol: model.executionProtocol,
         status: 'enabled',
         supportsChat: false,
         isDefaultChat: false,
@@ -1746,6 +1806,7 @@ function groupResolvedRows(
       baseUrl: provider.baseUrl,
       credentialEnvKey: provider.credentialEnvKey,
       model: model.model,
+      executionProtocol: model.executionProtocol,
       pricing,
       billingRules,
       entitlement,
@@ -1834,6 +1895,7 @@ function groupResolvedDatabaseChatRows(
       (!modelId || row.model.id === modelId) &&
       row.model.status === 'enabled' &&
       row.model.supportsChat &&
+      isChatExecutionProtocol(row.model.executionProtocol) &&
       !modelSupportsAnyImageMode(row.model) &&
       !row.model.supportsVideoGeneration &&
       row.provider.status === 'enabled',
@@ -1853,6 +1915,7 @@ function groupResolvedDatabaseImageRows(
       (!modelId || row.model.id === modelId) &&
       row.model.status === 'enabled' &&
       row.provider.status === 'enabled' &&
+      isImageExecutionProtocol(row.model.executionProtocol) &&
       modelSupportsImageMode(row.model, mode),
   );
 
@@ -1869,6 +1932,7 @@ function groupResolvedDatabaseVideoRows(
       (!modelId || row.model.id === modelId) &&
       row.model.status === 'enabled' &&
       row.provider.status === 'enabled' &&
+      isVideoExecutionProtocol(row.model.executionProtocol) &&
       row.model.supportsVideoGeneration,
   );
 
@@ -1885,6 +1949,7 @@ async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow
         eq(schema.aiModels.id, modelId),
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsChat, true),
+        eq(schema.aiModels.executionProtocol, 'chat_openai_compatible'),
         eq(schema.aiModels.supportsImageGeneration, false),
         eq(schema.aiModels.supportsImageEdit, false),
         eq(schema.aiModels.supportsImageUpscale, false),
@@ -1894,6 +1959,7 @@ async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow
     : and(
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsChat, true),
+        eq(schema.aiModels.executionProtocol, 'chat_openai_compatible'),
         eq(schema.aiModels.supportsImageGeneration, false),
         eq(schema.aiModels.supportsImageEdit, false),
         eq(schema.aiModels.supportsImageUpscale, false),
@@ -1936,11 +2002,13 @@ async function loadDatabaseImageModelRows(
         eq(schema.aiModels.id, modelId),
         eq(schema.aiModels.status, 'enabled'),
         eq(modeColumn, true),
+        eq(schema.aiModels.executionProtocol, 'image_openai_compatible'),
         eq(schema.aiProviders.status, 'enabled'),
       )
     : and(
         eq(schema.aiModels.status, 'enabled'),
         eq(modeColumn, true),
+        eq(schema.aiModels.executionProtocol, 'image_openai_compatible'),
         eq(schema.aiProviders.status, 'enabled'),
       );
 
@@ -1970,11 +2038,13 @@ async function loadDatabaseVideoModelRows(modelId?: string): Promise<VideoModelR
         eq(schema.aiModels.id, modelId),
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsVideoGeneration, true),
+        eq(schema.aiModels.executionProtocol, 'video_task_polling'),
         eq(schema.aiProviders.status, 'enabled'),
       )
     : and(
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsVideoGeneration, true),
+        eq(schema.aiModels.executionProtocol, 'video_task_polling'),
         eq(schema.aiProviders.status, 'enabled'),
       );
 
@@ -2002,6 +2072,7 @@ type AdminAiModelGroup = {
     | 'code'
     | 'name'
     | 'model'
+    | 'executionProtocol'
     | 'status'
     | 'supportsChat'
     | 'isDefaultChat'
@@ -2088,6 +2159,7 @@ function toAdminAiModelRow(group: AdminAiModelGroup): AdminAiModelRow {
     code: group.model.code,
     name: group.model.name,
     model: group.model.model,
+    executionProtocol: group.model.executionProtocol,
     status: group.model.status,
     supportsChat: group.model.supportsChat,
     isDefaultChat: group.model.isDefaultChat,
@@ -2287,6 +2359,7 @@ async function loadAdminAiModelRows(modelId?: string): Promise<AdminAiModelRowSo
         code: schema.aiModels.code,
         name: schema.aiModels.name,
         model: schema.aiModels.model,
+        executionProtocol: schema.aiModels.executionProtocol,
         status: schema.aiModels.status,
         supportsChat: schema.aiModels.supportsChat,
         isDefaultChat: schema.aiModels.isDefaultChat,

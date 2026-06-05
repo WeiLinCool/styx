@@ -176,6 +176,10 @@ export type AgentRunStreamEventDto = {
 export type AgentRunDetailDto = {
   run: AgentRunDto;
   events: AgentRunStreamEventDto[];
+  internal?: {
+    capabilitySnapshot: Record<string, unknown>;
+    input: Record<string, unknown>;
+  };
 };
 
 export type AgentRunDto = {

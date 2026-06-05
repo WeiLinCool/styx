@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
@@ -19,6 +20,7 @@ import { adminApiRequest } from '@/lib/admin-api-client';
 import { readJsonResponse } from '@/lib/api-response';
 import { AdminDocBlockEditor } from './admin-doc-block-editor';
 import {
+  createVisibleDocBlocks,
   fromDocBlocks,
   toDocBlocks,
   validateAdminEditableBlocks,
@@ -73,7 +75,7 @@ async function postJson(url: string, body: Record<string, unknown>) {
 export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
   const router = useRouter();
   const [state, setState] = useState<EditorState>(() => buildInitialState(data));
-  const [blocks, setBlocks] = useState(() => fromDocBlocks(data.article.blocks));
+  const [blocks, setBlocks] = useState(() => fromDocBlocks(createVisibleDocBlocks(data.article.blocks)));
   const [message, setMessage] = useState<string | null>(null);
   const [blockErrors, setBlockErrors] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
@@ -230,7 +232,7 @@ export function AdminDocEditor({ data }: { data: AdminDocEditorData }) {
         <div className="text-sm text-destructive">{message}</div>
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" disabled={pending} asChild>
-            <a href="/admin/docs">返回列表</a>
+            <Link href="/admin/docs">返回列表</Link>
           </Button>
           <Button type="submit" disabled={pending}>
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

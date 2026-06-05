@@ -261,6 +261,7 @@ const columns: AiModelColumn[] = [
       <DetailList
         items={[
           formatAdminAiLabel(model.status),
+          formatAdminAiLabel(model.executionProtocol),
           model.supportsChat ? '支持对话' : '不支持对话',
           model.supportsImageGeneration ? '支持图像生成' : '不支持图像生成',
           model.supportsImageEdit ? '支持图像编辑' : '不支持图像编辑',

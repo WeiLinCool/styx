@@ -1,0 +1,2 @@
+CREATE TYPE "public"."ai_model_execution_protocol" AS ENUM('chat_openai_compatible', 'image_openai_compatible', 'video_task_polling');--> statement-breakpoint
+ALTER TABLE "ai_models" ADD COLUMN "execution_protocol" "ai_model_execution_protocol" DEFAULT 'chat_openai_compatible' NOT NULL;

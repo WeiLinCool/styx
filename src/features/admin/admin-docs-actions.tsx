@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Archive, Loader2, PencilLine, Rocket, SquarePlus } from 'lucide-react';
 
@@ -29,10 +30,10 @@ async function postJson(url: string, body?: Record<string, unknown>) {
 export function CreateDocArticleButton() {
   return (
     <Button asChild>
-      <a href="/admin/docs/articles/new">
+      <Link href="/admin/docs/articles/new">
         <SquarePlus className="h-4 w-4" />
         新建文档
-      </a>
+      </Link>
     </Button>
   );
 }
@@ -60,10 +61,10 @@ export function AdminDocRowActions({ article }: { article: AdminDocTableRow }) {
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center justify-end gap-2">
         <Button asChild size="sm" variant="outline" className="h-8 rounded-md px-2 text-xs">
-          <a href={`/admin/docs/articles/${article.articleId}`}>
+          <Link href={`/admin/docs/articles/${article.articleId}`}>
             <PencilLine className="h-3.5 w-3.5" />
             编辑
-          </a>
+          </Link>
         </Button>
         <Button
           type="button"

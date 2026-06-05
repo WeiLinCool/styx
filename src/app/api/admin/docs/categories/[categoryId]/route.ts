@@ -81,6 +81,7 @@ export async function DELETE(
   try {
     const session = await requireAdmin();
     const params = paramsSchema.parse(await context.params);
+    const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
 
     return runProtectedMutation(
       {
@@ -89,9 +90,9 @@ export async function DELETE(
         operation: 'DELETE /api/admin/docs/categories/[categoryId]',
         actorType: 'admin',
         actorId: session.user.id,
-        rawBody: '',
-        decryptedRawBody: null,
-        parsedBody: null,
+        rawBody,
+        decryptedRawBody,
+        parsedBody,
       },
       async () => {
         const category = await deleteDocCategory({

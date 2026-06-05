@@ -19,14 +19,20 @@ import {
   type ImageProviderAdapter,
   type ImageProviderResult,
 } from '@/server/ai/image-provider-adapters';
+import {
+  createMediaProviderAdapter,
+  type MediaProviderAdapter,
+} from '@/server/ai/media-provider-adapters';
 import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
 import type { AgentArtifactInput, AgentRunRepository } from '@/server/repositories/agent-runs';
 import {
   resolveChatModelForUser as defaultResolveChatModelForUser,
   resolveImageModelForUser as defaultResolveImageModelForUser,
+  resolveVideoModelForUser as defaultResolveVideoModelForUser,
   type ImageModelMode,
   type ResolvedChatModel,
   type ResolvedImageModel,
+  type ResolvedVideoModel,
 } from '@/server/repositories/ai-models';
 import type {
   AgentCapabilitySnapshot,
@@ -80,8 +86,8 @@ type DebitForAgentRun = (input: {
 type DebitForImageAgentRun = (input: {
   userId: string;
   runId: string;
-  pricing: ResolvedImageModel['pricing'];
-  modelSnapshot: ResolvedImageModel;
+  pricing: ResolvedImageModel['pricing'] | ResolvedVideoModel['pricing'];
+  modelSnapshot: ResolvedImageModel | ResolvedVideoModel;
   metadata: Record<string, unknown>;
   amount: number;
 }) => Promise<{ entryId: string; balanceAfter: number }>;
@@ -112,6 +118,12 @@ export type CreateAgentRunServiceInput = {
     mode: ImageModelMode,
   ) => Promise<ResolvedImageModel>;
   createImageProviderAdapter?: (model: ResolvedImageModel) => ImageProviderAdapter;
+  resolveVideoModelForUser?: (
+    userId: string,
+    modelId: string,
+  ) => Promise<ResolvedVideoModel>;
+  createVideoProviderAdapter?: (model: ResolvedVideoModel) => MediaProviderAdapter;
+  waitForVideoPoll?: (attempt: number) => Promise<void>;
   debitForImageAgentRun?: DebitForImageAgentRun;
 };
 
@@ -297,7 +309,9 @@ async function appendRunEventsRequired(
   await repository.appendRunEvents(runId, input);
 }
 
-function toSelectedModelSnapshot(model: ResolvedChatModel | ResolvedImageModel) {
+function toSelectedModelSnapshot(
+  model: ResolvedChatModel | ResolvedImageModel | ResolvedVideoModel,
+) {
   return {
     id: model.id,
     code: model.code,
@@ -305,6 +319,29 @@ function toSelectedModelSnapshot(model: ResolvedChatModel | ResolvedImageModel) 
     providerName: model.providerName,
     entitlementLabel: model.entitlement.label,
   };
+}
+
+function toResolvedModelSnapshot(model: ResolvedChatModel | ResolvedImageModel | ResolvedVideoModel) {
+  return structuredClone({
+    id: model.id,
+    code: model.code,
+    name: model.name,
+    providerName: model.providerName,
+    providerId: model.providerId,
+    providerCode: model.providerCode,
+    providerType: model.providerType,
+    baseUrl: model.baseUrl,
+    credentialEnvKey: model.credentialEnvKey,
+    model: model.model,
+    executionProtocol: model.executionProtocol,
+    pricing: model.pricing,
+    billingRules: model.billingRules ?? {},
+    entitlement: model.entitlement,
+    ...(Array.isArray((model as ResolvedImageModel).supportedModes)
+      ? { supportedModes: [...(model as ResolvedImageModel).supportedModes] }
+      : {}),
+    ...((model as ResolvedVideoModel).supportsVideoGeneration ? { supportsVideoGeneration: true } : {}),
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -355,7 +392,7 @@ function calculateChatRunCreditCost(input: {
 
 function calculateMediaRunCreditCost(input: {
   taskType: 'image' | 'video';
-  model: ResolvedImageModel;
+  model: ResolvedImageModel | ResolvedVideoModel;
   rawMetadata: Record<string, unknown>;
   runInput: Record<string, unknown>;
 }) {
@@ -384,6 +421,36 @@ function calculateMediaRunCreditCost(input: {
 
 function toImageMode(value: unknown): ImageModelMode {
   return value === 'edit' || value === 'upscale' ? value : 'generate';
+}
+
+function readStringInput(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readNumberInput(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readBooleanInput(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  return typeof value === 'boolean' ? value : null;
+}
+
+function readVideoDurationSeconds(input: Record<string, unknown>) {
+  const numeric = readNumberInput(input, 'duration');
+  if (numeric !== null) {
+    return numeric;
+  }
+
+  const text = readStringInput(input, 'duration');
+  if (!text) {
+    return null;
+  }
+
+  const match = text.match(/^(\d+)/);
+  return match ? Number(match[1]) : null;
 }
 
 const MAX_SOURCE_IMAGE_DATA_URL_BYTES = 10 * 1024 * 1024;
@@ -471,6 +538,7 @@ function toImageCapabilitySnapshot(
       },
     ],
     selectedModel: toSelectedModelSnapshot(model),
+    resolvedModel: toResolvedModelSnapshot(model),
     billing: {
       status: 'pending',
       creditCost: null,
@@ -482,6 +550,42 @@ function toImageCapabilitySnapshot(
   };
 }
 
+function toVideoCapabilitySnapshot(
+  model: ResolvedVideoModel,
+): AgentCapabilitySnapshot & Record<string, unknown> {
+  return {
+    bundleId: `video-model-${model.id}`,
+    bundleCode: `video-${model.code}`,
+    provider: model.providerCode,
+    model: model.model,
+    capabilities: [
+      {
+        id: model.id,
+        kind: 'model',
+        code: model.code,
+        name: model.name,
+        config: {
+          providerId: model.providerId,
+          providerCode: model.providerCode,
+          providerType: model.providerType,
+          model: model.model,
+          supportsVideoGeneration: true,
+        },
+      },
+    ],
+    selectedModel: toSelectedModelSnapshot(model),
+    resolvedModel: toResolvedModelSnapshot(model),
+    billing: {
+      status: 'pending',
+      creditCost: null,
+      ledgerEntryId: null,
+    },
+    entitlement: model.entitlement,
+    pricing: model.pricing,
+    supportsVideoGeneration: true,
+  };
+}
+
 function sanitizeImageRunInput(input: Record<string, unknown>, model: ResolvedImageModel, mode: ImageModelMode) {
   const { sourceImageDataUrl: _sourceImageDataUrl, ...durableInput } = cloneRecord(input);
   return {
@@ -489,6 +593,15 @@ function sanitizeImageRunInput(input: Record<string, unknown>, model: ResolvedIm
     mode,
     modelId: model.id,
     selectedModel: toSelectedModelSnapshot(model),
+  };
+}
+
+function sanitizeVideoRunInput(input: Record<string, unknown>, model: ResolvedVideoModel) {
+  return {
+    ...cloneRecord(input),
+    modelId: model.id,
+    selectedModel: toSelectedModelSnapshot(model),
+    resolvedModel: toResolvedModelSnapshot(model),
   };
 }
 
@@ -553,6 +666,26 @@ function toFailedImageSnapshot(input: {
   } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
 }
 
+function toFailedVideoSnapshot(input: {
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  rawMetadata?: Record<string, unknown>;
+  creditCost?: number | null;
+  errorMessage: string;
+}) {
+  return {
+    ...input.capabilitySnapshot,
+    ...(input.rawMetadata ? { rawMetadata: input.rawMetadata } : {}),
+    billing: {
+      status: 'failed',
+      creditCost: input.creditCost ?? null,
+      ledgerEntryId: null,
+    },
+    failure: {
+      message: input.errorMessage,
+    },
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+}
+
 function providerArtifact(input: {
   model: ResolvedChatModel;
   providerResult: ChatProviderResult;
@@ -580,10 +713,11 @@ export function createAgentRunService({
   debitForAgentRun = defaultDebitForAgentRun,
   resolveImageModelForUser = defaultResolveImageModelForUser,
   createImageProviderAdapter = () => defaultCreateImageProviderAdapter(),
+  resolveVideoModelForUser = defaultResolveVideoModelForUser,
+  createVideoProviderAdapter = (model) => createMediaProviderAdapter(model),
+  waitForVideoPoll = async () => {},
   debitForImageAgentRun = defaultDebitForImageAgentRun,
 }: CreateAgentRunServiceInput) {
-  const mediaRunScheduler = createMediaRunScheduler();
-
   return {
     async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<CreateAgentRunResult> {
       if (input.taskType === 'chat') {
@@ -604,6 +738,17 @@ export function createAgentRunService({
           resolveImageModelForUser,
           assertCanAffordMinimum,
           createImageProviderAdapter,
+          debitForImageAgentRun,
+        });
+      }
+
+      if (input.taskType === 'video') {
+        return createAndRunVideoAgentRun({
+          input,
+          repository,
+          resolveVideoModelForUser,
+          assertCanAffordMinimum,
+          createVideoProviderAdapter,
           debitForImageAgentRun,
         });
       }
@@ -632,30 +777,6 @@ export function createAgentRunService({
           reason: 'missing_default_capability_bundle',
         });
         return runResult(requireUpdatedRun(await repository.failRun(created.id, error.message), 'fail run'));
-      }
-
-      if (isMediaTask(input.taskType)) {
-        const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
-        await recordEventIfSupported(repository, running.id, 'running', 'Agent runtime started', {
-          provider: capabilitySnapshot.provider,
-          model: capabilitySnapshot.model,
-        });
-
-        mediaRunScheduler.schedule(running.id, async () => {
-          try {
-            await runMediaOrchestration({
-              repository,
-              runtime,
-              request: input,
-              capabilitySnapshot,
-              running,
-            });
-          } catch (error) {
-            await failMediaRun(repository, running.id, toErrorMessage(error));
-          }
-        });
-
-        return runResult(running);
       }
 
       try {
@@ -695,95 +816,330 @@ export function createAgentRunService({
         return runResult(requireUpdatedRun(await repository.failRun(created.id, errorMessage), 'fail run'));
       }
     },
+    async syncVideoAgentRunForUser(userId: string, runId: string): Promise<AgentRunDto> {
+      return syncVideoAgentRunForUser({
+        repository,
+        userId,
+        runId,
+        createVideoProviderAdapter,
+        debitForImageAgentRun,
+        waitForVideoPoll,
+      });
+    },
   };
 }
 
-async function failMediaRun(repository: AgentRunRepository, runId: string, errorMessage: string) {
-  await recordEventIfSupported(repository, runId, 'failed', errorMessage);
-  await repository.failRun(runId, errorMessage);
-  await appendRunEventIfSupported(repository, runId, {
-    eventType: 'run_failed',
-    payload: {
-      message: errorMessage,
-      failedAt: new Date().toISOString(),
-    },
-  });
-}
-
-async function runMediaOrchestration(input: {
+async function createAndRunVideoAgentRun(input: {
+  input: CreateAndRunAgentRunInput;
   repository: AgentRunRepository;
-  runtime: PiAgentRuntime;
-  request: CreateAndRunAgentRunInput;
-  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
-  running: AgentRunDto;
-}) {
-  await appendRunEventIfSupported(input.repository, input.running.id, {
+  resolveVideoModelForUser: (userId: string, modelId: string) => Promise<ResolvedVideoModel>;
+  assertCanAffordMinimum: (
+    userId: string,
+    pricing: ResolvedVideoModel['pricing'],
+  ) => Promise<void>;
+  createVideoProviderAdapter: (model: ResolvedVideoModel) => MediaProviderAdapter;
+  debitForImageAgentRun: DebitForImageAgentRun;
+}): Promise<CreateAgentRunResult> {
+  const { repository, resolveVideoModelForUser, assertCanAffordMinimum } = input;
+  const request = input.input;
+  if (!request.modelId) {
+    throw new AgentRunModelRequiredError();
+  }
+
+  const model = await resolveVideoModelForUser(request.userId, request.modelId);
+  await assertCanAffordMinimum(request.userId, model.pricing);
+
+  const capabilitySnapshot = toVideoCapabilitySnapshot(model);
+  const runInput = sanitizeVideoRunInput(request.input, model);
+  const created = await repository.createRun({
+    userId: request.userId,
+    conversationId: request.conversationId,
+    taskType: request.taskType,
+    prompt: request.prompt,
+    provider: capabilitySnapshot.provider,
+    model: capabilitySnapshot.model,
+    capabilitySnapshot,
+    input: runInput,
+  });
+
+  await recordEventIfSupported(repository, created.id, 'queued', 'Agent run queued', {
+    taskType: request.taskType,
+    modelId: model.id,
+  });
+
+  const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+  await recordEventIfSupported(repository, running.id, 'running', 'Video provider started', {
+    provider: model.providerCode,
+    model: model.model,
+  });
+
+  const adapter = input.createVideoProviderAdapter(model);
+  if (!adapter.createVideoTask) {
+    throw new Error('Video provider adapter does not support task creation.');
+  }
+
+  const createdTask = await adapter.createVideoTask({
+    runId: running.id,
+    userId: request.userId,
+    model,
+    prompt: request.prompt,
+    duration: readVideoDurationSeconds(request.input) ?? undefined,
+    resolution: readStringInput(request.input, 'resolution') ?? readStringInput(request.input, 'clarity') ?? undefined,
+    ratio: readStringInput(request.input, 'ratio') ?? undefined,
+    seed: readNumberInput(request.input, 'seed') ?? undefined,
+    watermark: readBooleanInput(request.input, 'watermark') ?? undefined,
+  });
+
+  const nextCapabilitySnapshot = {
+    ...capabilitySnapshot,
+    providerTaskId: createdTask.providerTaskId,
+    providerTaskStatus: 'running',
+    rawMetadata: createdTask.rawMetadata,
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+
+  const nextRunInput = {
+    ...runInput,
+    providerTaskId: createdTask.providerTaskId,
+  };
+
+  const updated = requireUpdatedRun(
+    await repository.patchRun(running.id, {
+      capabilitySnapshot: nextCapabilitySnapshot,
+      input: nextRunInput,
+    }),
+    'persist video task metadata',
+  );
+  await appendRunEventIfSupported(repository, updated.id, {
     eventType: 'artifact_started',
     payload: {
-      taskType: input.request.taskType,
+      taskType: request.taskType,
+      providerTaskId: createdTask.providerTaskId,
       startedAt: new Date().toISOString(),
     },
   });
 
-  const result = await input.runtime.run({
-    runId: input.running.id,
-    userId: input.request.userId,
-    taskType: input.request.taskType,
-    prompt: input.request.prompt,
-    provider: input.capabilitySnapshot.provider,
-    model: input.capabilitySnapshot.model,
-    capabilities: structuredClone(input.capabilitySnapshot.capabilities),
-    input: cloneRecord(input.request.input),
-  });
+  return runResult(updated);
+}
 
-  if (!hasUsableDirectMedia(result.artifacts)) {
-    throw new Error('模型任务完成，但没有返回可展示的图片或视频。');
+async function syncVideoAgentRunForUser(input: {
+  repository: AgentRunRepository;
+  userId: string;
+  runId: string;
+  createVideoProviderAdapter: (model: ResolvedVideoModel) => MediaProviderAdapter;
+  debitForImageAgentRun: DebitForImageAgentRun;
+  waitForVideoPoll: (attempt: number) => Promise<void>;
+}): Promise<AgentRunDto> {
+  const detail = await input.repository.getRunDetailForUser(input.runId, input.userId);
+  if (!detail) {
+    throw new Error('Agent run was not found.');
   }
 
+  const snapshot = (detail.internal?.capabilitySnapshot ?? {}) as AgentCapabilitySnapshot &
+    Record<string, unknown>;
+  const storedModel = snapshot.resolvedModel;
+  const model = (storedModel && typeof storedModel === 'object' ? storedModel : null) as ResolvedVideoModel | null;
+  const providerTaskId =
+    (typeof snapshot.providerTaskId === 'string' ? snapshot.providerTaskId : null) ??
+    (typeof detail.internal?.input?.providerTaskId === 'string' ? detail.internal.input.providerTaskId : null);
+
+  if (!model || !providerTaskId) {
+    return detail.run;
+  }
+
+  const adapter = input.createVideoProviderAdapter(model);
+  if (!adapter.getVideoTask) {
+    throw new Error('Video provider adapter does not support task status sync.');
+  }
+
+  await input.waitForVideoPoll(0);
+  const providerResult = await adapter.getVideoTask({
+    runId: detail.run.id,
+    userId: input.userId,
+    model,
+    providerTaskId,
+  });
+
+  if (providerResult.status === 'running') {
+    await appendRunEventIfSupported(input.repository, detail.run.id, {
+      eventType: 'artifact_progress',
+      payload: {
+        providerTaskId,
+        status: 'running',
+        polledAt: new Date().toISOString(),
+      },
+    });
+    const latest = await input.repository.getRunForUser(detail.run.id, input.userId);
+    return latest ?? detail.run;
+  }
+
+  if (providerResult.status === 'failed') {
+    const failedSnapshot = toFailedVideoSnapshot({
+      capabilitySnapshot: {
+        ...snapshot,
+        providerTaskId,
+        providerTaskStatus: 'failed',
+      },
+      rawMetadata: providerResult.rawMetadata,
+      errorMessage: providerResult.errorMessage ?? '视频生成失败',
+    });
+    await input.repository.failRun(detail.run.id, {
+      errorMessage: providerResult.errorMessage ?? '视频生成失败',
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...(detail.internal?.input ?? {}),
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+    await appendRunEventIfSupported(input.repository, detail.run.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: providerResult.errorMessage ?? '视频生成失败',
+        failedAt: new Date().toISOString(),
+      },
+    });
+    return requireUpdatedRun(await input.repository.getRunForUser(detail.run.id, input.userId), 'load failed run');
+  }
+
+  if (!providerResult.outputUrl) {
+    throw new Error('Provider response did not include video output.');
+  }
+
+  const artifact: AgentArtifactInput = {
+    kind: 'video',
+    title: 'Generated video',
+    url: providerResult.outputUrl,
+    metadata: {
+      mimeType: 'video/mp4',
+      model: model.model,
+      providerTaskId,
+      ...(isRecord(providerResult.rawMetadata.usage) ? { usage: providerResult.rawMetadata.usage } : {}),
+    },
+  };
+  const creditCost = calculateMediaRunCreditCost({
+    taskType: 'video',
+    model,
+    rawMetadata: providerResult.rawMetadata,
+    runInput: detail.internal?.input ?? {},
+  });
+  const debit = await input.debitForImageAgentRun({
+    userId: input.userId,
+    runId: detail.run.id,
+    pricing: model.pricing,
+    modelSnapshot: model,
+    metadata: {
+      rawMetadata: providerResult.rawMetadata,
+      providerTaskId,
+    },
+    amount: creditCost,
+  });
+
+  const completedSnapshot = {
+    ...snapshot,
+    providerTaskId,
+    providerTaskStatus: 'succeeded',
+    rawMetadata: providerResult.rawMetadata,
+    billing: {
+      status: 'billed',
+      creditCost,
+      ledgerEntryId: debit.entryId,
+    },
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+
   const completed = requireUpdatedRun(
-    await input.repository.completeRun(input.running.id, {
-      finalMessage: result.finalMessage,
-      artifacts: result.artifacts.map(sanitizeDirectMediaArtifact),
+    await input.repository.completeRun(detail.run.id, {
+      finalMessage: '视频已生成',
+      artifacts: [sanitizeDirectMediaArtifact(artifact)],
+      capabilitySnapshot: completedSnapshot,
+      input: {
+        ...(detail.internal?.input ?? {}),
+        billing: completedSnapshot.billing,
+      },
     }),
     'complete run',
   );
 
-  const directMediaPayloads = completed.artifacts
-    .map((artifact, index) => {
-      const directMedia = toDirectMediaResult(result.artifacts[index] ?? null);
-      if (!directMedia || (artifact.kind !== 'image' && artifact.kind !== 'video')) {
-        return null;
-      }
-
-      return {
-        eventType: 'artifact_completed' as const,
-        payload: createDirectMediaEventPayload(directMedia, {
-          artifactId: artifact.id,
-        }),
-      };
-    })
-    .filter((event): event is { eventType: 'artifact_completed'; payload: DirectMediaArtifactCompletedPayload } => event !== null);
-
+  const directMedia = toDirectMediaResult(artifact);
+  if (!directMedia) {
+    throw new Error('Provider response did not include video output.');
+  }
   try {
-    await appendRunEventsRequired(input.repository, input.running.id, directMediaPayloads);
+    await appendRunEventIfSupported(input.repository, completed.id, {
+      eventType: 'billing_recorded',
+      payload: {
+        creditCost,
+        ledgerEntryId: debit.entryId,
+        balanceAfter: debit.balanceAfter,
+      },
+    });
+    await appendRunEventsRequired(input.repository, completed.id, [
+      {
+        eventType: 'artifact_completed',
+        payload: createDirectMediaEventPayload(directMedia, {
+          artifactId: completed.artifacts[0]?.id ?? '',
+        }),
+      },
+    ]);
   } catch {
-    throw new Error('图片或视频结果推送失败，请重试。');
+    const failedSnapshot = toFailedVideoSnapshot({
+      capabilitySnapshot: completedSnapshot,
+      rawMetadata: providerResult.rawMetadata,
+      creditCost,
+      errorMessage: '图片或视频结果推送失败，请重试。',
+    });
+    await appendRunEventIfSupported(input.repository, detail.run.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: '图片或视频结果推送失败，请重试。',
+        failedAt: new Date().toISOString(),
+      },
+    });
+    await input.repository.patchRun(detail.run.id, {
+      finalMessage: '视频已生成',
+      errorMessage: '图片或视频结果推送失败，请重试。',
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...(detail.internal?.input ?? {}),
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+    await input.repository.failRun(detail.run.id, {
+      errorMessage: '图片或视频结果推送失败，请重试。',
+      finalMessage: '视频已生成',
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...(detail.internal?.input ?? {}),
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+    return requireUpdatedRun(
+      await input.repository.getRunForUser(detail.run.id, input.userId),
+      'load failed run',
+    );
   }
 
   await appendRunEventIfSupported(input.repository, completed.id, {
     eventType: 'run_completed',
     payload: {
-      finalMessage: result.finalMessage,
-      artifactCount: directMediaPayloads.length,
+      finalMessage: '视频已生成',
+      artifactCount: 1,
       storageStatus: 'provider_direct',
       completedAt: new Date().toISOString(),
     },
   });
 
-  await recordEventIfSupported(input.repository, completed.id, 'succeeded', 'Agent run succeeded', {
-    artifactCount: directMediaPayloads.length,
-    storageStatus: 'provider_direct',
-  });
+  await recordEventIfSupported(
+    input.repository,
+    completed.id,
+    'succeeded',
+    'Agent run succeeded',
+    {
+      artifactCount: 1,
+      creditCost,
+      ledgerEntryId: debit.entryId,
+      storageStatus: 'provider_direct',
+    },
+  );
+  return completed;
 }
 
 async function createAndRunChatAgentRun(input: {

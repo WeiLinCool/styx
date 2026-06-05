@@ -19,6 +19,31 @@ import {
   parseCreateAgentRunRequestBody,
   serviceErrorToResponse,
 } from './route';
+import { createSyncAgentRunResponse } from './[runId]/sync/route';
+
+test('createSyncAgentRunResponse returns synced run payload', async () => {
+  const response = createSyncAgentRunResponse({
+    id: 'run-1',
+    conversationId: 'run-1',
+    taskType: 'video',
+    status: 'running',
+    prompt: 'hello',
+    finalMessage: null,
+    errorMessage: null,
+    capabilitySummary: { provider: 'doubao', model: 'seedance', capabilities: [] },
+    selectedModel: null,
+    usage: null,
+    billing: null,
+    artifacts: [],
+    createdAt: '2026-06-05T00:00:00.000Z',
+    updatedAt: '2026-06-05T00:00:00.000Z',
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.run.id, 'run-1');
+  assert.equal(body.run.taskType, 'video');
+});
 
 test('parseCreateAgentRunBody accepts valid chat request', () => {
   const parsed = parseCreateAgentRunBody({
@@ -76,6 +101,13 @@ test('parseCreateAgentRunBody accepts chat modelId', () => {
 test('parseCreateAgentRunRawBody requires modelId for image requests', () => {
   assert.throws(
     () => parseCreateAgentRunRawBody({ taskType: 'image', prompt: '山水', input: { mode: 'generate' } }),
+    /modelId is required/,
+  );
+});
+
+test('parseCreateAgentRunRawBody requires modelId for video requests', () => {
+  assert.throws(
+    () => parseCreateAgentRunRawBody({ taskType: 'video', prompt: '山水动起来', input: { duration: 5 } }),
     /modelId is required/,
   );
 });

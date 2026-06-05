@@ -10,6 +10,7 @@ type AiModelBody = {
   name: string;
   model: string;
   status: 'enabled';
+  executionProtocol: 'chat_openai_compatible' | 'image_openai_compatible' | 'video_task_polling';
   supportsChat: boolean;
   supportsImageGeneration: boolean;
   supportsImageEdit: boolean;
@@ -23,14 +24,15 @@ const validBody: AiModelBody = {
   name: 'Doubao Image',
   model: 'doubao-seedream-3-0-t2i-250415',
   status: 'enabled',
+  executionProtocol: 'image_openai_compatible',
   supportsChat: false,
   supportsImageGeneration: true,
   supportsImageEdit: true,
   supportsImageUpscale: false,
-  supportsVideoGeneration: true,
+  supportsVideoGeneration: false,
 };
 
-test('parseAiModelUpdateBody parses image and video capability flags', async () => {
+test('parseAiModelUpdateBody parses image capability flags with execution protocol', async () => {
   const body = await parseAiModelUpdateBody({
     json: async () => validBody,
   });
@@ -61,5 +63,34 @@ test('parseAiModelUpdateBody requires video capability flag', async () => {
         json: async () => bodyWithoutVideoFlag,
       }),
     ZodError,
+  );
+});
+
+test('parseAiModelUpdateBody requires execution protocol', async () => {
+  const bodyWithoutProtocol: Partial<typeof validBody> = { ...validBody };
+  delete bodyWithoutProtocol.executionProtocol;
+
+  await assert.rejects(
+    () =>
+      parseAiModelUpdateBody({
+        json: async () => bodyWithoutProtocol,
+      }),
+    ZodError,
+  );
+});
+
+test('parseAiModelUpdateBody rejects invalid video protocol combinations', async () => {
+  await assert.rejects(
+    () =>
+      parseAiModelUpdateBody({
+        json: async () => ({
+          ...validBody,
+          supportsImageGeneration: false,
+          supportsImageEdit: false,
+          supportsVideoGeneration: true,
+          executionProtocol: 'image_openai_compatible',
+        }),
+      }),
+    /video execution protocol/,
   );
 });

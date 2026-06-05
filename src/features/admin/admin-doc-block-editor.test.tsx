@@ -14,7 +14,12 @@ test('block editor renders ordered cards and add-block affordance', () => {
     />,
   );
 
-  assert.match(html, /新增内容块/);
+  assert.match(html, /新增正文/);
+  assert.match(html, /新增FAQ/);
+  assert.match(html, /新增步骤图文/);
+  assert.match(html, /新增图集/);
+  assert.match(html, /新增视频/);
+  assert.match(html, /新增音频/);
   assert.match(html, /上移/);
   assert.match(html, /下移/);
 });
