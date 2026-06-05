@@ -529,6 +529,58 @@ export const sessions = pgTable(
   ],
 );
 
+export const enterpriseOauthAuthorizationCodes = pgTable(
+  'enterprise_oauth_authorization_codes',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    clientId: text('client_id').notNull(),
+    redirectUri: text('redirect_uri').notNull(),
+    codeChallenge: text('code_challenge').notNull(),
+    codeChallengeMethod: text('code_challenge_method').notNull(),
+    scope: text('scope').notNull().default(''),
+    state: text('state'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('enterprise_oauth_authorization_codes_user_id_idx').on(table.userId),
+    index('enterprise_oauth_authorization_codes_expires_at_idx').on(table.expiresAt),
+    uniqueIndex('enterprise_oauth_authorization_codes_code_hash_unique_idx').on(
+      table.codeHash,
+    ),
+  ],
+);
+
+export const enterpriseOauthAccessTokens = pgTable(
+  'enterprise_oauth_access_tokens',
+  {
+    id,
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    clientId: text('client_id').notNull(),
+    scope: text('scope').notNull().default(''),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    index('enterprise_oauth_access_tokens_user_id_idx').on(table.userId),
+    index('enterprise_oauth_access_tokens_expires_at_idx').on(table.expiresAt),
+    uniqueIndex('enterprise_oauth_access_tokens_token_hash_unique_idx').on(
+      table.tokenHash,
+    ),
+  ],
+);
+
 export const adminRoles = pgTable(
   'admin_roles',
   {
