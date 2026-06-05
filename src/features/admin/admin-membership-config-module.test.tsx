@@ -153,3 +153,32 @@ test('admin membership config module shows version states and onboarding guide',
   assert.match(html, /5, 10/);
   assert.match(html, /720p, 1080p/);
 });
+
+test('buildDraftPayload sends null videoGenerationPolicy when video is disabled', async () => {
+  const { buildDraftPayload } = await import('./admin-membership-config-module');
+
+  const payload = buildDraftPayload({
+    displayName: 'Pro Monthly V2',
+    description: 'Draft version',
+    billingPeriod: 'month',
+    priceCents: '12900',
+    currency: 'CNY',
+    changeSummary: '',
+    benefits: [],
+    mediaLibraryPolicy: {
+      storageQuotaGb: '1',
+      allowUserUpload: true,
+      allowPublicSharing: false,
+    },
+    videoGenerationPolicy: {
+      enabled: false,
+      allowedDurationsCsv: '5, 10',
+      allowedResolutionsCsv: '720p, 1080p',
+      defaultDuration: '10',
+      defaultResolution: '1080p',
+    },
+    permissionCodes: ['page.user_center'],
+  });
+
+  assert.equal(payload.videoGenerationPolicy, null);
+});

@@ -156,7 +156,7 @@ function buildFormState(version: MembershipPlanVersionRecord | null): DraftFormS
   };
 }
 
-function buildDraftPayload(formState: DraftFormState) {
+export function buildDraftPayload(formState: DraftFormState) {
   const parsedDurations = parseDurationCsv(
     formState.videoGenerationPolicy.allowedDurationsCsv,
   );
@@ -197,13 +197,15 @@ function buildDraftPayload(formState: DraftFormState) {
       allowUserUpload: formState.mediaLibraryPolicy.allowUserUpload,
       allowPublicSharing: formState.mediaLibraryPolicy.allowPublicSharing,
     },
-    videoGenerationPolicy: {
-      enabled: formState.videoGenerationPolicy.enabled,
-      allowedDurations: allowedDurations.length > 0 ? allowedDurations : [5],
-      allowedResolutions: allowedResolutions.length > 0 ? allowedResolutions : ['720p'],
-      defaultDuration,
-      defaultResolution,
-    },
+    videoGenerationPolicy: formState.videoGenerationPolicy.enabled
+      ? {
+          enabled: true,
+          allowedDurations: allowedDurations.length > 0 ? allowedDurations : [5],
+          allowedResolutions: allowedResolutions.length > 0 ? allowedResolutions : ['720p'],
+          defaultDuration,
+          defaultResolution,
+        }
+      : null,
   };
 }
 

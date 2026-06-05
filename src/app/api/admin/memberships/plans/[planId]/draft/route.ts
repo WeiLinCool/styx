@@ -9,6 +9,32 @@ import { createOrUpdateMembershipPlanDraft } from '@/server/repositories/members
 import { syncPermissionResourcesFromCatalog } from '@/server/repositories/permission-resources';
 import { adminText } from '@/features/admin/admin-i18n';
 
+const videoGenerationPolicySchema = z
+  .object({
+    enabled: z.boolean(),
+    allowedDurations: z.array(z.coerce.number().int().positive()).min(1),
+    allowedResolutions: z.array(z.string().trim().min(1)).min(1),
+    defaultDuration: z.coerce.number().int().positive(),
+    defaultResolution: z.string().trim().min(1),
+  })
+  .superRefine((policy, context) => {
+    if (!policy.allowedDurations.includes(policy.defaultDuration)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['defaultDuration'],
+        message: 'Default duration must be included in allowed durations.',
+      });
+    }
+
+    if (!policy.allowedResolutions.includes(policy.defaultResolution)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['defaultResolution'],
+        message: 'Default resolution must be included in allowed resolutions.',
+      });
+    }
+  });
+
 const membershipDraftSchema = z.object({
   displayName: z.string().trim().min(1),
   description: z.string().trim().max(2000).nullable().optional().default(null),
@@ -31,14 +57,7 @@ const membershipDraftSchema = z.object({
     allowUserUpload: z.boolean(),
     allowPublicSharing: z.boolean(),
   }),
-  videoGenerationPolicy: z
-    .object({
-      enabled: z.boolean(),
-      allowedDurations: z.array(z.coerce.number().int().positive()).min(1),
-      allowedResolutions: z.array(z.string().trim().min(1)).min(1),
-      defaultDuration: z.coerce.number().int().positive(),
-      defaultResolution: z.string().trim().min(1),
-    })
+  videoGenerationPolicy: videoGenerationPolicySchema
     .nullable()
     .optional()
     .default(null),
