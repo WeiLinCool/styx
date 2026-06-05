@@ -74,6 +74,39 @@ test('memory video config repository lists disabled styles for admin', async () 
   );
 });
 
+test('memory video config repository preserves style id when upserting by existing code', async () => {
+  const repository = createMemoryVideoGenerationConfigRepository({
+    styles: [
+      {
+        id: 'style-original',
+        code: 'cinematic',
+        name: 'Cinematic',
+        prompt: 'Original prompt.',
+        enabled: true,
+        sortOrder: 1,
+      },
+    ],
+  });
+
+  const updated = await repository.upsertVideoStylePreset({
+    code: 'cinematic',
+    name: 'Updated Cinematic',
+    prompt: 'Updated prompt.',
+    enabled: false,
+    sortOrder: 9,
+  });
+
+  assert.deepEqual(updated, {
+    id: 'style-original',
+    code: 'cinematic',
+    name: 'Updated Cinematic',
+    prompt: 'Updated prompt.',
+    enabled: false,
+    sortOrder: 9,
+  });
+  assert.deepEqual(await repository.listAdminVideoStylePresets(), [updated]);
+});
+
 test('memory video config repository resolves plan version policy', async () => {
   const repository = createMemoryVideoGenerationConfigRepository({
     planConfigs: [

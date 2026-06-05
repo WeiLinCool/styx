@@ -275,8 +275,10 @@ export function createMemoryVideoGenerationConfigRepository(
     },
     async upsertVideoStylePreset(input) {
       const style = normalizeStyle(input);
-      stylesByCode.set(style.code, style);
-      return cloneStyle(style);
+      const existing = stylesByCode.get(style.code);
+      const stored = existing ? { ...style, id: existing.id } : style;
+      stylesByCode.set(stored.code, stored);
+      return cloneStyle(stored);
     },
     async getVideoPlanConfigByVersionId(versionId) {
       const config = configsByVersionId.get(versionId);
