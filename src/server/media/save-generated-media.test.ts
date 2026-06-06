@@ -320,6 +320,32 @@ test('save generated media returns existing asset for duplicate save requests', 
   assert.equal(uploads, 1);
 });
 
+test('save generated media rejects cross-user artifact saves', async () => {
+  const { runRepository, runId, artifactId } = await createRunWithSavableArtifact();
+  const service = createSaveGeneratedMediaService({
+    runRepository,
+    mediaAssetRepository: createMemoryGeneratedMediaAssetRepository(),
+    userStorageRepository: createMemoryUserStorageRepository({
+      'user-2': { storageQuotaBytes: 10_000, storageUsedBytes: 0 },
+    }),
+    cosClient: {
+      async uploadObject() {
+        throw new Error('upload should not be called');
+      },
+      async deleteObject() {},
+    },
+    fetchSource: async () => {
+      throw new Error('fetch should not be called');
+    },
+    createObjectKey: () => 'unused',
+  });
+
+  await assert.rejects(
+    () => service.saveForUser({ userId: 'user-2', runId, artifactId }),
+    /生成记录不存在/,
+  );
+});
+
 test('save generated media marks artifact save_failed when upload fails', async () => {
   const { runRepository, runId, artifactId } = await createRunWithSavableArtifact();
   const service = createSaveGeneratedMediaService({
