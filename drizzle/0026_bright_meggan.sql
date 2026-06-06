@@ -1,0 +1,1 @@
+ALTER TYPE "public"."agent_artifact_kind" ADD VALUE 'audio' BEFORE 'video';

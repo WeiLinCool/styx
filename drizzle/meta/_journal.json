@@ -183,6 +183,13 @@
       "when": 1780675962777,
       "tag": "0025_perfect_devos",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1780721336212,
+      "tag": "0026_bright_meggan",
+      "breakpoints": true
     }
   ]
 }

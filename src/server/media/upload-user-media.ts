@@ -6,17 +6,37 @@ import type { GeneratedMediaAssetRepository } from '@/server/repositories/genera
 import type { UserStorageRepository } from '@/server/repositories/users';
 
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-wav']);
 const VIDEO_TYPES = new Set(['video/mp4']);
 
 function inferKind(mimeType: string) {
   if (IMAGE_TYPES.has(mimeType)) {
     return 'image' as const;
   }
+  if (AUDIO_TYPES.has(mimeType)) {
+    return 'audio' as const;
+  }
   if (VIDEO_TYPES.has(mimeType)) {
     return 'video' as const;
   }
 
-  throw new Error('仅支持上传图片或视频文件。');
+  throw new Error('仅支持上传图片、音频或视频文件。');
+}
+
+function defaultExtensionForMimeType(mimeType: string) {
+  switch (mimeType) {
+    case 'audio/mpeg':
+      return '.mp3';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return '.wav';
+    case 'audio/mp4':
+      return '.m4a';
+    case 'video/mp4':
+      return '.mp4';
+    default:
+      return '.png';
+  }
 }
 
 function defaultObjectKey(input: {
@@ -26,7 +46,7 @@ function defaultObjectKey(input: {
   mimeType: string;
 }) {
   const ext = path.extname(input.filename);
-  const suffix = ext || (input.mimeType === 'video/mp4' ? '.mp4' : '.png');
+  const suffix = ext || defaultExtensionForMimeType(input.mimeType);
   return `user-uploaded/${process.env.NODE_ENV ?? 'development'}/users/${input.userId}/assets/${input.assetId}/${input.assetId}${suffix}`;
 }
 

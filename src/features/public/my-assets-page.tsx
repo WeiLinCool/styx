@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, Image as ImageIcon, Link2, Loader2, MessageSquarePlus, Search, Trash2, Upload, Video } from 'lucide-react';
+import { ArrowLeft, Download, FileAudio, Image as ImageIcon, Link2, Loader2, MessageSquarePlus, Search, Trash2, Upload, Video } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth-context';
@@ -22,7 +22,7 @@ import { deriveMyAssetsView } from './my-assets-state';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 
-type AssetKindFilter = 'all' | 'image' | 'video';
+type AssetKindFilter = 'all' | 'image' | 'audio' | 'video';
 type AssetSourceFilter = 'all' | 'ai_generated' | 'user_uploaded';
 type AssetSort = 'newest' | 'oldest';
 
@@ -55,13 +55,19 @@ function formatSavedAt(value: string) {
 }
 
 function kindLabel(kind: GeneratedMediaAssetDto['kind']) {
-  return kind === 'video' ? '视频' : '图片';
+  return kind === 'video' ? '视频' : kind === 'audio' ? '音频' : '图片';
 }
 
 function AssetPlaceholder({ kind }: { kind: GeneratedMediaAssetDto['kind'] }) {
   return (
     <div className="flex aspect-[4/3] items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
-      {kind === 'video' ? <Video className="h-10 w-10" /> : <ImageIcon className="h-10 w-10" />}
+      {kind === 'video' ? (
+        <Video className="h-10 w-10" />
+      ) : kind === 'audio' ? (
+        <FileAudio className="h-10 w-10" />
+      ) : (
+        <ImageIcon className="h-10 w-10" />
+      )}
     </div>
   );
 }
@@ -274,14 +280,14 @@ export function MyAssetsPageClient() {
             </Link>
             <div>
               <h1 className="text-base font-semibold">我的资料</h1>
-              <p className="text-[11px] text-muted-foreground">管理你已保存到云端的图片与视频</p>
+              <p className="text-[11px] text-muted-foreground">管理你已保存到云端的图片、音频与视频</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp,video/mp4"
+              accept="image/png,image/jpeg,image/webp,audio/mpeg,audio/wav,audio/mp4,audio/x-wav,video/mp4"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -327,6 +333,7 @@ export function MyAssetsPageClient() {
             >
               <option value="all">全部类型</option>
               <option value="image">图片</option>
+              <option value="audio">音频</option>
               <option value="video">视频</option>
             </select>
 
@@ -506,6 +513,10 @@ export function MyAssetsPageClient() {
             ) : previewAsset && previewUrl ? (
               previewAsset.kind === 'video' ? (
                 <video src={previewUrl} controls className="max-h-[70vh] w-full rounded-2xl bg-black" />
+              ) : previewAsset.kind === 'audio' ? (
+                <div className="flex min-h-[220px] items-center rounded-2xl bg-secondary px-6">
+                  <audio src={previewUrl} controls className="w-full" />
+                </div>
               ) : (
                 <img src={previewUrl} alt={previewAsset.title} className="max-h-[70vh] w-full rounded-2xl object-contain" />
               )

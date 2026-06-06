@@ -41,6 +41,10 @@ export type GeneratedMediaAssetRepository = {
     runId: string;
     artifactId: string;
   }): Promise<GeneratedMediaAssetDto | null>;
+  findAssetForUser(input: {
+    userId: string;
+    assetId: string;
+  }): Promise<GeneratedMediaAssetDto | null>;
   getSavedAssetForUser(assetId: string, userId: string): Promise<GeneratedMediaAssetDto | null>;
   enableSharingForUser(
     assetId: string,
@@ -237,6 +241,9 @@ export function createDatabaseGeneratedMediaAssetRepository(): GeneratedMediaAss
 
       return asset ? toGeneratedMediaAssetDto(asset) : null;
     },
+    async findAssetForUser(input) {
+      return this.getSavedAssetForUser(input.assetId, input.userId);
+    },
     async enableSharingForUser(assetId, userId, input) {
       const [asset] = await database
         .update(schema.generatedMediaAssets)
@@ -367,6 +374,9 @@ export function createMemoryGeneratedMediaAssetRepository(): GeneratedMediaAsset
       }
 
       return structuredClone(asset);
+    },
+    async findAssetForUser(input) {
+      return this.getSavedAssetForUser(input.assetId, input.userId);
     },
     async enableSharingForUser(assetId, userId, input) {
       const asset = assets.get(assetId);

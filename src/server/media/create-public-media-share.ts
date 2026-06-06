@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 type PublicShareAsset = {
   id: string;
   title: string;
-  kind: 'image' | 'video';
+  kind: 'image' | 'audio' | 'video';
   mimeType: string | null;
   objectKey: string;
   byteSize: number;

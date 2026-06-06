@@ -2,7 +2,7 @@ import type { GeneratedMediaAssetDto } from '@/server/agent/types';
 
 export type MyAssetsFilter = {
   search: string;
-  kind: 'all' | 'image' | 'video';
+  kind: 'all' | 'image' | 'audio' | 'video';
   sourceType: 'all' | 'ai_generated' | 'user_uploaded';
   sort: 'newest' | 'oldest';
 };

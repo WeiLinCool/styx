@@ -208,6 +208,7 @@ export const referralConversionTrigger = pgEnum('referral_conversion_trigger', [
 export const agentArtifactKind = pgEnum('agent_artifact_kind', [
   'text',
   'image',
+  'audio',
   'video',
   'document',
   'workflow',

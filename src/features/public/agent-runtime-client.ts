@@ -654,7 +654,7 @@ export async function getPublicSharedMedia(shareId: string): Promise<{
   asset: {
     id: string;
     title: string;
-    kind: 'image' | 'video';
+    kind: 'image' | 'audio' | 'video';
     mimeType: string | null;
     byteSize: number;
     width: number | null;
