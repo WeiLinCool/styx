@@ -1,6 +1,6 @@
 workflow: full
 phase: build
-build_mode: subagent-driven-development
+build_mode: executing-plans
 isolation: branch
 verify_mode: null
 design_doc: docs/superpowers/specs/2026-06-06-multimodal-generation-history-cache-design.md
