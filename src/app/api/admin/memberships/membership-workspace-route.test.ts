@@ -28,6 +28,13 @@ test('parseMembershipDraftBody accepts pricing, benefits, and permission fields'
       allowUserUpload: true,
       allowPublicSharing: false,
     },
+    videoGenerationPolicy: {
+      enabled: true,
+      allowedDurations: [5, 10],
+      allowedResolutions: ['720p', '1080p'],
+      defaultDuration: 5,
+      defaultResolution: '720p',
+    },
   });
 
   assert.equal(body.priceCents, 12900);
@@ -37,6 +44,13 @@ test('parseMembershipDraftBody accepts pricing, benefits, and permission fields'
     storageQuotaBytes: 1073741824,
     allowUserUpload: true,
     allowPublicSharing: false,
+  });
+  assert.deepEqual(body.videoGenerationPolicy, {
+    enabled: true,
+    allowedDurations: [5, 10],
+    allowedResolutions: ['720p', '1080p'],
+    defaultDuration: 5,
+    defaultResolution: '720p',
   });
 });
 
@@ -72,6 +86,88 @@ test('parseMembershipDraftBody coerces numeric strings from simplified admin for
     allowUserUpload: true,
     allowPublicSharing: true,
   });
+});
+
+test('parseMembershipDraftBody coerces video generation numeric strings', async () => {
+  const body = parseMembershipDraftBody({
+    displayName: 'Team Yearly',
+    description: 'updated',
+    billingPeriod: 'year',
+    priceCents: '99900',
+    currency: 'CNY',
+    changeSummary: '',
+    permissionCodes: [],
+    benefits: [],
+    mediaLibraryPolicy: {
+      storageQuotaBytes: '2147483648',
+      allowUserUpload: true,
+      allowPublicSharing: true,
+    },
+    videoGenerationPolicy: {
+      enabled: true,
+      allowedDurations: ['5', '10'],
+      allowedResolutions: ['720p', '1080p'],
+      defaultDuration: '10',
+      defaultResolution: '1080p',
+    },
+  });
+
+  assert.deepEqual(body.videoGenerationPolicy?.allowedDurations, [5, 10]);
+  assert.equal(body.videoGenerationPolicy?.defaultDuration, 10);
+});
+
+test('parseMembershipDraftBody rejects video defaultDuration outside allowedDurations', () => {
+  assert.throws(
+    () =>
+      parseMembershipDraftBody({
+        displayName: 'Team Yearly',
+        billingPeriod: 'year',
+        priceCents: '99900',
+        currency: 'CNY',
+        permissionCodes: [],
+        benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: '2147483648',
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
+        videoGenerationPolicy: {
+          enabled: true,
+          allowedDurations: ['5', '10'],
+          allowedResolutions: ['720p', '1080p'],
+          defaultDuration: '15',
+          defaultResolution: '1080p',
+        },
+      }),
+    ZodError,
+  );
+});
+
+test('parseMembershipDraftBody rejects video defaultResolution outside allowedResolutions', () => {
+  assert.throws(
+    () =>
+      parseMembershipDraftBody({
+        displayName: 'Team Yearly',
+        billingPeriod: 'year',
+        priceCents: '99900',
+        currency: 'CNY',
+        permissionCodes: [],
+        benefits: [],
+        mediaLibraryPolicy: {
+          storageQuotaBytes: '2147483648',
+          allowUserUpload: true,
+          allowPublicSharing: true,
+        },
+        videoGenerationPolicy: {
+          enabled: true,
+          allowedDurations: ['5', '10'],
+          allowedResolutions: ['720p', '1080p'],
+          defaultDuration: '10',
+          defaultResolution: '4k',
+        },
+      }),
+    ZodError,
+  );
 });
 
 test('parseMembershipDraftBody rejects missing display name', () => {

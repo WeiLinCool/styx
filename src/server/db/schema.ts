@@ -208,6 +208,7 @@ export const referralConversionTrigger = pgEnum('referral_conversion_trigger', [
 export const agentArtifactKind = pgEnum('agent_artifact_kind', [
   'text',
   'image',
+  'audio',
   'video',
   'document',
   'workflow',
@@ -742,6 +743,44 @@ export const membershipPlanVersionBenefits = pgTable(
       table.code,
     ),
     index('membership_plan_version_benefits_version_id_idx').on(table.versionId),
+  ],
+);
+
+export const videoStylePresets = pgTable(
+  'video_style_presets',
+  {
+    id,
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    prompt: text('prompt').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('video_style_presets_code_unique_idx').on(table.code),
+    index('video_style_presets_enabled_sort_idx').on(table.enabled, table.sortOrder),
+  ],
+);
+
+export const membershipPlanVideoConfigs = pgTable(
+  'membership_plan_video_configs',
+  {
+    id,
+    planVersionId: uuid('plan_version_id')
+      .notNull()
+      .references(() => membershipPlanVersions.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(false),
+    allowedDurations: jsonb('allowed_durations').$type<number[]>().notNull().default([]),
+    allowedResolutions: jsonb('allowed_resolutions').$type<string[]>().notNull().default([]),
+    defaultDuration: integer('default_duration').notNull(),
+    defaultResolution: text('default_resolution').notNull(),
+    createdAt: now,
+    updatedAt: updated,
+  },
+  (table) => [
+    uniqueIndex('membership_plan_video_configs_plan_version_unique_idx').on(table.planVersionId),
   ],
 );
 

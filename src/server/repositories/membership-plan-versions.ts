@@ -6,6 +6,11 @@ import {
   getAdminPermissionResourceOverview,
   type AdminPermissionResourceOverview,
 } from './permission-resources';
+import {
+  getVideoGenerationConfigRepository,
+  normalizeVideoPlanConfig,
+  type VideoPlanConfig,
+} from './video-generation-config';
 
 export type MembershipPlanVersionStatus = 'draft' | 'scheduled' | 'published' | 'archived';
 
@@ -39,6 +44,7 @@ export type MembershipPlanVersionRecord = {
   changeSummary: string | null;
   benefits: MembershipVersionBenefitInput[];
   mediaLibraryPolicy: MembershipMediaLibraryPolicy;
+  videoGenerationPolicy: VideoPlanConfig | null;
   permissionCodes: string[];
 };
 
@@ -60,6 +66,7 @@ type DraftInput = {
   changeSummary: string | null;
   benefits: MembershipVersionBenefitInput[];
   mediaLibraryPolicy: MembershipMediaLibraryPolicy;
+  videoGenerationPolicy: VideoPlanConfig | null;
   permissionCodes: string[];
 };
 
@@ -122,11 +129,24 @@ function cloneMediaPolicy(policy: MembershipMediaLibraryPolicy): MembershipMedia
   };
 }
 
+function cloneVideoPolicy(policy: VideoPlanConfig | null): VideoPlanConfig | null {
+  return policy
+    ? {
+        enabled: policy.enabled,
+        allowedDurations: [...policy.allowedDurations],
+        allowedResolutions: [...policy.allowedResolutions],
+        defaultDuration: policy.defaultDuration,
+        defaultResolution: policy.defaultResolution,
+      }
+    : null;
+}
+
 function cloneVersion(version: MembershipPlanVersionRecord): MembershipPlanVersionRecord {
   return {
     ...version,
     benefits: version.benefits.map(cloneBenefit),
     mediaLibraryPolicy: cloneMediaPolicy(version.mediaLibraryPolicy),
+    videoGenerationPolicy: cloneVideoPolicy(version.videoGenerationPolicy),
     permissionCodes: [...version.permissionCodes].sort(),
   };
 }
@@ -139,6 +159,7 @@ function toMembershipPlanVersionRecord(params: {
   plan: { id: string; code: string };
   version: typeof schema.membershipPlanVersions.$inferSelect;
   benefits: MembershipVersionBenefitInput[];
+  videoGenerationPolicy?: VideoPlanConfig | null;
   permissionCodes: string[];
 }): MembershipPlanVersionRecord {
   return {
@@ -161,6 +182,7 @@ function toMembershipPlanVersionRecord(params: {
       allowUserUpload: params.version.mediaAllowUserUpload,
       allowPublicSharing: params.version.mediaAllowPublicSharing,
     },
+    videoGenerationPolicy: cloneVideoPolicy(params.videoGenerationPolicy ?? null),
     permissionCodes: [...params.permissionCodes].sort(),
   };
 }
@@ -205,6 +227,7 @@ function buildSeedVersions(plans = buildSeedPlans()): MembershipPlanVersionRecor
         allowUserUpload: true,
         allowPublicSharing: false,
       },
+      videoGenerationPolicy: null,
       permissionCodes: ['action.user_center.copy_invite_code', 'page.user_center'],
     },
     {
@@ -235,6 +258,7 @@ function buildSeedVersions(plans = buildSeedPlans()): MembershipPlanVersionRecor
         allowUserUpload: true,
         allowPublicSharing: true,
       },
+      videoGenerationPolicy: null,
       permissionCodes: ['page.user_center'],
     },
   ];
@@ -303,6 +327,7 @@ export function createMembershipPlanVersionHarness(input: HarnessInput = {}): Mu
         changeSummary: inputDraft.changeSummary,
         benefits: inputDraft.benefits.map(cloneBenefit),
         mediaLibraryPolicy: cloneMediaPolicy(inputDraft.mediaLibraryPolicy),
+        videoGenerationPolicy: cloneVideoPolicy(inputDraft.videoGenerationPolicy),
         permissionCodes: [...new Set(inputDraft.permissionCodes)].sort(),
       };
 
@@ -510,6 +535,22 @@ async function listVersionPermissionCodes(versionIds: string[]) {
   return grouped;
 }
 
+async function listVersionVideoPolicies(versionIds: string[]) {
+  const policies = new Map<string, VideoPlanConfig | null>();
+  if (versionIds.length === 0) {
+    return policies;
+  }
+
+  const repository = getVideoGenerationConfigRepository();
+  await Promise.all(
+    versionIds.map(async (versionId) => {
+      policies.set(versionId, await repository.getVideoPlanConfigByVersionId(versionId));
+    }),
+  );
+
+  return policies;
+}
+
 export async function listVersionsByPlanCode(planCode: string): Promise<MembershipPlanVersionRecord[]> {
   const database = requireDb('membership plan versions');
   const rows = await database
@@ -526,12 +567,14 @@ export async function listVersionsByPlanCode(planCode: string): Promise<Membersh
   const versionIds = rows.map((row) => row.version.id);
   const benefitsByVersion = await listVersionBenefits(versionIds);
   const permissionCodesByVersion = await listVersionPermissionCodes(versionIds);
+  const videoPoliciesByVersion = await listVersionVideoPolicies(versionIds);
 
   return rows.map((row) =>
     toMembershipPlanVersionRecord({
       plan: { id: row.planId, code: row.planCode },
       version: row.version,
       benefits: benefitsByVersion.get(row.version.id) ?? [],
+      videoGenerationPolicy: videoPoliciesByVersion.get(row.version.id) ?? null,
       permissionCodes: permissionCodesByVersion.get(row.version.id) ?? [],
     }),
   );
@@ -565,11 +608,13 @@ export async function getMembershipPlanVersionById(
 
   const benefitsByVersion = await listVersionBenefits([row.version.id]);
   const permissionCodesByVersion = await listVersionPermissionCodes([row.version.id]);
+  const videoPoliciesByVersion = await listVersionVideoPolicies([row.version.id]);
 
   return toMembershipPlanVersionRecord({
     plan: { id: row.planId, code: row.planCode },
     version: row.version,
     benefits: benefitsByVersion.get(row.version.id) ?? [],
+    videoGenerationPolicy: videoPoliciesByVersion.get(row.version.id) ?? null,
     permissionCodes: permissionCodesByVersion.get(row.version.id) ?? [],
   });
 }
@@ -594,11 +639,13 @@ export async function getMembershipPlanWorkspace(planId: string): Promise<Member
   const versionIds = versions.map((version) => version.id);
   const benefitsByVersion = await listVersionBenefits(versionIds);
   const permissionCodesByVersion = await listVersionPermissionCodes(versionIds);
+  const videoPoliciesByVersion = await listVersionVideoPolicies(versionIds);
   const records = versions.map((version) =>
     toMembershipPlanVersionRecord({
       plan,
       version,
       benefits: benefitsByVersion.get(version.id) ?? [],
+      videoGenerationPolicy: videoPoliciesByVersion.get(version.id) ?? null,
       permissionCodes: permissionCodesByVersion.get(version.id) ?? [],
     }),
   );
@@ -727,20 +774,6 @@ export async function getAdminMembershipWorkspacePageData(): Promise<AdminMember
   };
 }
 
-function toDraftBody(input: DraftInput) {
-  return {
-    displayName: input.displayName,
-    description: input.description,
-    billingPeriod: input.billingPeriod,
-    priceCents: input.priceCents,
-    currency: input.currency,
-    changeSummary: input.changeSummary,
-    benefits: input.benefits.map(cloneBenefit),
-    mediaLibraryPolicy: cloneMediaPolicy(input.mediaLibraryPolicy),
-    permissionCodes: [...new Set(input.permissionCodes)].sort(),
-  };
-}
-
 export async function createOrUpdateMembershipPlanDraft(
   input: DraftInput,
 ): Promise<MembershipPlanVersionRecord> {
@@ -751,32 +784,16 @@ export async function createOrUpdateMembershipPlanDraft(
     0,
   ) + (workspace.draftVersion ? 0 : 1);
 
-  const [draft] = await database
-    .insert(schema.membershipPlanVersions)
-    .values({
-      id: workspace.draftVersion?.id,
-      planId: input.planId,
-      versionNumber: workspace.draftVersion?.versionNumber ?? nextVersionNumber,
-      status: 'draft',
-      effectiveFrom: null,
-      publishedAt: null,
-      displayName: input.displayName,
-      description: input.description,
-      billingPeriod: input.billingPeriod,
-      priceCents: input.priceCents,
-      currency: input.currency,
-      changeSummary: input.changeSummary,
-      mediaStorageQuotaBytes: input.mediaLibraryPolicy.storageQuotaBytes,
-      mediaAllowUserUpload: input.mediaLibraryPolicy.allowUserUpload,
-      mediaAllowPublicSharing: input.mediaLibraryPolicy.allowPublicSharing,
-      metadata: {
-        source: 'admin_membership_workspace',
-      },
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: schema.membershipPlanVersions.id,
-      set: {
+  await database.transaction(async (tx) => {
+    const [draft] = await tx
+      .insert(schema.membershipPlanVersions)
+      .values({
+        id: workspace.draftVersion?.id,
+        planId: input.planId,
+        versionNumber: workspace.draftVersion?.versionNumber ?? nextVersionNumber,
+        status: 'draft',
+        effectiveFrom: null,
+        publishedAt: null,
         displayName: input.displayName,
         description: input.description,
         billingPeriod: input.billingPeriod,
@@ -786,62 +803,145 @@ export async function createOrUpdateMembershipPlanDraft(
         mediaStorageQuotaBytes: input.mediaLibraryPolicy.storageQuotaBytes,
         mediaAllowUserUpload: input.mediaLibraryPolicy.allowUserUpload,
         mediaAllowPublicSharing: input.mediaLibraryPolicy.allowPublicSharing,
+        metadata: {
+          source: 'admin_membership_workspace',
+        },
         updatedAt: new Date(),
-      },
-    })
-    .returning();
-
-  if (!draft) {
-    throw new Error('Membership draft could not be saved.');
-  }
-
-  await database
-    .delete(schema.membershipPlanVersionBenefits)
-    .where(eq(schema.membershipPlanVersionBenefits.versionId, draft.id));
-  await database
-    .delete(schema.membershipPlanVersionPermissionBindings)
-    .where(eq(schema.membershipPlanVersionPermissionBindings.versionId, draft.id));
-
-  if (input.benefits.length > 0) {
-    await database.insert(schema.membershipPlanVersionBenefits).values(
-      input.benefits.map((benefit) => ({
-        versionId: draft.id,
-        code: benefit.code,
-        name: benefit.name,
-        kind: benefit.kind,
-        quantity: benefit.quantity,
-        unit: benefit.unit,
-      })),
-    );
-  }
-
-  if (input.permissionCodes.length > 0) {
-    const resources = await database
-      .select({
-        id: schema.permissionResources.id,
-        code: schema.permissionResources.code,
       })
-      .from(schema.permissionResources)
-      .where(inArray(schema.permissionResources.code, [...new Set(input.permissionCodes)]));
+      .onConflictDoUpdate({
+        target: schema.membershipPlanVersions.id,
+        set: {
+          displayName: input.displayName,
+          description: input.description,
+          billingPeriod: input.billingPeriod,
+          priceCents: input.priceCents,
+          currency: input.currency,
+          changeSummary: input.changeSummary,
+          mediaStorageQuotaBytes: input.mediaLibraryPolicy.storageQuotaBytes,
+          mediaAllowUserUpload: input.mediaLibraryPolicy.allowUserUpload,
+          mediaAllowPublicSharing: input.mediaLibraryPolicy.allowPublicSharing,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
-    await database.insert(schema.membershipPlanVersionPermissionBindings).values(
-      resources.map((resource) => ({
-        versionId: draft.id,
-        permissionResourceId: resource.id,
-      })),
-    );
+    if (!draft) {
+      throw new Error('Membership draft could not be saved.');
+    }
+
+    await tx
+      .delete(schema.membershipPlanVersionBenefits)
+      .where(eq(schema.membershipPlanVersionBenefits.versionId, draft.id));
+    await tx
+      .delete(schema.membershipPlanVersionPermissionBindings)
+      .where(eq(schema.membershipPlanVersionPermissionBindings.versionId, draft.id));
+
+    if (input.benefits.length > 0) {
+      await tx.insert(schema.membershipPlanVersionBenefits).values(
+        input.benefits.map((benefit) => ({
+          versionId: draft.id,
+          code: benefit.code,
+          name: benefit.name,
+          kind: benefit.kind,
+          quantity: benefit.quantity,
+          unit: benefit.unit,
+        })),
+      );
+    }
+
+    if (input.permissionCodes.length > 0) {
+      const resources = await tx
+        .select({
+          id: schema.permissionResources.id,
+          code: schema.permissionResources.code,
+        })
+        .from(schema.permissionResources)
+        .where(inArray(schema.permissionResources.code, [...new Set(input.permissionCodes)]));
+
+      await tx.insert(schema.membershipPlanVersionPermissionBindings).values(
+        resources.map((resource) => ({
+          versionId: draft.id,
+          permissionResourceId: resource.id,
+        })),
+      );
+    }
+
+    await persistMembershipVersionVideoGenerationPolicy(draft.id, input.videoGenerationPolicy, {
+      async clearVideoPlanConfig(versionId) {
+        await tx
+          .delete(schema.membershipPlanVideoConfigs)
+          .where(eq(schema.membershipPlanVideoConfigs.planVersionId, versionId));
+      },
+      async upsertVideoPlanConfig(versionId, policy) {
+        const config = normalizeVideoPlanConfig(policy);
+        const [row] = await tx
+          .insert(schema.membershipPlanVideoConfigs)
+          .values({
+            planVersionId: versionId,
+            enabled: config.enabled,
+            allowedDurations: config.allowedDurations,
+            allowedResolutions: config.allowedResolutions,
+            defaultDuration: config.defaultDuration,
+            defaultResolution: config.defaultResolution,
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: schema.membershipPlanVideoConfigs.planVersionId,
+            set: {
+              enabled: config.enabled,
+              allowedDurations: config.allowedDurations,
+              allowedResolutions: config.allowedResolutions,
+              defaultDuration: config.defaultDuration,
+              defaultResolution: config.defaultResolution,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        if (!row) {
+          throw new Error('Video plan config could not be saved.');
+        }
+
+        return config;
+      },
+    });
+  });
+
+  const savedDraft = (await getMembershipPlanWorkspace(input.planId)).draftVersion;
+  if (!savedDraft) {
+    throw new Error(`Draft for ${input.planId} could not be loaded after save.`);
   }
 
-  return {
-    id: draft.id,
-    planId: input.planId,
-    planCode: workspace.plan.code,
-    versionNumber: draft.versionNumber,
-    status: 'draft',
-    effectiveFrom: null,
-    publishedAt: null,
-    ...toDraftBody(input),
-  };
+  return savedDraft;
+}
+
+export async function persistMembershipVersionVideoGenerationPolicy(
+  versionId: string,
+  policy: VideoPlanConfig | null,
+  repository: {
+    upsertVideoPlanConfig?: (versionId: string, policy: VideoPlanConfig) => Promise<VideoPlanConfig>;
+    clearVideoPlanConfig?: (versionId: string) => Promise<void>;
+  } = {},
+) {
+  if (!policy) {
+    if (repository.clearVideoPlanConfig) {
+      await repository.clearVideoPlanConfig(versionId);
+      return;
+    }
+
+    const database = requireDb('video plan config clear');
+    await database
+      .delete(schema.membershipPlanVideoConfigs)
+      .where(eq(schema.membershipPlanVideoConfigs.planVersionId, versionId));
+    return;
+  }
+
+  const upsertVideoPlanConfig =
+    repository.upsertVideoPlanConfig ?? getVideoGenerationConfigRepository().upsertVideoPlanConfig;
+  if (!upsertVideoPlanConfig) {
+    throw new Error('Video plan config repository does not support draft updates.');
+  }
+  await upsertVideoPlanConfig(versionId, policy);
 }
 
 export async function publishMembershipPlanDraftInDb(
@@ -940,6 +1040,7 @@ export async function duplicateMembershipPlanVersionAsDraftInDb(
     changeSummary: source.changeSummary,
     benefits: source.benefits,
     mediaLibraryPolicy: source.mediaLibraryPolicy,
+    videoGenerationPolicy: source.videoGenerationPolicy,
     permissionCodes: source.permissionCodes,
   });
 }

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Play, Volume2, VolumeX, Film, ImageIcon,
+  Play, Film, ImageIcon, Music,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
@@ -13,11 +13,14 @@ import { ProtectedAccountPanel } from '@/features/account/protected-account-pane
 import {
   createAgentRun,
   createAgentRunEventsUrl,
-  listVideoModels,
+  getVideoGenerationConfig,
+  listSavedMediaAssets,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
   saveGeneratedMedia,
   syncAgentRun,
+  uploadUserMedia,
+  type VideoGenerationConfigDto,
   type VideoModelOption,
 } from '@/features/public/agent-runtime-client';
 import {
@@ -26,30 +29,68 @@ import {
   nextReloadKey,
   reconcileSelectedModelId,
 } from '@/features/public/model-availability';
-import type { DirectMediaResultDto } from '@/server/agent/types';
+import type { DirectMediaResultDto, GeneratedMediaAssetDto } from '@/server/agent/types';
 
-const VIDEO_STYLES = [
-  '石头印画', '水墨意境', '赛博朋克', '梦幻童话', '极简抽象', '复古胶片',
-];
+const IMAGE_UPLOAD_ACCEPT = 'image/png,image/jpeg,image/webp';
+const AUDIO_UPLOAD_ACCEPT = 'audio/mpeg,audio/wav,audio/mp4,audio/x-wav';
 
-const DURATIONS = ['5秒', '10秒'];
+const emptyVideoConfig: VideoGenerationConfigDto = {
+  enabled: false,
+  upgradeRequired: false,
+  message: null,
+  styles: [],
+  durations: [],
+  resolutions: [],
+  defaults: {
+    styleCode: null,
+    durationSeconds: null,
+    resolution: null,
+  },
+  models: [],
+};
 
-const CLARITIES = [
-  { label: '480P', desc: '标清' },
-  { label: '720P', desc: '高清' },
-  { label: '1080P', desc: '全高清' },
-];
+function reconcileSelectedValue<T extends string | number>(
+  values: T[],
+  priorValue: T | null,
+  defaultValue: T | null,
+): T | null {
+  if (priorValue !== null && values.includes(priorValue)) {
+    return priorValue;
+  }
+  if (defaultValue !== null && values.includes(defaultValue)) {
+    return defaultValue;
+  }
+  return values[0] ?? null;
+}
+
+function describeMediaAsset(asset: GeneratedMediaAssetDto) {
+  const details = [asset.mimeType, asset.originalFilename].filter(Boolean).join(' · ');
+  return details ? `${asset.title} (${details})` : asset.title;
+}
+
+function addMediaAssetIfMissing(
+  assets: GeneratedMediaAssetDto[],
+  asset: GeneratedMediaAssetDto,
+) {
+  return assets.some((current) => current.id === asset.id) ? assets : [asset, ...assets];
+}
 
 export default function VideoGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
+  const [videoConfig, setVideoConfig] = useState<VideoGenerationConfigDto>(emptyVideoConfig);
   const [videoModels, setVideoModels] = useState<VideoModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [modelAvailability, setModelAvailability] = useState(createInitialModelAvailabilityState());
-  const [selectedStyle, setSelectedStyle] = useState('石头印画');
-  const [selectedDuration, setSelectedDuration] = useState('5秒');
-  const [selectedClarity, setSelectedClarity] = useState('720P');
-  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [selectedStyleCode, setSelectedStyleCode] = useState<string | null>(null);
+  const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
+  const [resolution, setResolution] = useState<string | null>(null);
+  const [savedImageAssets, setSavedImageAssets] = useState<GeneratedMediaAssetDto[]>([]);
+  const [savedAudioAssets, setSavedAudioAssets] = useState<GeneratedMediaAssetDto[]>([]);
+  const [selectedImageAssetId, setSelectedImageAssetId] = useState('');
+  const [selectedAudioAssetId, setSelectedAudioAssetId] = useState('');
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [pendingAudioFile, setPendingAudioFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
@@ -58,32 +99,53 @@ export default function VideoGenPage() {
   const [generatedVideo, setGeneratedVideo] = useState<DirectMediaResultDto | null>(null);
   const [generatedVideoRunId, setGeneratedVideoRunId] = useState<string | null>(null);
   const videoReceivedRunIdRef = useRef<string | null>(null);
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
   const modelLoading = modelAvailability.status === 'loading';
   const modelMaintenanceMessage =
     modelAvailability.status === 'maintenance' ? buildUnavailableModelMessage() : null;
+  const configDisabledMessage =
+    isLoggedIn && user && !requiresActivation(user) && !modelLoading && !videoConfig.enabled
+      ? videoConfig.message ??
+        (videoConfig.upgradeRequired ? 'AI 视频生成是会员权益，开通会员后即可使用。' : '视频生成暂未开放，请稍后再试。')
+      : null;
   const submitDisabledReason = !isLoggedIn
     ? null
     : !user || requiresActivation(user)
       ? '账号激活后可使用'
       : modelAvailability.status === 'loading'
-        ? '模型列表加载中'
-        : modelAvailability.status === 'maintenance'
-          ? buildUnavailableModelMessage()
-          : !selectedModel
+        ? '视频配置加载中'
+        : !videoConfig.enabled
+          ? configDisabledMessage
+          : modelAvailability.status === 'maintenance'
             ? buildUnavailableModelMessage()
-            : null;
+            : !selectedModel
+              ? buildUnavailableModelMessage()
+              : !selectedStyleCode || !durationSeconds || !resolution
+                ? '请选择完整视频参数'
+                : null;
 
   useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user)) {
+      setVideoConfig(emptyVideoConfig);
       setVideoModels([]);
       setSelectedModel(null);
+      setSelectedStyleCode(null);
+      setDurationSeconds(null);
+      setResolution(null);
+      setSavedImageAssets([]);
+      setSavedAudioAssets([]);
+      setSelectedImageAssetId('');
+      setSelectedAudioAssetId('');
+      setPendingImageFile(null);
+      setPendingAudioFile(null);
       setModelAvailability(createInitialModelAvailabilityState());
       return;
     }
 
     let cancelled = false;
 
-    async function loadVideoModels() {
+    async function loadVideoConfig() {
       setModelAvailability((current) => ({
         ...current,
         status: 'loading',
@@ -91,25 +153,47 @@ export default function VideoGenPage() {
       }));
 
       try {
-        const models = await listVideoModels();
+        const config = await getVideoGenerationConfig();
         if (cancelled) {
           return;
         }
 
-        setVideoModels(models);
-        setSelectedModel((current) => reconcileSelectedModelId(models, current));
+        setVideoConfig(config);
+        setVideoModels(config.models);
+        setSelectedModel((current) => reconcileSelectedModelId(config.models, current));
+        setSelectedStyleCode((current) =>
+          reconcileSelectedValue(
+            config.styles.map((style) => style.code),
+            current,
+            config.defaults.styleCode,
+          ),
+        );
+        setDurationSeconds((current) =>
+          reconcileSelectedValue(config.durations, current, config.defaults.durationSeconds),
+        );
+        setResolution((current) =>
+          reconcileSelectedValue(
+            config.resolutions.map((item) => item.value),
+            current,
+            config.defaults.resolution,
+          ),
+        );
         setModelAvailability((current) => ({
           ...current,
-          status: models.length > 0 ? 'ready' : 'maintenance',
-          message: models.length > 0 ? null : buildUnavailableModelMessage(),
+          status: config.enabled && config.models.length > 0 ? 'ready' : 'maintenance',
+          message: config.enabled && config.models.length === 0 ? buildUnavailableModelMessage() : config.message,
         }));
       } catch {
         if (cancelled) {
           return;
         }
 
+        setVideoConfig(emptyVideoConfig);
         setVideoModels([]);
         setSelectedModel(null);
+        setSelectedStyleCode(null);
+        setDurationSeconds(null);
+        setResolution(null);
         setModelAvailability((current) => ({
           ...current,
           status: 'maintenance',
@@ -118,11 +202,46 @@ export default function VideoGenPage() {
       }
     }
 
-    void loadVideoModels();
+    void loadVideoConfig();
     return () => {
       cancelled = true;
     };
   }, [isLoggedIn, user, modelAvailability.reloadKey]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user) || !videoConfig.enabled) {
+      setSavedImageAssets([]);
+      setSavedAudioAssets([]);
+      setSelectedImageAssetId('');
+      setSelectedAudioAssetId('');
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadSavedMediaAssets() {
+      try {
+        const assets = await listSavedMediaAssets();
+        if (cancelled) {
+          return;
+        }
+
+        setSavedImageAssets(assets.filter((asset) => asset.kind === 'image' && asset.status === 'ready'));
+        setSavedAudioAssets(assets.filter((asset) => asset.kind === 'audio' && asset.status === 'ready'));
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setSavedImageAssets([]);
+        setSavedAudioAssets([]);
+      }
+    }
+
+    void loadSavedMediaAssets();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user, videoConfig.enabled]);
 
   useEffect(() => {
     if (!streamRunId) {
@@ -214,13 +333,51 @@ export default function VideoGenPage() {
     };
   }, [streamRunId]);
 
+  const clearPendingImageFile = () => {
+    setPendingImageFile(null);
+    if (imageFileInputRef.current) {
+      imageFileInputRef.current.value = '';
+    }
+  };
+
+  const clearPendingAudioFile = () => {
+    setPendingAudioFile(null);
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
+    }
+  };
+
+  const selectImageAsset = (assetId: string) => {
+    setSelectedImageAssetId(assetId);
+    if (assetId) {
+      clearPendingImageFile();
+    }
+  };
+
+  const selectAudioAsset = (assetId: string) => {
+    setSelectedAudioAssetId(assetId);
+    if (assetId) {
+      clearPendingAudioFile();
+    }
+  };
+
   const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
     if (isGenerating) return;
+    if (!videoConfig.enabled) {
+      setGenerationMessage(null);
+      setGenerationError(configDisabledMessage ?? '当前账号暂不可使用视频生成。');
+      return;
+    }
     if (!selectedModel) {
       setGenerationMessage(null);
       setGenerationError(modelLoading ? '模型列表加载中' : buildUnavailableModelMessage());
+      return;
+    }
+    if (!selectedStyleCode || !durationSeconds || !resolution) {
+      setGenerationMessage(null);
+      setGenerationError('请选择完整视频参数后再开始生成。');
       return;
     }
     if (!prompt.trim()) {
@@ -237,15 +394,43 @@ export default function VideoGenPage() {
     videoReceivedRunIdRef.current = null;
 
     try {
+      let imageAssetId = selectedImageAssetId || null;
+      let audioAssetId = selectedAudioAssetId || null;
+
+      if (pendingImageFile) {
+        setGenerationMessage('正在上传参考图...');
+        const asset = await uploadUserMedia({ file: pendingImageFile });
+        if (asset.kind !== 'image') {
+          throw new Error('上传的参考图类型无效，请选择图片文件。');
+        }
+        imageAssetId = asset.id;
+        setSavedImageAssets((current) => addMediaAssetIfMissing(current, asset));
+        setSelectedImageAssetId(asset.id);
+        clearPendingImageFile();
+      }
+
+      if (pendingAudioFile) {
+        setGenerationMessage('正在上传音频素材...');
+        const asset = await uploadUserMedia({ file: pendingAudioFile });
+        if (asset.kind !== 'audio') {
+          throw new Error('上传的音频素材类型无效，请选择音频文件。');
+        }
+        audioAssetId = asset.id;
+        setSavedAudioAssets((current) => addMediaAssetIfMissing(current, asset));
+        setSelectedAudioAssetId(asset.id);
+        clearPendingAudioFile();
+      }
+
       const { run } = await createAgentRun({
         taskType: 'video',
         prompt: prompt.trim(),
         modelId: selectedModel,
         input: {
-          style: selectedStyle,
-          duration: selectedDuration,
-          clarity: selectedClarity,
-          audioEnabled,
+          styleCode: selectedStyleCode,
+          durationSeconds,
+          resolution,
+          ...(imageAssetId ? { imageAssetId } : {}),
+          ...(audioAssetId ? { audioAssetId } : {}),
         },
       });
       if (run.status === 'failed') {
@@ -359,7 +544,32 @@ export default function VideoGenPage() {
               {!isLoggedIn ? (
                 <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">登录后查看可用模型</div>
               ) : modelLoading ? (
-                <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">模型加载中...</div>
+                <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">视频配置加载中...</div>
+              ) : configDisabledMessage ? (
+                <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                  <p>{configDisabledMessage}</p>
+                  {videoConfig.upgradeRequired ? (
+                    <Link
+                      href="/membership"
+                      className="mt-2 inline-flex text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                    >
+                      查看会员权益
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModelAvailability((current) => ({
+                          ...current,
+                          reloadKey: nextReloadKey(current.reloadKey),
+                        }))
+                      }
+                      className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                    >
+                      重新加载配置
+                    </button>
+                  )}
+                </div>
               ) : modelMaintenanceMessage ? (
                 <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
                   <p>{modelMaintenanceMessage}</p>
@@ -422,6 +632,7 @@ export default function VideoGenPage() {
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="描述你想生成的视频..."
                 rows={3}
+                disabled={Boolean(configDisabledMessage)}
                 className="w-full resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-ring"
               />
             </div>
@@ -430,17 +641,22 @@ export default function VideoGenPage() {
             <div>
               <label className="mb-2 block text-sm font-medium">视频风格</label>
               <div className="flex flex-wrap gap-2">
-                {VIDEO_STYLES.map((style) => (
+                {videoConfig.styles.length > 0 ? videoConfig.styles.map((style) => (
                   <button
-                    key={style}
-                    onClick={() => setSelectedStyle(style)}
+                    key={style.code}
+                    type="button"
+                    disabled={Boolean(configDisabledMessage)}
+                    onClick={() => {
+                      setSelectedStyleCode(style.code);
+                      setPrompt(style.prompt);
+                    }}
                     className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm transition-all ${
-                      selectedStyle === style ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground'
+                      selectedStyleCode === style.code ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground'
                     }`}
                   >
-                    {style}
+                    {style.name}
                   </button>
-                ))}
+                )) : <p className="text-xs text-muted-foreground">暂无可用风格</p>}
               </div>
             </div>
 
@@ -448,17 +664,19 @@ export default function VideoGenPage() {
             <div>
               <label className="mb-2 block text-sm font-medium">时长</label>
               <div className="flex gap-2">
-                {DURATIONS.map((d) => (
+                {videoConfig.durations.length > 0 ? videoConfig.durations.map((duration) => (
                   <button
-                    key={d}
-                    onClick={() => setSelectedDuration(d)}
+                    key={duration}
+                    type="button"
+                    disabled={Boolean(configDisabledMessage)}
+                    onClick={() => setDurationSeconds(duration)}
                     className={`cursor-pointer rounded-lg px-4 py-2 text-sm ${
-                      selectedDuration === d ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground'
+                      durationSeconds === duration ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground'
                     }`}
                   >
-                    {d}
+                    {duration}秒
                   </button>
-                ))}
+                )) : <p className="text-xs text-muted-foreground">暂无可用时长</p>}
               </div>
             </div>
 
@@ -466,43 +684,148 @@ export default function VideoGenPage() {
             <div>
               <label className="mb-2 block text-sm font-medium">清晰度</label>
               <div className="flex gap-2">
-                {CLARITIES.map((c) => (
+                {videoConfig.resolutions.length > 0 ? videoConfig.resolutions.map((item) => (
                   <button
-                    key={c.label}
-                    onClick={() => setSelectedClarity(c.label)}
+                    key={item.value}
+                    type="button"
+                    disabled={Boolean(configDisabledMessage)}
+                    onClick={() => setResolution(item.value)}
                     className={`cursor-pointer rounded-lg px-4 py-2 text-sm ${
-                      selectedClarity === c.label ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground'
+                      resolution === item.value ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground'
                     }`}
                   >
-                    <div className="font-medium">{c.label}</div>
-                    <div className="text-[10px] opacity-60">{c.desc}</div>
+                    <div className="font-medium">{item.label}</div>
                   </button>
-                ))}
+                )) : <p className="text-xs text-muted-foreground">暂无可用清晰度</p>}
               </div>
             </div>
 
-            {/* Audio */}
-            <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
-              <div className="flex items-center gap-2">
-                {audioEnabled ? <Volume2 size={16} className="text-muted-foreground" /> : <VolumeX size={16} className="text-muted-foreground" />}
-                <span className="text-sm">音频</span>
-              </div>
-              <button
-                onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`relative h-6 w-11 cursor-pointer rounded-full transition-colors ${audioEnabled ? 'bg-primary' : 'bg-secondary'}`}
-              >
-                <div className={`absolute top-0.5 h-5 w-5 rounded-full transition-all ${audioEnabled ? 'right-0.5 bg-primary-foreground' : 'left-0.5 bg-muted-foreground'}`} />
-              </button>
-            </div>
-
-            {/* Reference Image */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">参考首帧图（可选）</label>
-              <div className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-border bg-card py-8 transition-colors hover:border-ring hover:bg-secondary/50">
-                <div className="text-center">
-                  <ImageIcon size={20} className="mx-auto mb-1 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">上传参考图</p>
+            {/* Materials */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-border bg-card p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <ImageIcon size={15} className="text-muted-foreground" />
+                  <span className="text-sm font-medium">参考图（可选）</span>
                 </div>
+                <label htmlFor="video-reference-image-input" className="sr-only">
+                  上传参考图
+                </label>
+                <input
+                  id="video-reference-image-input"
+                  ref={imageFileInputRef}
+                  type="file"
+                  accept={IMAGE_UPLOAD_ACCEPT}
+                  disabled={Boolean(configDisabledMessage) || isGenerating}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setPendingImageFile(file);
+                    if (file) setSelectedImageAssetId('');
+                  }}
+                  className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground"
+                />
+                <label htmlFor="video-reference-image-asset" className="sr-only">
+                  从媒体库选择参考图
+                </label>
+                <select
+                  id="video-reference-image-asset"
+                  value={selectedImageAssetId}
+                  disabled={Boolean(configDisabledMessage) || isGenerating || pendingImageFile !== null}
+                  onChange={(event) => selectImageAsset(event.target.value)}
+                  className="mt-2 h-9 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">从媒体库选择</option>
+                  {savedImageAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>{describeMediaAsset(asset)}</option>
+                  ))}
+                </select>
+                {pendingImageFile ? (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs text-muted-foreground">{pendingImageFile.name}</p>
+                    <button
+                      type="button"
+                      disabled={isGenerating}
+                      onClick={clearPendingImageFile}
+                      aria-label="移除待上传参考图"
+                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      移除
+                    </button>
+                  </div>
+                ) : null}
+                {selectedImageAssetId ? (
+                  <button
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => setSelectedImageAssetId('')}
+                    aria-label="清除媒体库参考图选择"
+                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    清除媒体库选择
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="rounded-xl border border-border bg-card p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <Music size={15} className="text-muted-foreground" />
+                  <span className="text-sm font-medium">音频（可选）</span>
+                </div>
+                <label htmlFor="video-audio-input" className="sr-only">
+                  上传音频素材
+                </label>
+                <input
+                  id="video-audio-input"
+                  ref={audioFileInputRef}
+                  type="file"
+                  accept={AUDIO_UPLOAD_ACCEPT}
+                  disabled={Boolean(configDisabledMessage) || isGenerating}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setPendingAudioFile(file);
+                    if (file) setSelectedAudioAssetId('');
+                  }}
+                  className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground"
+                />
+                <label htmlFor="video-audio-asset" className="sr-only">
+                  从媒体库选择音频素材
+                </label>
+                <select
+                  id="video-audio-asset"
+                  value={selectedAudioAssetId}
+                  disabled={Boolean(configDisabledMessage) || isGenerating || pendingAudioFile !== null}
+                  onChange={(event) => selectAudioAsset(event.target.value)}
+                  className="mt-2 h-9 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">从媒体库选择</option>
+                  {savedAudioAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>{describeMediaAsset(asset)}</option>
+                  ))}
+                </select>
+                {pendingAudioFile ? (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs text-muted-foreground">{pendingAudioFile.name}</p>
+                    <button
+                      type="button"
+                      disabled={isGenerating}
+                      onClick={clearPendingAudioFile}
+                      aria-label="移除待上传音频素材"
+                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      移除
+                    </button>
+                  </div>
+                ) : null}
+                {selectedAudioAssetId ? (
+                  <button
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => setSelectedAudioAssetId('')}
+                    aria-label="清除媒体库音频素材选择"
+                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    清除媒体库选择
+                  </button>
+                ) : null}
               </div>
             </div>
 

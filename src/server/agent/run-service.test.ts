@@ -6,6 +6,7 @@ import {
   type AgentRunEventInput,
   type AgentRunRepository,
 } from '@/server/repositories/agent-runs';
+import { createMemoryGeneratedMediaAssetRepository } from '@/server/repositories/generated-media-assets';
 import { createMemoryAgentConversationRepository } from '@/server/repositories/agent-conversations';
 import {
   ModelEntitlementRequiredError,
@@ -16,12 +17,15 @@ import {
 } from '@/server/repositories/ai-models';
 import type { DirectMediaArtifactCompletedPayload, AgentTaskType } from './types';
 import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
-import { ProviderRequestError } from '@/server/ai/provider-adapters';
+import { ProviderConfigurationError, ProviderRequestError } from '@/server/ai/provider-adapters';
+import type { VideoProviderCreateRequest } from '@/server/ai/video-provider-adapters';
 import { calculateImageCreditCost, InsufficientCreditsError } from '@/server/billing/credits';
 import { createDeterministicPiRuntime } from './pi-runtime';
 import {
   AgentRunImageSourceRequiredError,
   AgentRunModelRequiredError,
+  AgentRunVideoMaterialError,
+  AgentRunVideoSelectionError,
   createAgentRunService,
 } from './run-service';
 
@@ -98,6 +102,27 @@ function resolvedVideoModel(overrides: Partial<ResolvedVideoModel> = {}): Resolv
 
 function directMediaPayload(payload: Record<string, unknown>): DirectMediaArtifactCompletedPayload {
   return payload as DirectMediaArtifactCompletedPayload;
+}
+
+function enabledVideoPolicy() {
+  return {
+    enabled: true,
+    upgradeRequired: false,
+    message: null,
+    styles: [
+      {
+        id: 'style-stone',
+        code: 'stone',
+        name: 'Stone',
+        prompt: 'Stone video',
+        enabled: true,
+        sortOrder: 1,
+      },
+    ],
+    durations: [5, 10],
+    resolutions: [{ value: '720p', label: '720P' }],
+    defaults: { styleCode: 'stone', durationSeconds: 5, resolution: '720p' },
+  };
 }
 
 async function waitForRunStatus(
@@ -250,6 +275,7 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
     repository,
     runtime: createDeterministicPiRuntime(),
     resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
     assertCanAffordMinimum: async () => {},
     createVideoProviderAdapter: () => ({
       protocol: 'video_task_polling',
@@ -279,7 +305,7 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
     taskType: 'video',
     prompt: '石头印画动起来',
     modelId: 'model-video',
-    input: { duration: '5秒' },
+    input: { durationSeconds: 5, resolution: '720p', styleCode: 'stone' },
   });
 
   assert.equal(result.run.status, 'running');
@@ -305,6 +331,284 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
     'https://provider.example/video.mp4',
   );
   assert.equal(typeof directMediaPayload(events[2]?.payload ?? {}).artifact.metadata.artifactId, 'string');
+});
+
+test('video run marks created run failed when provider task creation fails', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        throw new ProviderRequestError('provider rejected task');
+      },
+      async getVideoTask() {
+        throw new Error('should not sync without provider task');
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-video', balanceAfter: 88 }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'video',
+        prompt: '石头印画动起来',
+        modelId: 'model-video',
+        input: { durationSeconds: 5, resolution: '720p', styleCode: 'stone' },
+      }),
+    ProviderRequestError,
+  );
+
+  const runs = await repository.listRunsForUser('user-1');
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0]?.status, 'failed');
+  assert.equal(runs[0]?.errorMessage, 'provider rejected task');
+
+  const events = await repository.listRunEvents(runs[0]?.id ?? '');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['run_failed'],
+  );
+  assert.equal(events[0]?.payload.message, 'provider rejected task');
+});
+
+test('video run stores canonical input and passes signed material URLs to adapter', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const imageAsset = await assetRepository.createSavedAsset({
+    userId: 'user-1',
+    runId: null,
+    conversationId: null,
+    artifactId: null,
+    kind: 'image',
+    title: 'image',
+    sourceType: 'user_uploaded',
+    sourceProvider: null,
+    sourceModel: null,
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket',
+    region: 'ap-shanghai',
+    objectKey: 'materials/image.png',
+    mimeType: 'image/png',
+    byteSize: 10,
+  });
+  const audioAsset = await assetRepository.createSavedAsset({
+    userId: 'user-1',
+    runId: null,
+    conversationId: null,
+    artifactId: null,
+    kind: 'audio',
+    title: 'audio',
+    sourceType: 'user_uploaded',
+    sourceProvider: null,
+    sourceModel: null,
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket',
+    region: 'ap-shanghai',
+    objectKey: 'materials/audio.mp3',
+    mimeType: 'audio/mpeg',
+    byteSize: 10,
+  });
+  let captureProviderRequest: (request: VideoProviderCreateRequest) => void = () => {};
+  const providerRequestPromise = new Promise<VideoProviderCreateRequest>((resolve) => {
+    captureProviderRequest = resolve;
+  });
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask(request) {
+        captureProviderRequest(request);
+        return { providerTaskId: 'task-materials', rawMetadata: {} };
+      },
+      async getVideoTask() {
+        return {
+          providerTaskId: 'task-materials',
+          status: 'running',
+          rawMetadata: {},
+        };
+      },
+    }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'video',
+    prompt: '石头印画动起来',
+    modelId: 'model-video',
+    input: {
+      durationSeconds: 5,
+      resolution: '720p',
+      styleCode: 'stone',
+      imageAssetId: imageAsset.id,
+      audioAssetId: audioAsset.id,
+    },
+  });
+
+  const detail = await repository.getRunDetailForUser(result.run.id, 'user-1');
+  const providerRequest = await providerRequestPromise;
+
+  assert.equal(providerRequest.duration, 5);
+  assert.equal(providerRequest.resolution, '720p');
+  assert.equal(providerRequest.imageUrl, 'https://signed.example/materials/image.png');
+  assert.equal(providerRequest.audioUrl, 'https://signed.example/materials/audio.mp3');
+  assert.equal(detail?.internal?.input?.durationSeconds, 5);
+  assert.equal(detail?.internal?.input?.resolution, '720p');
+  assert.equal(detail?.internal?.input?.styleCode, 'stone');
+  assert.equal(detail?.internal?.input?.imageAssetId, imageAsset.id);
+  assert.equal(detail?.internal?.input?.audioAssetId, audioAsset.id);
+  assert.equal(detail?.internal?.input?.imageUrl, undefined);
+  assert.equal(detail?.internal?.input?.audioUrl, undefined);
+});
+
+test('video run rejects policy validation failure before creating a run', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => {
+      throw new Error('provider should not be created');
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'video',
+        prompt: '石头印画动起来',
+        modelId: 'model-video',
+        input: {
+          durationSeconds: 30,
+          resolution: '720p',
+          styleCode: 'stone',
+        },
+      }),
+    AgentRunVideoSelectionError,
+  );
+
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('video run rejects missing material before creating a run', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: createMemoryGeneratedMediaAssetRepository(),
+    assertCanAffordMinimum: async () => {},
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'video',
+        prompt: '石头印画动起来',
+        modelId: 'model-video',
+        input: {
+          durationSeconds: 5,
+          resolution: '720p',
+          styleCode: 'stone',
+          imageAssetId: '11111111-1111-4111-8111-111111111111',
+        },
+      }),
+    AgentRunVideoMaterialError,
+  );
+
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('video run maps default material signer configuration failure before creating a run', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const imageAsset = await assetRepository.createSavedAsset({
+    userId: 'user-1',
+    runId: null,
+    conversationId: null,
+    artifactId: null,
+    kind: 'image',
+    title: 'image',
+    sourceType: 'user_uploaded',
+    sourceProvider: null,
+    sourceModel: null,
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket',
+    region: 'ap-shanghai',
+    objectKey: 'materials/image.png',
+    mimeType: 'image/png',
+    byteSize: 10,
+  });
+  const envKeys = [
+    'TENCENT_COS_REGION',
+    'TENCENT_COS_BUCKET',
+    'TENCENT_COS_SECRET_ID',
+    'TENCENT_COS_SECRET_KEY',
+  ] as const;
+  const previousEnv = new Map<string, string | undefined>();
+  for (const key of envKeys) {
+    previousEnv.set(key, process.env[key]);
+    delete process.env[key];
+  }
+
+  try {
+    const service = createAgentRunService({
+      repository,
+      runtime: createDeterministicPiRuntime(),
+      resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+      resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+      mediaAssetRepository: assetRepository,
+      assertCanAffordMinimum: async () => {},
+      createVideoProviderAdapter: () => {
+        throw new Error('provider should not be created');
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        service.createAndRunAgentRun({
+          userId: 'user-1',
+          taskType: 'video',
+          prompt: '石头印画动起来',
+          modelId: 'model-video',
+          input: {
+            durationSeconds: 5,
+            resolution: '720p',
+            styleCode: 'stone',
+            imageAssetId: imageAsset.id,
+          },
+        }),
+      ProviderConfigurationError,
+    );
+
+    assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+  } finally {
+    for (const key of envKeys) {
+      const value = previousEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
 });
 
 test('createAndRunAgentRun returns transient image artifact from provider URL output', async () => {
@@ -385,6 +689,7 @@ test('createAndRunAgentRun marks media run failed when run_failed event persiste
     repository,
     runtime: createDeterministicPiRuntime(),
     resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
     assertCanAffordMinimum: async () => {},
     createVideoProviderAdapter: () => ({
       protocol: 'video_task_polling',
@@ -407,7 +712,7 @@ test('createAndRunAgentRun marks media run failed when run_failed event persiste
     taskType: 'video',
     prompt: 'hello',
     modelId: 'model-video',
-    input: {},
+    input: { durationSeconds: 5, resolution: '720p', styleCode: 'stone' },
   });
 
   const failed = await service.syncVideoAgentRunForUser('user-1', result.run.id);
@@ -441,6 +746,7 @@ test('createAndRunAgentRun marks media run failed when artifact_completed event 
     repository,
     runtime: createDeterministicPiRuntime(),
     resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
     assertCanAffordMinimum: async () => {},
     createVideoProviderAdapter: () => ({
       protocol: 'video_task_polling',
@@ -464,7 +770,7 @@ test('createAndRunAgentRun marks media run failed when artifact_completed event 
     taskType: 'video',
     prompt: '山谷里的石头印画',
     modelId: 'model-video',
-    input: {},
+    input: { durationSeconds: 5, resolution: '720p', styleCode: 'stone' },
   });
 
   assert.equal(result.run.status, 'running');
@@ -531,6 +837,7 @@ test('createAndRunAgentRun keeps media run succeeded when run_completed event pe
     repository,
     runtime: createDeterministicPiRuntime(),
     resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
     assertCanAffordMinimum: async () => {},
     createVideoProviderAdapter: () => ({
       protocol: 'video_task_polling',
@@ -554,7 +861,7 @@ test('createAndRunAgentRun keeps media run succeeded when run_completed event pe
     taskType: 'video',
     prompt: 'hello',
     modelId: 'model-video',
-    input: {},
+    input: { durationSeconds: 5, resolution: '720p', styleCode: 'stone' },
   });
 
   const completed = await service.syncVideoAgentRunForUser('user-1', result.run.id);

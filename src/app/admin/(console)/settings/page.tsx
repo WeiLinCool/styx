@@ -3,11 +3,13 @@ import {
   AdminModulePage,
   type AdminColumn,
 } from '@/features/admin/module-page';
+import { AdminVideoGenerationConfigModule } from '@/features/admin/admin-video-generation-config-module';
 import { StatusBadge } from '@/features/admin/status-badge';
 import {
   getAdminSettings,
   type AdminSettingRow,
 } from '@/server/repositories/settings';
+import { listAdminVideoStylePresets } from '@/server/repositories/video-generation-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +63,10 @@ const columns: AdminColumn<AdminSettingRow>[] = [
 ];
 
 export default async function AdminSettingsPage() {
-  const data = await getAdminSettings();
+  const [data, videoStyles] = await Promise.all([
+    getAdminSettings(),
+    listAdminVideoStylePresets(),
+  ]);
 
   return (
     <AdminModulePage
@@ -73,6 +78,7 @@ export default async function AdminSettingsPage() {
       records={data.records}
       columns={columns}
       searchPlaceholder="搜索设置、供应商或存储..."
+      guide={<AdminVideoGenerationConfigModule initialStyles={videoStyles} />}
     />
   );
 }

@@ -57,7 +57,7 @@ export function createMediaAssetUploadRouteHandlers(dependencies: {
         const formData = await request.formData();
         const file = formData.get('file');
         if (!(file instanceof File)) {
-          return jsonError('invalid_request', '请上传图片或视频文件。', 400);
+          return jsonError('invalid_request', '请上传图片、音频或视频文件。', 400);
         }
 
         const titleValue = formData.get('title');

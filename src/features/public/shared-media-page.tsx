@@ -4,7 +4,7 @@ type SharedMediaPageProps = {
     asset: {
       id: string;
       title: string;
-      kind: 'image' | 'video';
+      kind: 'image' | 'audio' | 'video';
       mimeType: string | null;
       byteSize: number;
       width: number | null;
@@ -47,6 +47,9 @@ export function SharedMediaPage({ shareId, payload }: SharedMediaPageProps) {
     );
   }
 
+  const assetKindLabel =
+    payload.asset.kind === 'video' ? '视频' : payload.asset.kind === 'audio' ? '音频' : '图片';
+
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-6 py-10">
       <div className="rounded-[32px] border border-border bg-card p-6 shadow-sm">
@@ -54,7 +57,7 @@ export function SharedMediaPage({ shareId, payload }: SharedMediaPageProps) {
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Shared Media</p>
           <h1 className="mt-2 text-2xl font-semibold text-foreground">{payload.asset.title}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            {payload.asset.kind === 'video' ? '视频' : '图片'} · {formatBytes(payload.asset.byteSize)} · 分享标识 {shareId}
+            {assetKindLabel} · {formatBytes(payload.asset.byteSize)} · 分享标识 {shareId}
           </p>
         </div>
 
@@ -65,6 +68,10 @@ export function SharedMediaPage({ shareId, payload }: SharedMediaPageProps) {
               controls
               className="max-h-[70vh] w-full bg-black object-contain"
             />
+          ) : payload.asset.kind === 'audio' ? (
+            <div className="flex min-h-48 items-center px-6">
+              <audio src={payload.access.url} controls className="w-full" />
+            </div>
           ) : (
             <img
               src={payload.access.url}

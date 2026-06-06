@@ -46,6 +46,7 @@ test('resolveCurrentUserMediaPolicy returns structured policy from active member
         allowUserUpload: true,
         allowPublicSharing: false,
       },
+      videoGenerationPolicy: null,
       permissionCodes: [],
     }),
   });
@@ -98,6 +99,7 @@ test('resolveCurrentUserMediaPolicy falls back to active plan code when legacy e
           allowUserUpload: true,
           allowPublicSharing: true,
         },
+        videoGenerationPolicy: null,
         permissionCodes: [],
       };
     },

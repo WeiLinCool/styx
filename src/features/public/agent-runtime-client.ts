@@ -29,6 +29,33 @@ export type ImageModelOption = ChatModelOption & {
 
 export type VideoModelOption = ChatModelOption;
 
+export type VideoStylePresetOption = {
+  id: string;
+  code: string;
+  name: string;
+  prompt: string;
+};
+
+export type VideoResolutionOption = {
+  value: string;
+  label: string;
+};
+
+export type VideoGenerationConfigDto = {
+  enabled: boolean;
+  upgradeRequired: boolean;
+  message: string | null;
+  styles: VideoStylePresetOption[];
+  durations: number[];
+  resolutions: VideoResolutionOption[];
+  defaults: {
+    styleCode: string | null;
+    durationSeconds: number | null;
+    resolution: string | null;
+  };
+  models: VideoModelOption[];
+};
+
 export type AgentRuntimeApiErrorCode =
   | 'invalid_request'
   | 'model_required'
@@ -141,6 +168,123 @@ export function parseVideoModel(value: unknown): VideoModelOption | null {
   return parseChatModel(value);
 }
 
+function parseVideoStylePreset(value: unknown): VideoStylePresetOption | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const style = value as Record<string, unknown>;
+  if (
+    typeof style.id !== 'string' ||
+    typeof style.code !== 'string' ||
+    typeof style.name !== 'string' ||
+    typeof style.prompt !== 'string' ||
+    style.id.trim().length === 0 ||
+    style.code.trim().length === 0 ||
+    style.name.trim().length === 0 ||
+    style.prompt.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    id: style.id,
+    code: style.code,
+    name: style.name,
+    prompt: style.prompt,
+  };
+}
+
+function parseVideoResolution(value: unknown): VideoResolutionOption | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const resolution = value as Record<string, unknown>;
+  if (
+    typeof resolution.value !== 'string' ||
+    typeof resolution.label !== 'string' ||
+    resolution.value.trim().length === 0 ||
+    resolution.label.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    value: resolution.value,
+    label: resolution.label,
+  };
+}
+
+function parseVideoConfigDefaults(value: unknown): VideoGenerationConfigDto['defaults'] {
+  if (!value || typeof value !== 'object') {
+    return {
+      styleCode: null,
+      durationSeconds: null,
+      resolution: null,
+    };
+  }
+
+  const defaults = value as Record<string, unknown>;
+  return {
+    styleCode: typeof defaults.styleCode === 'string' ? defaults.styleCode : null,
+    durationSeconds:
+      typeof defaults.durationSeconds === 'number' &&
+      Number.isInteger(defaults.durationSeconds) &&
+      defaults.durationSeconds > 0
+        ? defaults.durationSeconds
+        : null,
+    resolution: typeof defaults.resolution === 'string' ? defaults.resolution : null,
+  };
+}
+
+export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfigDto {
+  const payload = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const enabled = payload.enabled === true;
+  const upgradeRequired = payload.upgradeRequired === true;
+  const message = typeof payload.message === 'string' ? payload.message : null;
+
+  if (!enabled) {
+    return {
+      enabled: false,
+      upgradeRequired,
+      message,
+      styles: [],
+      durations: [],
+      resolutions: [],
+      defaults: {
+        styleCode: null,
+        durationSeconds: null,
+        resolution: null,
+      },
+      models: [],
+    };
+  }
+
+  const rawStyles = Array.isArray(payload.styles) ? payload.styles : [];
+  const rawDurations = Array.isArray(payload.durations) ? payload.durations : [];
+  const rawResolutions = Array.isArray(payload.resolutions) ? payload.resolutions : [];
+  const rawModels = Array.isArray(payload.models) ? payload.models : [];
+
+  return {
+    enabled,
+    upgradeRequired,
+    message,
+    styles: rawStyles
+      .map(parseVideoStylePreset)
+      .filter((style): style is VideoStylePresetOption => style !== null),
+    durations: rawDurations.filter(
+      (duration): duration is number =>
+        typeof duration === 'number' && Number.isInteger(duration) && duration > 0,
+    ),
+    resolutions: rawResolutions
+      .map(parseVideoResolution)
+      .filter((resolution): resolution is VideoResolutionOption => resolution !== null),
+    defaults: parseVideoConfigDefaults(payload.defaults),
+    models: rawModels.map(parseVideoModel).filter((model): model is VideoModelOption => model !== null),
+  };
+}
+
 export function selectChatModelId(models: ChatModelOption[], priorModelId?: string | null): string | null {
   if (priorModelId && models.some((model) => model.id === priorModelId)) {
     return priorModelId;
@@ -208,6 +352,17 @@ export async function listVideoModels(): Promise<VideoModelOption[]> {
       : [];
 
   return rawModels.map(parseVideoModel).filter((model): model is VideoModelOption => model !== null);
+}
+
+export async function getVideoGenerationConfig(): Promise<VideoGenerationConfigDto> {
+  const response = await userApiRequest('/api/agent/video-config', { cache: 'no-store' });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '视频生成配置加载失败');
+  }
+
+  return parseVideoGenerationConfig(payload);
 }
 
 function parseConversationFolder(value: unknown): AgentConversationFolderDto | null {
@@ -499,7 +654,7 @@ export async function getPublicSharedMedia(shareId: string): Promise<{
   asset: {
     id: string;
     title: string;
-    kind: 'image' | 'video';
+    kind: 'image' | 'audio' | 'video';
     mimeType: string | null;
     byteSize: number;
     width: number | null;

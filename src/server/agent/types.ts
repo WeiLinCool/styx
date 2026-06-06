@@ -2,7 +2,7 @@ export type AgentTaskType = 'chat' | 'image' | 'video' | 'workflow';
 export type AgentCapabilityKind = 'model' | 'skill' | 'mcp_server' | 'plugin';
 export type AgentCapabilityStatus = 'enabled' | 'disabled' | 'archived';
 export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-export type AgentArtifactKind = 'text' | 'image' | 'video' | 'document' | 'workflow' | 'json';
+export type AgentArtifactKind = 'text' | 'image' | 'audio' | 'video' | 'document' | 'workflow' | 'json';
 
 export type AgentCapabilityRecord = {
   id: string;
@@ -59,7 +59,7 @@ export type GeneratedMediaAssetDto = {
   runId: string | null;
   conversationId: string | null;
   artifactId: string | null;
-  kind: Extract<AgentArtifactKind, 'image' | 'video'>;
+  kind: Extract<AgentArtifactKind, 'image' | 'audio' | 'video'>;
   title: string;
   sourceType: MediaAssetSourceType;
   sourceProvider: string | null;

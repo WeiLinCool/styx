@@ -46,6 +46,47 @@ test('upload user media stores uploaded image in cos and creates unified asset',
   assert.deepEqual(quota, { storageQuotaBytes: 10_000, storageUsedBytes: 3 });
 });
 
+test('upload user media stores uploaded audio in cos and creates unified asset', async () => {
+  const repository = createMemoryGeneratedMediaAssetRepository();
+  const storageRepository = createMemoryUserStorageRepository({
+    'user-1': { storageQuotaBytes: 10_000, storageUsedBytes: 0 },
+  });
+  let uploadedKey = '';
+
+  const service = createUploadUserMediaService({
+    mediaAssetRepository: repository,
+    userStorageRepository: storageRepository,
+    cosClient: {
+      async uploadObject(input) {
+        uploadedKey = input.objectKey;
+        return { bucket: 'bucket-a', region: 'ap-shanghai', objectKey: input.objectKey };
+      },
+      async deleteObject() {},
+    },
+    createObjectKey: ({ userId, assetId, filename }) =>
+      `user-uploaded/test/users/${userId}/assets/${assetId}/${filename}`,
+    computeSha256: async () => 'sha256-audio',
+  });
+
+  const result = await service.uploadForUser({
+    userId: 'user-1',
+    title: 'Song',
+    filename: 'song.mp3',
+    mimeType: 'audio/mpeg',
+    bytes: new Uint8Array([1, 2, 3, 4]),
+  });
+
+  assert.equal(result.asset.kind, 'audio');
+  assert.equal(result.asset.mimeType, 'audio/mpeg');
+  assert.equal(result.asset.originalFilename, 'song.mp3');
+  assert.equal(result.asset.sourceType, 'user_uploaded');
+  assert.equal(uploadedKey, result.asset.objectKey);
+  assert.match(uploadedKey, /^user-uploaded\/test\/users\/user-1\/assets\/.+\/song\.mp3$/);
+
+  const quota = await storageRepository.getStorageQuota('user-1');
+  assert.deepEqual(quota, { storageQuotaBytes: 10_000, storageUsedBytes: 4 });
+});
+
 test('upload user media rejects quota overflow before recording asset', async () => {
   const repository = createMemoryGeneratedMediaAssetRepository();
   const storageRepository = createMemoryUserStorageRepository({
@@ -111,6 +152,6 @@ test('upload user media rejects unsupported mime type', async () => {
         mimeType: 'application/pdf',
         bytes: new Uint8Array([1, 2, 3]),
       }),
-    /仅支持上传图片或视频/,
+    /仅支持上传图片、音频或视频/,
   );
 });

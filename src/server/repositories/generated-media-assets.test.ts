@@ -90,6 +90,63 @@ test('generated media asset repository finds and soft deletes saved assets per u
   assert.equal(await repository.getSavedAssetForUser(created.id, 'user-1'), null);
 });
 
+test('generated media asset repository finds asset for owning user only', async () => {
+  const repository = createMemoryGeneratedMediaAssetRepository();
+
+  const created = await repository.createSavedAsset({
+    userId: 'user-1',
+    runId: null,
+    conversationId: null,
+    artifactId: null,
+    kind: 'audio',
+    title: 'Uploaded audio',
+    sourceType: 'user_uploaded',
+    sourceProvider: null,
+    sourceModel: null,
+    sourceUrl: null,
+    sourceExpiresAt: null,
+    originalFilename: 'song.mp3',
+    sha256: 'sha256-audio',
+    shareId: null,
+    shareStatus: 'disabled',
+    sharedAt: null,
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket-a',
+    region: 'ap-shanghai',
+    objectKey: 'user-uploaded/dev/users/user-1/assets/asset-audio/song.mp3',
+    mimeType: 'audio/mpeg',
+    byteSize: 128,
+    width: null,
+    height: null,
+    durationSeconds: null,
+    metadata: {},
+  });
+
+  assert.equal(
+    (
+      await repository.findAssetForUser({
+        userId: 'user-1',
+        assetId: created.id,
+      })
+    )?.id,
+    created.id,
+  );
+  assert.equal(
+    await repository.findAssetForUser({
+      userId: 'user-2',
+      assetId: created.id,
+    }),
+    null,
+  );
+  assert.equal(
+    await repository.findAssetForUser({
+      userId: 'user-1',
+      assetId: 'missing-asset',
+    }),
+    null,
+  );
+});
+
 test('generated media asset repository stores user-uploaded source metadata and share state', async () => {
   const repository = createMemoryGeneratedMediaAssetRepository();
 
