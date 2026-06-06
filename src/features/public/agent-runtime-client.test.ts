@@ -10,6 +10,7 @@ import {
   disableMediaShare,
   enableMediaShare,
   getAgentRunDetail,
+  getVideoGenerationConfig,
   getPublicSharedMedia,
   listAgentConversations,
   listSavedMediaAssets,
@@ -18,6 +19,7 @@ import {
   listVideoModels,
   parseDirectMediaArtifactPayload,
   parseImageModel,
+  parseVideoGenerationConfig,
   parseVideoModel,
   parseStreamEventPayload,
   saveGeneratedMedia,
@@ -29,6 +31,7 @@ import {
   uploadUserMedia,
   type ChatModelOption,
   type ImageModelOption,
+  type VideoGenerationConfigDto,
 } from './agent-runtime-client';
 import {
   decryptRequestBody,
@@ -54,6 +57,41 @@ function makeImageModel(overrides: Partial<ImageModelOption> = {}): ImageModelOp
     entitlementLabel: 'Free',
     pricingSummary: '5 credits minimum',
     supportedModes: ['generate'],
+    ...overrides,
+  };
+}
+
+function makeVideoConfig(overrides: Partial<VideoGenerationConfigDto> = {}): VideoGenerationConfigDto {
+  return {
+    enabled: true,
+    upgradeRequired: false,
+    message: null,
+    styles: [
+      {
+        id: 'style-1',
+        code: 'stone',
+        name: 'Stone',
+        prompt: 'stone video prompt',
+      },
+    ],
+    durations: [5, 10],
+    resolutions: [{ value: '720p', label: '720P' }],
+    defaults: {
+      styleCode: 'stone',
+      durationSeconds: 5,
+      resolution: '720p',
+    },
+    models: [
+      {
+        id: 'model-video',
+        code: 'seedance',
+        name: 'Seedance',
+        providerName: 'Doubao',
+        isDefault: true,
+        entitlementLabel: 'Pro',
+        pricingSummary: '3 credits minimum',
+      },
+    ],
     ...overrides,
   };
 }
@@ -215,6 +253,64 @@ test('listVideoModels returns empty array for an empty payload', async () => {
     assert.deepEqual(models, []);
   } finally {
     restore();
+  }
+});
+
+test('parseVideoGenerationConfig drops malformed usable options and models', () => {
+  const config = parseVideoGenerationConfig({
+    ...makeVideoConfig(),
+    styles: [
+      { id: 'broken' },
+      {
+        id: 'style-valid',
+        code: 'ink',
+        name: 'Ink',
+        prompt: 'ink video prompt',
+      },
+    ],
+    durations: [5, -1, 2.5, '10'],
+    resolutions: [
+      { value: '', label: 'Empty' },
+      { value: '1080p', label: '1080P' },
+    ],
+    models: [
+      { id: 'broken' },
+      {
+        id: 'model-video',
+        code: 'seedance',
+        name: 'Seedance',
+        providerName: 'Doubao',
+        isDefault: true,
+        entitlementLabel: 'Pro',
+        pricingSummary: '3 credits minimum',
+      },
+    ],
+  });
+
+  assert.equal(config.enabled, true);
+  assert.deepEqual(config.styles.map((style) => style.code), ['ink']);
+  assert.deepEqual(config.durations, [5]);
+  assert.deepEqual(config.resolutions, [{ value: '1080p', label: '1080P' }]);
+  assert.deepEqual(config.models.map((model) => model.id), ['model-video']);
+});
+
+test('getVideoGenerationConfig fetches current user video config without cache', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; cache: RequestCache | undefined }> = [];
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), cache: init?.cache });
+    return Response.json(makeVideoConfig());
+  };
+
+  try {
+    const config = await getVideoGenerationConfig();
+
+    assert.deepEqual(requests, [{ url: '/api/agent/video-config', cache: 'no-store' }]);
+    assert.equal(config.enabled, true);
+    assert.equal(config.styles[0]?.code, 'stone');
+    assert.equal(config.models[0]?.code, 'seedance');
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
