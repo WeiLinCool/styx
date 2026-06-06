@@ -13,7 +13,10 @@ import { ProtectedAccountPanel } from '@/features/account/protected-account-pane
 import {
   createAgentRun,
   createAgentRunEventsUrl,
+  getAgentRunDetail,
+  getGeneratedRunArtifactAccess,
   getVideoGenerationConfig,
+  listAgentRuns,
   listSavedMediaAssets,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
@@ -29,7 +32,12 @@ import {
   nextReloadKey,
   reconcileSelectedModelId,
 } from '@/features/public/model-availability';
-import type { DirectMediaResultDto, GeneratedMediaAssetDto } from '@/server/agent/types';
+import type {
+  AgentArtifactDto,
+  AgentRunDto,
+  DirectMediaResultDto,
+  GeneratedMediaAssetDto,
+} from '@/server/agent/types';
 
 const IMAGE_UPLOAD_ACCEPT = 'image/png,image/jpeg,image/webp';
 const AUDIO_UPLOAD_ACCEPT = 'audio/mpeg,audio/wav,audio/mp4,audio/x-wav';
@@ -75,6 +83,58 @@ function addMediaAssetIfMissing(
   return assets.some((current) => current.id === asset.id) ? assets : [asset, ...assets];
 }
 
+function formatHistoryTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function readStorageStatus(value: unknown): DirectMediaResultDto['metadata']['storageStatus'] {
+  return value === 'provider_direct' || value === 'cached' || value === 'stored' ? value : 'cached';
+}
+
+function sanitizeMediaMetadata(metadata: Record<string, unknown>, artifactId: string) {
+  const {
+    cacheObjectKey: _cacheObjectKey,
+    cacheBucket: _cacheBucket,
+    cacheRegion: _cacheRegion,
+    ...safeMetadata
+  } = metadata;
+
+  return {
+    ...safeMetadata,
+    artifactId,
+    storageStatus: readStorageStatus(metadata.storageStatus),
+  };
+}
+
+function firstMediaArtifact(run: AgentRunDto, kind: 'image' | 'video'): AgentArtifactDto | null {
+  return run.artifacts.find((artifact) => artifact.kind === kind && artifact.status === 'ready') ?? null;
+}
+
+function updateRunArtifactMetadata(
+  runs: AgentRunDto[],
+  runId: string,
+  artifactId: string,
+  metadata: Record<string, unknown>,
+) {
+  return runs.map((run) =>
+    run.id === runId
+      ? {
+          ...run,
+          artifacts: run.artifacts.map((artifact) =>
+            artifact.id === artifactId
+              ? { ...artifact, metadata: { ...artifact.metadata, ...metadata } }
+              : artifact,
+          ),
+        }
+      : run,
+  );
+}
+
 export default function VideoGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
@@ -98,6 +158,10 @@ export default function VideoGenPage() {
   const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const [generatedVideo, setGeneratedVideo] = useState<DirectMediaResultDto | null>(null);
   const [generatedVideoRunId, setGeneratedVideoRunId] = useState<string | null>(null);
+  const [historyRuns, setHistoryRuns] = useState<AgentRunDto[]>([]);
+  const [selectedHistoryRunId, setSelectedHistoryRunId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const videoReceivedRunIdRef = useRef<string | null>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -139,6 +203,10 @@ export default function VideoGenPage() {
       setSelectedAudioAssetId('');
       setPendingImageFile(null);
       setPendingAudioFile(null);
+      setHistoryRuns([]);
+      setSelectedHistoryRunId(null);
+      setHistoryLoading(false);
+      setHistoryError(null);
       setModelAvailability(createInitialModelAvailabilityState());
       return;
     }
@@ -209,6 +277,44 @@ export default function VideoGenPage() {
   }, [isLoggedIn, user, modelAvailability.reloadKey]);
 
   useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user)) {
+      setHistoryRuns([]);
+      setSelectedHistoryRunId(null);
+      setHistoryLoading(false);
+      setHistoryError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadHistory() {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const runs = await listAgentRuns({ taskType: 'video' });
+        if (cancelled) return;
+        setHistoryRuns(runs);
+        setSelectedHistoryRunId((current) => current ?? runs[0]?.id ?? null);
+      } catch (error) {
+        if (cancelled) return;
+        setHistoryRuns([]);
+        setSelectedHistoryRunId(null);
+        setHistoryError(error instanceof Error ? error.message : '视频历史加载失败');
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user]);
+
+  useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user) || !videoConfig.enabled) {
       setSavedImageAssets([]);
       setSavedAudioAssets([]);
@@ -263,6 +369,15 @@ export default function VideoGenPage() {
       setGenerationMessage('视频已生成，请及时下载。');
     });
     eventSource.addEventListener('run_completed', () => {
+      void getAgentRunDetail(streamRunId)
+        .then((detail) => {
+          setHistoryRuns((current) => [
+            detail.run,
+            ...current.filter((run) => run.id !== detail.run.id),
+          ]);
+          setSelectedHistoryRunId(detail.run.id);
+        })
+        .catch(() => null);
       void syncAgentRun(streamRunId)
         .catch(() => null)
         .finally(() => {
@@ -297,6 +412,43 @@ export default function VideoGenPage() {
       eventSource.close();
     };
   }, [streamRunId]);
+
+  const loadVideoRunPreview = async (runId: string) => {
+    setSelectedHistoryRunId(runId);
+    setGenerationError(null);
+    setGenerationMessage('正在加载历史结果...');
+
+    try {
+      const detail = await getAgentRunDetail(runId);
+      const artifact = firstMediaArtifact(detail.run, 'video');
+      if (!artifact) {
+        setGenerationMessage(null);
+        setGenerationError('该任务暂未产生可预览的视频。');
+        return;
+      }
+
+      const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
+      setHistoryRuns((current) => [
+        detail.run,
+        ...current.filter((run) => run.id !== detail.run.id),
+      ]);
+      setGeneratedVideoRunId(detail.run.id);
+      setGeneratedVideo({
+        kind: 'video',
+        title: artifact.title,
+        delivery: {
+          mode: 'provider_url',
+          url: access.url,
+          expiresAt: access.expiresAt,
+        },
+        metadata: sanitizeMediaMetadata(artifact.metadata, artifact.id),
+      });
+      setGenerationMessage('已加载历史视频结果。');
+    } catch (error) {
+      setGenerationMessage(null);
+      setGenerationError(error instanceof Error ? error.message : '历史视频加载失败');
+    }
+  };
 
   useEffect(() => {
     if (!streamRunId) {
@@ -445,8 +597,10 @@ export default function VideoGenPage() {
         return;
       }
 
+      setHistoryRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setSelectedHistoryRunId(run.id);
       setStreamRunId(run.id);
-      setGenerationMessage('任务已提交，正在等待模型返回结果。');
+      setGenerationMessage('任务已在后台运行，你可以稍后回来查看结果。');
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : '视频生成请求失败');
       setIsGenerating(false);
@@ -504,6 +658,9 @@ export default function VideoGenPage() {
             }
           : current,
       );
+      setHistoryRuns((current) =>
+        updateRunArtifactMetadata(current, generatedVideoRunId, artifactId, result.artifact.metadata),
+      );
       setGenerationMessage('已保存到我的媒体，可在用户中心重复引用。');
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : '保存媒体失败');
@@ -535,7 +692,59 @@ export default function VideoGenPage() {
         {isLoggedIn && user && requiresActivation(user) ? (
           <ProtectedAccountPanel accountState={user.accountState} title="激活账号后使用 AI 视频" />
         ) : null}
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)_minmax(0,1fr)]">
+          <aside className="space-y-3 rounded-2xl border border-border bg-card/70 p-4">
+            <div>
+              <h2 className="text-sm font-semibold">生成记录</h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                视频任务耗时较长，提交后可离开页面，稍后从这里查看结果。
+              </p>
+            </div>
+            {historyError ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-500">
+                {historyError}
+              </div>
+            ) : null}
+            <div className="max-h-[640px] space-y-2 overflow-y-auto pr-1">
+              {historyLoading ? (
+                <div className="rounded-xl border border-border bg-background px-3 py-4 text-center text-xs text-muted-foreground">
+                  正在加载历史...
+                </div>
+              ) : historyRuns.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border bg-background px-3 py-4 text-center text-xs text-muted-foreground">
+                  暂无视频记录
+                </div>
+              ) : (
+                historyRuns.map((run) => {
+                  const artifact = firstMediaArtifact(run, 'video');
+                  const isSelected = selectedHistoryRunId === run.id;
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => void loadVideoRunPreview(run.id)}
+                      className={`w-full cursor-pointer rounded-xl border px-3 py-2 text-left transition-all ${
+                        isSelected
+                          ? 'border-ring bg-secondary text-foreground'
+                          : 'border-border bg-background hover:border-ring'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm font-medium">{run.prompt}</span>
+                        <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+                          {run.status === 'succeeded' ? '完成' : run.status === 'failed' ? '失败' : '运行中'}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span>{formatHistoryTime(run.createdAt)}</span>
+                        <span>{artifact?.metadata.saveStatus === 'saved' ? '已存储' : '未存储'}</span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </aside>
           {/* Left - Controls */}
           <div className="space-y-6">
             {/* Model */}
@@ -868,7 +1077,7 @@ export default function VideoGenPage() {
                 <div className="w-full rounded-xl border border-warning/30 bg-warning-surface px-3 py-2 text-left text-xs leading-5 text-warning">
                   {generatedVideo.metadata.saveStatus === 'saved'
                     ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
-                    : '生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。'}
+                    : '生成结果已临时缓存，暂未进入我的媒体。需要长期使用时请点击“保存到我的媒体”。'}
                 </div>
                 {generationError ? (
                   <div className="w-full rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-xs leading-5 text-destructive">
