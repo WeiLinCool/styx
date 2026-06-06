@@ -17,7 +17,7 @@ import {
 } from '@/server/repositories/ai-models';
 import type { DirectMediaArtifactCompletedPayload, AgentTaskType } from './types';
 import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
-import { ProviderRequestError } from '@/server/ai/provider-adapters';
+import { ProviderConfigurationError, ProviderRequestError } from '@/server/ai/provider-adapters';
 import type { VideoProviderCreateRequest } from '@/server/ai/video-provider-adapters';
 import { calculateImageCreditCost, InsufficientCreditsError } from '@/server/billing/credits';
 import { createDeterministicPiRuntime } from './pi-runtime';
@@ -489,6 +489,81 @@ test('video run rejects missing material before creating a run', async () => {
   );
 
   assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('video run maps default material signer configuration failure before creating a run', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const imageAsset = await assetRepository.createSavedAsset({
+    userId: 'user-1',
+    runId: null,
+    conversationId: null,
+    artifactId: null,
+    kind: 'image',
+    title: 'image',
+    sourceType: 'user_uploaded',
+    sourceProvider: null,
+    sourceModel: null,
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket',
+    region: 'ap-shanghai',
+    objectKey: 'materials/image.png',
+    mimeType: 'image/png',
+    byteSize: 10,
+  });
+  const envKeys = [
+    'TENCENT_COS_REGION',
+    'TENCENT_COS_BUCKET',
+    'TENCENT_COS_SECRET_ID',
+    'TENCENT_COS_SECRET_KEY',
+  ] as const;
+  const previousEnv = new Map<string, string | undefined>();
+  for (const key of envKeys) {
+    previousEnv.set(key, process.env[key]);
+    delete process.env[key];
+  }
+
+  try {
+    const service = createAgentRunService({
+      repository,
+      runtime: createDeterministicPiRuntime(),
+      resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+      resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+      mediaAssetRepository: assetRepository,
+      assertCanAffordMinimum: async () => {},
+      createVideoProviderAdapter: () => {
+        throw new Error('provider should not be created');
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        service.createAndRunAgentRun({
+          userId: 'user-1',
+          taskType: 'video',
+          prompt: '石头印画动起来',
+          modelId: 'model-video',
+          input: {
+            durationSeconds: 5,
+            resolution: '720p',
+            styleCode: 'stone',
+            imageAssetId: imageAsset.id,
+          },
+        }),
+      ProviderConfigurationError,
+    );
+
+    assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+  } finally {
+    for (const key of envKeys) {
+      const value = previousEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
 });
 
 test('createAndRunAgentRun returns transient image artifact from provider URL output', async () => {

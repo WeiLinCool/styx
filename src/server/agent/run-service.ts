@@ -11,6 +11,7 @@ import {
 } from '@/server/billing/provider-rules';
 import {
   createChatProviderAdapter as defaultCreateChatProviderAdapter,
+  ProviderConfigurationError,
   type ChatProviderResult,
   type ChatProviderAdapter,
 } from '@/server/ai/provider-adapters';
@@ -783,7 +784,16 @@ async function resolveDefaultVideoGenerationPolicyForUser(userId: string) {
 }
 
 async function signVideoMaterialWithTencentCos(asset: GeneratedMediaAssetDto) {
-  return createTencentCosClient().createSignedReadUrl(asset.objectKey, 600);
+  try {
+    return await createTencentCosClient().createSignedReadUrl(asset.objectKey, 600);
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      throw error;
+    }
+    throw new ProviderConfigurationError(
+      `Tencent COS media signing is not configured: ${toErrorMessage(error)}`,
+    );
+  }
 }
 
 function toChatProviderMessages(runs: AgentRunDto[], nextPrompt: string): ChatMessage[] {
