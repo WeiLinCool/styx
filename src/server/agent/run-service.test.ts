@@ -333,6 +333,51 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
   assert.equal(typeof directMediaPayload(events[2]?.payload ?? {}).artifact.metadata.artifactId, 'string');
 });
 
+test('video run marks created run failed when provider task creation fails', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        throw new ProviderRequestError('provider rejected task');
+      },
+      async getVideoTask() {
+        throw new Error('should not sync without provider task');
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-video', balanceAfter: 88 }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'video',
+        prompt: '石头印画动起来',
+        modelId: 'model-video',
+        input: { durationSeconds: 5, resolution: '720p', styleCode: 'stone' },
+      }),
+    ProviderRequestError,
+  );
+
+  const runs = await repository.listRunsForUser('user-1');
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0]?.status, 'failed');
+  assert.equal(runs[0]?.errorMessage, 'provider rejected task');
+
+  const events = await repository.listRunEvents(runs[0]?.id ?? '');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['run_failed'],
+  );
+  assert.equal(events[0]?.payload.message, 'provider rejected task');
+});
+
 test('video run stores canonical input and passes signed material URLs to adapter', async () => {
   const repository = createMemoryAgentRunRepository();
   const assetRepository = createMemoryGeneratedMediaAssetRepository();

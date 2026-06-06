@@ -1116,19 +1116,44 @@ async function createAndRunVideoAgentRun(input: {
     throw new Error('Video provider adapter does not support task creation.');
   }
 
-  const createdTask = await adapter.createVideoTask({
-    runId: running.id,
-    userId: request.userId,
-    model,
-    prompt: request.prompt,
-    duration: canonicalInput.durationSeconds,
-    resolution: canonicalInput.resolution,
-    imageUrl: materialUrls.imageUrl,
-    audioUrl: materialUrls.audioUrl,
-    ratio: readStringInput(request.input, 'ratio') ?? undefined,
-    seed: readNumberInput(request.input, 'seed') ?? undefined,
-    watermark: readBooleanInput(request.input, 'watermark') ?? undefined,
-  });
+  let createdTask: Awaited<ReturnType<NonNullable<typeof adapter.createVideoTask>>>;
+  try {
+    createdTask = await adapter.createVideoTask({
+      runId: running.id,
+      userId: request.userId,
+      model,
+      prompt: request.prompt,
+      duration: canonicalInput.durationSeconds,
+      resolution: canonicalInput.resolution,
+      imageUrl: materialUrls.imageUrl,
+      audioUrl: materialUrls.audioUrl,
+      ratio: readStringInput(request.input, 'ratio') ?? undefined,
+      seed: readNumberInput(request.input, 'seed') ?? undefined,
+      watermark: readBooleanInput(request.input, 'watermark') ?? undefined,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '视频任务创建失败，请稍后重试。';
+    const failedSnapshot = toFailedVideoSnapshot({
+      capabilitySnapshot,
+      errorMessage,
+    });
+    await repository.failRun(running.id, {
+      errorMessage,
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...runInput,
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+    await appendRunEventIfSupported(repository, running.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: errorMessage,
+        failedAt: new Date().toISOString(),
+      },
+    });
+    throw error;
+  }
 
   const nextCapabilitySnapshot = {
     ...capabilitySnapshot,
