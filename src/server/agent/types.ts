@@ -105,7 +105,7 @@ export type TransientAgentArtifactDto = {
 };
 
 export type DirectMediaDeliveryMode = 'provider_url' | 'data_url';
-export type DirectMediaStorageStatus = 'provider_direct' | 'stored';
+export type DirectMediaStorageStatus = 'provider_direct' | 'cached' | 'stored';
 
 export type DirectMediaResultDto = {
   kind: Extract<AgentArtifactKind, 'image' | 'video'>;

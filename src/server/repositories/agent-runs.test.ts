@@ -53,6 +53,67 @@ test('memory agent run repository returns only runs owned by the requesting user
   assert.equal((await repo.listRunsForUser('user-alice')).length, 1);
 });
 
+test('memory agent run repository filters runs by task type for user history', async () => {
+  const repo = createMemoryAgentRunRepository();
+  await createChatRun(repo);
+  await repo.createRun({
+    userId: 'user-alice',
+    taskType: 'image',
+    prompt: '山水图',
+    provider: 'doubao',
+    model: 'seedream',
+    capabilitySnapshot: {
+      bundleId: 'image',
+      bundleCode: 'image',
+      provider: 'doubao',
+      model: 'seedream',
+      capabilities: [],
+    },
+    input: { mode: 'generate' },
+  });
+  await repo.createRun({
+    userId: 'user-alice',
+    taskType: 'video',
+    prompt: '山水视频',
+    provider: 'doubao',
+    model: 'seedance',
+    capabilitySnapshot: {
+      bundleId: 'video',
+      bundleCode: 'video',
+      provider: 'doubao',
+      model: 'seedance',
+      capabilities: [],
+    },
+    input: { durationSeconds: 5 },
+  });
+  await repo.createRun({
+    userId: 'user-bob',
+    taskType: 'image',
+    prompt: 'Bob image',
+    provider: 'doubao',
+    model: 'seedream',
+    capabilitySnapshot: {
+      bundleId: 'image',
+      bundleCode: 'image',
+      provider: 'doubao',
+      model: 'seedream',
+      capabilities: [],
+    },
+    input: { mode: 'generate' },
+  });
+
+  const imageRuns = await repo.listRunsForUser('user-alice', { taskType: 'image' });
+  const videoRuns = await repo.listRunsForUser('user-alice', { taskType: 'video' });
+  const allRuns = await repo.listRunsForUser('user-alice');
+
+  assert.equal(imageRuns.length, 1);
+  assert.equal(imageRuns[0]?.taskType, 'image');
+  assert.equal(imageRuns[0]?.prompt, '山水图');
+  assert.equal(videoRuns.length, 1);
+  assert.equal(videoRuns[0]?.taskType, 'video');
+  assert.equal(allRuns.length, 3);
+});
+
 test('memory agent run repository protects stored state from returned DTO mutation', async () => {
   const repo = createMemoryAgentRunRepository();
   const run = await createChatRun(repo);

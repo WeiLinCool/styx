@@ -46,6 +46,10 @@ export type AgentRunStreamEventInput = {
   payload?: Record<string, unknown>;
 };
 
+export type ListAgentRunsForUserOptions = {
+  taskType?: AgentTaskType;
+};
+
 type StoredAgentRun = AgentRunDto & {
   userId: string;
   provider: string;
@@ -68,7 +72,7 @@ export type AgentRunRepository = {
   getRunForUser(id: string, userId: string): Promise<AgentRunDto | null>;
   getRunDetailForUser(id: string, userId: string): Promise<AgentRunDetailDto | null>;
   listConversationRunsForUser(conversationId: string, userId: string): Promise<AgentRunDto[]>;
-  listRunsForUser(userId: string): Promise<AgentRunDto[]>;
+  listRunsForUser(userId: string, options?: ListAgentRunsForUserOptions): Promise<AgentRunDto[]>;
   softDeleteRunForUser(id: string, userId: string): Promise<AgentRunDto | null>;
   markRunRunning(runId: string): Promise<AgentRunDto | null>;
   patchRun(
@@ -466,11 +470,19 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
       const dtos = await Promise.all(runs.map((run) => getDatabaseRunDto(database, run.id)));
       return dtos.filter((run): run is AgentRunDto => Boolean(run));
     },
-    async listRunsForUser(userId) {
+    async listRunsForUser(userId, options) {
+      const conditions = [
+        eq(schema.agentRuns.userId, userId),
+        isNull(schema.agentRuns.deletedAt),
+      ];
+      if (options?.taskType) {
+        conditions.push(eq(schema.agentRuns.taskType, options.taskType));
+      }
+
       const runs = await database
         .select()
         .from(schema.agentRuns)
-        .where(and(eq(schema.agentRuns.userId, userId), isNull(schema.agentRuns.deletedAt)))
+        .where(and(...conditions))
         .orderBy(desc(schema.agentRuns.createdAt))
         .limit(100);
 
@@ -747,9 +759,14 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map(toAgentRunDto);
     },
-    async listRunsForUser(userId) {
+    async listRunsForUser(userId, options) {
       return Array.from(runs.values())
-        .filter((run) => run.userId === userId && !run.deletedAt)
+        .filter(
+          (run) =>
+            run.userId === userId &&
+            !run.deletedAt &&
+            (!options?.taskType || run.taskType === options.taskType),
+        )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map(toAgentRunDto);
     },
