@@ -14,6 +14,9 @@ import {
   AgentRuntimeApiError,
   createAgentRun,
   createAgentRunEventsUrl,
+  getAgentRunDetail,
+  getGeneratedRunArtifactAccess,
+  listAgentRuns,
   listImageModels,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
@@ -29,7 +32,7 @@ import {
   type ModelAvailabilityState,
 } from '@/features/public/model-availability';
 import { styleOptions, toolSizes } from '@/features/public/tool-data';
-import type { DirectMediaResultDto } from '@/server/agent/types';
+import type { AgentArtifactDto, AgentRunDto, DirectMediaResultDto } from '@/server/agent/types';
 
 const TABS = [
   { id: 'generate', name: 'AI生图', icon: Sparkles },
@@ -50,8 +53,10 @@ const maxSourceImageFileBytes = 7 * 1024 * 1024;
 
 type GeneratedImageResult = {
   runId: string;
+  artifactId: string;
   artifact: DirectMediaResultDto;
   prompt: string;
+  createdAt: string;
 };
 
 type SourceImageState = {
@@ -62,6 +67,58 @@ type SourceImageState = {
 };
 
 type ModeAvailabilityState = Record<ImageModelMode, ModelAvailabilityState>;
+
+function formatHistoryTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function readStorageStatus(value: unknown): DirectMediaResultDto['metadata']['storageStatus'] {
+  return value === 'provider_direct' || value === 'cached' || value === 'stored' ? value : 'cached';
+}
+
+function sanitizeMediaMetadata(metadata: Record<string, unknown>, artifactId: string) {
+  const {
+    cacheObjectKey: _cacheObjectKey,
+    cacheBucket: _cacheBucket,
+    cacheRegion: _cacheRegion,
+    ...safeMetadata
+  } = metadata;
+
+  return {
+    ...safeMetadata,
+    artifactId,
+    storageStatus: readStorageStatus(metadata.storageStatus),
+  };
+}
+
+function firstMediaArtifact(run: AgentRunDto, kind: 'image' | 'video'): AgentArtifactDto | null {
+  return run.artifacts.find((artifact) => artifact.kind === kind && artifact.status === 'ready') ?? null;
+}
+
+function updateRunArtifactMetadata(
+  runs: AgentRunDto[],
+  runId: string,
+  artifactId: string,
+  metadata: Record<string, unknown>,
+) {
+  return runs.map((run) =>
+    run.id === runId
+      ? {
+          ...run,
+          artifacts: run.artifacts.map((artifact) =>
+            artifact.id === artifactId
+              ? { ...artifact, metadata: { ...artifact.metadata, ...metadata } }
+              : artifact,
+          ),
+        }
+      : run,
+  );
+}
 
 export default function ImageGenPage() {
   const router = useRouter();
@@ -88,6 +145,10 @@ export default function ImageGenPage() {
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<GeneratedImageResult | null>(null);
+  const [historyRuns, setHistoryRuns] = useState<AgentRunDto[]>([]);
+  const [selectedHistoryRunId, setSelectedHistoryRunId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const [submittedPrompt, setSubmittedPrompt] = useState('');
   const imageReceivedRunIdRef = useRef<string | null>(null);
@@ -117,6 +178,44 @@ export default function ImageGenPage() {
     setGenerationMessage(null);
     setGenerationError(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user || requiresActivation(user)) {
+      setHistoryRuns([]);
+      setSelectedHistoryRunId(null);
+      setHistoryLoading(false);
+      setHistoryError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadHistory() {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const runs = await listAgentRuns({ taskType: 'image' });
+        if (cancelled) return;
+        setHistoryRuns(runs);
+        setSelectedHistoryRunId((current) => current ?? runs[0]?.id ?? null);
+      } catch (error) {
+        if (cancelled) return;
+        setHistoryRuns([]);
+        setSelectedHistoryRunId(null);
+        setHistoryError(readRuntimeErrorMessage(error, '图片历史加载失败'));
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user]);
 
   useEffect(() => {
     if (!isLoggedIn || !user || requiresActivation(user)) {
@@ -281,11 +380,28 @@ export default function ImageGenPage() {
       }
 
       imageReceivedRunIdRef.current = streamRunId;
-      setGeneratedImage({ runId: streamRunId, artifact, prompt: submittedPrompt });
+      const artifactId =
+        typeof artifact.metadata.artifactId === 'string' ? artifact.metadata.artifactId : '';
+      setGeneratedImage({
+        runId: streamRunId,
+        artifactId,
+        artifact,
+        prompt: submittedPrompt,
+        createdAt: new Date().toISOString(),
+      });
       setGenerationError(null);
       setGenerationMessage('图片已生成，请及时下载。');
     });
     eventSource.addEventListener('run_completed', () => {
+      void getAgentRunDetail(streamRunId)
+        .then((detail) => {
+          setHistoryRuns((current) => [
+            detail.run,
+            ...current.filter((run) => run.id !== detail.run.id),
+          ]);
+          setSelectedHistoryRunId(detail.run.id);
+        })
+        .catch(() => null);
       eventSource.close();
       setIsGenerating(false);
       setStreamRunId((current) => (current === streamRunId ? null : current));
@@ -316,6 +432,48 @@ export default function ImageGenPage() {
       eventSource.close();
     };
   }, [streamRunId, submittedPrompt]);
+
+  const loadImageRunPreview = async (runId: string) => {
+    setSelectedHistoryRunId(runId);
+    setGenerationError(null);
+    setGenerationMessage('正在加载历史结果...');
+
+    try {
+      const detail = await getAgentRunDetail(runId);
+      const artifact = firstMediaArtifact(detail.run, 'image');
+      if (!artifact) {
+        setGenerationMessage(null);
+        setGenerationError('该任务暂未产生可预览的图片。');
+        return;
+      }
+
+      const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
+      setHistoryRuns((current) => [
+        detail.run,
+        ...current.filter((run) => run.id !== detail.run.id),
+      ]);
+      setGeneratedImage({
+        runId: detail.run.id,
+        artifactId: artifact.id,
+        prompt: detail.run.prompt,
+        createdAt: detail.run.createdAt,
+        artifact: {
+          kind: 'image',
+          title: artifact.title,
+          delivery: {
+            mode: 'provider_url',
+            url: access.url,
+            expiresAt: access.expiresAt,
+          },
+          metadata: sanitizeMediaMetadata(artifact.metadata, artifact.id),
+        },
+      });
+      setGenerationMessage('已加载历史图片结果。');
+    } catch (error) {
+      setGenerationMessage(null);
+      setGenerationError(readRuntimeErrorMessage(error, '历史图片加载失败'));
+    }
+  };
 
   const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
@@ -377,8 +535,10 @@ export default function ImageGenPage() {
         return;
       }
 
+      setHistoryRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setSelectedHistoryRunId(run.id);
       setStreamRunId(run.id);
-      setGenerationMessage('任务已提交，正在等待模型返回结果。');
+      setGenerationMessage('任务已在后台运行，你可以稍后回来查看结果。');
     } catch (error) {
       setGenerationError(readRuntimeErrorMessage(error, '图片生成请求失败'));
       setIsGenerating(false);
@@ -406,7 +566,7 @@ export default function ImageGenPage() {
     if (!generatedImage) return;
     try {
       await navigator.clipboard.writeText(generatedImage.prompt);
-      setGenerationMessage('提示词已复制。图片不会保存到服务器，请及时下载。');
+      setGenerationMessage('提示词已复制。图片已临时缓存，长期使用请点击存储媒体。');
     } catch {
       setGenerationError('提示词复制失败，请手动复制输入框内容。');
     }
@@ -444,6 +604,9 @@ export default function ImageGenPage() {
               },
             }
           : current,
+      );
+      setHistoryRuns((current) =>
+        updateRunArtifactMetadata(current, generatedImage.runId, artifactId, result.artifact.metadata),
       );
       setGenerationMessage('已保存到我的媒体，可在用户中心重复引用。');
     } catch (error) {
@@ -499,7 +662,59 @@ export default function ImageGenPage() {
         {isLoggedIn && user && requiresActivation(user) ? (
           <ProtectedAccountPanel accountState={user.accountState} title="激活账号后使用 AI 生图" />
         ) : null}
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)_minmax(0,1fr)]">
+          <aside className="space-y-3 rounded-2xl border border-border bg-card/70 p-4">
+            <div>
+              <h2 className="text-sm font-semibold">生成记录</h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                任务提交后会在后台继续运行，返回后可在这里查看和调整。
+              </p>
+            </div>
+            {historyError ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-500">
+                {historyError}
+              </div>
+            ) : null}
+            <div className="max-h-[640px] space-y-2 overflow-y-auto pr-1">
+              {historyLoading ? (
+                <div className="rounded-xl border border-border bg-background px-3 py-4 text-center text-xs text-muted-foreground">
+                  正在加载历史...
+                </div>
+              ) : historyRuns.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border bg-background px-3 py-4 text-center text-xs text-muted-foreground">
+                  暂无生图记录
+                </div>
+              ) : (
+                historyRuns.map((run) => {
+                  const artifact = firstMediaArtifact(run, 'image');
+                  const isSelected = selectedHistoryRunId === run.id;
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => void loadImageRunPreview(run.id)}
+                      className={`w-full cursor-pointer rounded-xl border px-3 py-2 text-left transition-all ${
+                        isSelected
+                          ? 'border-ring bg-secondary text-foreground'
+                          : 'border-border bg-background hover:border-ring'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm font-medium">{run.prompt}</span>
+                        <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+                          {run.status === 'succeeded' ? '完成' : run.status === 'failed' ? '失败' : '运行中'}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span>{formatHistoryTime(run.createdAt)}</span>
+                        <span>{artifact?.metadata.saveStatus === 'saved' ? '已存储' : '未存储'}</span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </aside>
           {/* Left - Controls */}
           <div className="space-y-6">
             {activeTab === 'generate' && (
@@ -722,7 +937,7 @@ export default function ImageGenPage() {
                 <div className="w-full rounded-xl border border-warning/30 bg-warning-surface px-3 py-2 text-left text-xs leading-5 text-warning">
                   {generatedImage.artifact.metadata.saveStatus === 'saved'
                     ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
-                    : '生成结果暂未保存到云端，请及时下载。链接可能过期，刷新或离开页面后可能无法恢复。'}
+                    : '生成结果已临时缓存，暂未进入我的媒体。需要长期使用时请点击“保存到我的媒体”。'}
                 </div>
                 {generationMessage ? <p className="text-xs text-muted-foreground">{generationMessage}</p> : null}
                 {selectedModel ? <p className="text-xs text-muted-foreground">模型：{selectedModel.name}</p> : null}
