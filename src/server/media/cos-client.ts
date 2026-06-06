@@ -1,10 +1,21 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export type TencentCosClient = {
   uploadObject(input: {
     objectKey: string;
     body: Uint8Array;
+    contentType: string;
+  }): Promise<{ bucket: string; region: string; objectKey: string }>;
+  copyObject(input: {
+    sourceObjectKey: string;
+    targetObjectKey: string;
     contentType: string;
   }): Promise<{ bucket: string; region: string; objectKey: string }>;
   deleteObject(objectKey: string): Promise<void>;
@@ -49,6 +60,19 @@ export function createTencentCosClient(): TencentCosClient {
       );
 
       return { bucket, region, objectKey: input.objectKey };
+    },
+    async copyObject(input) {
+      await client.send(
+        new CopyObjectCommand({
+          Bucket: bucket,
+          Key: input.targetObjectKey,
+          CopySource: `${bucket}/${input.sourceObjectKey}`,
+          ContentType: input.contentType,
+          MetadataDirective: 'REPLACE',
+        }),
+      );
+
+      return { bucket, region, objectKey: input.targetObjectKey };
     },
     async deleteObject(objectKey) {
       await client.send(

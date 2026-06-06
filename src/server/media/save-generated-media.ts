@@ -33,6 +33,11 @@ type SaveGeneratedMediaDependencies = {
     }): Promise<CosUploadResult>;
     deleteObject(objectKey: string): Promise<void>;
   };
+  promoteCachedObject?: (input: {
+    sourceObjectKey: string;
+    targetObjectKey: string;
+    contentType: string;
+  }) => Promise<CosUploadResult>;
   fetchSource(url: string): Promise<DownloadedMedia>;
   createObjectKey(input: {
     userId: string;
@@ -41,6 +46,7 @@ type SaveGeneratedMediaDependencies = {
     assetId: string;
     mimeType: string;
   }): string;
+  now?: () => Date;
 };
 
 type SaveGeneratedMediaInput = {
@@ -62,6 +68,11 @@ function readString(record: Record<string, unknown>, key: string) {
 function readNumber(record: Record<string, unknown>, key: string) {
   const value = record[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readPositiveNumber(record: Record<string, unknown>, key: string) {
+  const value = readNumber(record, key);
+  return value !== null && value > 0 ? value : null;
 }
 
 function extensionFromMimeType(mimeType: string) {
@@ -101,6 +112,36 @@ function readSaveEligibleArtifact(
     (artifact) =>
       artifact.id === artifactId && (artifact.kind === 'image' || artifact.kind === 'video'),
   ) ?? null;
+}
+
+function isExpired(expiresAt: string, now: Date) {
+  const timestamp = new Date(expiresAt).getTime();
+  return Number.isFinite(timestamp) && timestamp <= now.getTime();
+}
+
+function readCachedMedia(metadata: Record<string, unknown>, now: Date) {
+  if (metadata.storageStatus !== 'cached' || metadata.cacheStatus !== 'available') {
+    return null;
+  }
+
+  const objectKey = readString(metadata, 'cacheObjectKey');
+  const expiresAt = readString(metadata, 'cacheExpiresAt');
+  const mimeType = readString(metadata, 'mimeType');
+  const byteSize = readPositiveNumber(metadata, 'byteLength') ?? readPositiveNumber(metadata, 'byteSize');
+  if (!objectKey || !expiresAt || !mimeType || byteSize === null) {
+    return null;
+  }
+
+  return {
+    objectKey,
+    expiresAt,
+    expired: isExpired(expiresAt, now),
+    mimeType,
+    byteSize,
+    width: readNumber(metadata, 'width'),
+    height: readNumber(metadata, 'height'),
+    durationSeconds: readNumber(metadata, 'durationSeconds'),
+  };
 }
 
 export function createSaveGeneratedMediaService(dependencies: SaveGeneratedMediaDependencies) {
@@ -144,9 +185,11 @@ export function createSaveGeneratedMediaService(dependencies: SaveGeneratedMedia
 
       const metadata = artifact.metadata;
       const sourceUrl = readString(metadata, 'sourceUrl');
-      if (!sourceUrl) {
+      const cachedMedia = readCachedMedia(metadata, dependencies.now?.() ?? new Date());
+      if (cachedMedia?.expired && !sourceUrl) {
         await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
           saveStatus: 'source_expired',
+          saveError: 'cache_expired',
         });
         throw new Error('源文件已失效，无法保存到我的媒体。');
       }
@@ -154,6 +197,114 @@ export function createSaveGeneratedMediaService(dependencies: SaveGeneratedMedia
       const quota = await dependencies.userStorageRepository.getStorageQuota(input.userId);
       if (!quota) {
         throw new Error('用户存储额度不存在。');
+      }
+
+      if (cachedMedia && !cachedMedia.expired) {
+        if (quota.storageUsedBytes + cachedMedia.byteSize > quota.storageQuotaBytes) {
+          await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+            saveStatus: 'save_failed',
+            saveError: 'storage_quota_exceeded',
+          });
+          throw new Error('存储空间不足，无法保存到我的媒体。');
+        }
+
+        await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+          saveStatus: 'saving',
+        });
+
+        try {
+          if (!dependencies.promoteCachedObject) {
+            throw new Error('缓存媒体晋升服务不可用。');
+          }
+
+          const assetId = randomUUID();
+          const objectKey =
+            dependencies.createObjectKey?.({
+              userId: input.userId,
+              conversationId: run.conversationId,
+              runId: run.id,
+              assetId,
+              mimeType: cachedMedia.mimeType,
+            }) ??
+            inferObjectKey({
+              userId: input.userId,
+              conversationId: run.conversationId,
+              runId: run.id,
+              assetId,
+              mimeType: cachedMedia.mimeType,
+            });
+
+          const uploaded = await dependencies.promoteCachedObject({
+            sourceObjectKey: cachedMedia.objectKey,
+            targetObjectKey: objectKey,
+            contentType: cachedMedia.mimeType,
+          });
+
+          const savedAsset = await dependencies.mediaAssetRepository.createSavedAsset({
+            userId: input.userId,
+            runId: run.id,
+            conversationId: run.conversationId,
+            artifactId: artifact.id,
+            kind: artifact.kind === 'video' ? 'video' : 'image',
+            title: artifact.title,
+            sourceType: 'ai_generated',
+            sourceProvider: run.capabilitySummary.provider,
+            sourceModel: run.capabilitySummary.model,
+            sourceUrl,
+            sourceExpiresAt: readString(metadata, 'providerExpiresAt'),
+            originalFilename: null,
+            sha256: null,
+            shareId: null,
+            shareStatus: 'disabled',
+            sharedAt: null,
+            storageProvider: 'tencent_cos',
+            bucket: uploaded.bucket,
+            region: uploaded.region,
+            objectKey: uploaded.objectKey,
+            mimeType: cachedMedia.mimeType,
+            byteSize: cachedMedia.byteSize,
+            width: cachedMedia.width,
+            height: cachedMedia.height,
+            durationSeconds: cachedMedia.durationSeconds,
+            metadata: {},
+          });
+
+          await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+            saveStatus: 'saved',
+            savedAssetId: savedAsset.id,
+          });
+          await dependencies.userStorageRepository.incrementStorageUsedBytes(
+            input.userId,
+            cachedMedia.byteSize,
+          );
+
+          const updatedDetail = await dependencies.runRepository.getRunDetailForUser(input.runId, input.userId);
+          const updatedArtifact = readSaveEligibleArtifact(
+            updatedDetail?.run.artifacts ?? [],
+            input.artifactId,
+          );
+          if (!updatedArtifact) {
+            throw new Error('保存后无法读取生成结果。');
+          }
+
+          return {
+            asset: savedAsset,
+            updatedArtifact,
+          };
+        } catch (error) {
+          await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+            saveStatus: 'save_failed',
+            saveError: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
+      }
+
+      if (!sourceUrl) {
+        await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+          saveStatus: 'source_expired',
+        });
+        throw new Error('源文件已失效，无法保存到我的媒体。');
       }
 
       await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {

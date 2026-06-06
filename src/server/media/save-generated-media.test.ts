@@ -49,6 +49,55 @@ async function createRunWithSavableArtifact() {
   return { runRepository, runId: run.id, artifactId };
 }
 
+async function createRunWithCachedArtifact(overrides: Record<string, unknown> = {}) {
+  const runRepository = createMemoryAgentRunRepository();
+  const run = await runRepository.createRun({
+    userId: 'user-1',
+    conversationId: '11111111-1111-4111-8111-111111111111',
+    taskType: 'image',
+    prompt: '海报',
+    provider: 'doubao',
+    model: 'seedream-3',
+    capabilitySnapshot: {
+      bundleId: 'bundle-image',
+      bundleCode: 'image-default',
+      provider: 'doubao',
+      model: 'seedream-3',
+      capabilities: [],
+    },
+    input: {},
+  });
+
+  const completed = await runRepository.completeRun(run.id, {
+    finalMessage: '完成',
+    artifacts: [
+      {
+        kind: 'image',
+        title: '生成图片',
+        metadata: {
+          saveStatus: 'not_saved',
+          storageStatus: 'cached',
+          cacheStatus: 'available',
+          cacheObjectKey: 'ai-generated-cache/test/users/user-1/runs/run-1/artifact-1.png',
+          cacheExpiresAt: '2026-06-13T00:00:00.000Z',
+          sourceUrl: 'https://provider.example/output.png',
+          providerExpiresAt: '2026-06-07T00:00:00.000Z',
+          mimeType: 'image/png',
+          byteLength: 4,
+          width: 512,
+          height: 512,
+          ...overrides,
+        },
+      },
+    ],
+  });
+
+  const artifactId = completed?.artifacts[0]?.id;
+  assert.ok(artifactId);
+
+  return { runRepository, runId: run.id, artifactId };
+}
+
 test('save generated media uploads to COS, creates asset, and marks artifact saved', async () => {
   const { runRepository, runId, artifactId } = await createRunWithSavableArtifact();
   const mediaAssetRepository = createMemoryGeneratedMediaAssetRepository();
@@ -102,6 +151,131 @@ test('save generated media uploads to COS, creates asset, and marks artifact sav
 
   const quota = await userStorageRepository.getStorageQuota('user-1');
   assert.deepEqual(quota, { storageQuotaBytes: 10_000, storageUsedBytes: 3 });
+});
+
+test('save generated media promotes cached artifact without fetching provider source', async () => {
+  const { runRepository, runId, artifactId } = await createRunWithCachedArtifact();
+  const mediaAssetRepository = createMemoryGeneratedMediaAssetRepository();
+  const userStorageRepository = createMemoryUserStorageRepository({
+    'user-1': { storageQuotaBytes: 10_000, storageUsedBytes: 0 },
+  });
+  const promotions: Array<{ sourceObjectKey: string; targetObjectKey: string; contentType: string }> = [];
+
+  const service = createSaveGeneratedMediaService({
+    runRepository,
+    mediaAssetRepository,
+    userStorageRepository,
+    cosClient: {
+      async uploadObject() {
+        throw new Error('provider upload should not be called');
+      },
+      async deleteObject() {},
+    },
+    promoteCachedObject: async (input) => {
+      promotions.push(input);
+      return {
+        bucket: 'bucket-a',
+        region: 'ap-shanghai',
+        objectKey: input.targetObjectKey,
+      };
+    },
+    fetchSource: async () => {
+      throw new Error('provider fetch should not be called');
+    },
+    createObjectKey: () =>
+      `ai-generated/dev/users/user-1/conversations/11111111-1111-4111-8111-111111111111/runs/${runId}/asset-1.png`,
+    now: () => new Date('2026-06-06T00:00:00.000Z'),
+  });
+
+  const result = await service.saveForUser({ userId: 'user-1', runId, artifactId });
+
+  assert.equal(result.asset.mimeType, 'image/png');
+  assert.equal(result.asset.byteSize, 4);
+  assert.equal(result.asset.width, 512);
+  assert.equal(result.asset.sourceUrl, 'https://provider.example/output.png');
+  assert.equal(result.updatedArtifact.metadata.saveStatus, 'saved');
+  assert.deepEqual(promotions, [
+    {
+      sourceObjectKey: 'ai-generated-cache/test/users/user-1/runs/run-1/artifact-1.png',
+      targetObjectKey: `ai-generated/dev/users/user-1/conversations/11111111-1111-4111-8111-111111111111/runs/${runId}/asset-1.png`,
+      contentType: 'image/png',
+    },
+  ]);
+  const quota = await userStorageRepository.getStorageQuota('user-1');
+  assert.deepEqual(quota, { storageQuotaBytes: 10_000, storageUsedBytes: 4 });
+});
+
+test('save generated media marks cached artifact source_expired when cache expired without fallback', async () => {
+  const { runRepository, runId, artifactId } = await createRunWithCachedArtifact({
+    cacheExpiresAt: '2026-06-05T00:00:00.000Z',
+    sourceUrl: null,
+  });
+  const service = createSaveGeneratedMediaService({
+    runRepository,
+    mediaAssetRepository: createMemoryGeneratedMediaAssetRepository(),
+    userStorageRepository: createMemoryUserStorageRepository({
+      'user-1': { storageQuotaBytes: 10_000, storageUsedBytes: 0 },
+    }),
+    cosClient: {
+      async uploadObject() {
+        throw new Error('upload should not be called');
+      },
+      async deleteObject() {},
+    },
+    promoteCachedObject: async () => {
+      throw new Error('promotion should not be called');
+    },
+    fetchSource: async () => {
+      throw new Error('fetch should not be called');
+    },
+    createObjectKey: () => 'unused',
+    now: () => new Date('2026-06-06T00:00:00.000Z'),
+  });
+
+  await assert.rejects(
+    () => service.saveForUser({ userId: 'user-1', runId, artifactId }),
+    /源文件已失效/,
+  );
+
+  const detail = await runRepository.getRunDetailForUser(runId, 'user-1');
+  assert.equal(detail?.run.artifacts[0]?.metadata.saveStatus, 'source_expired');
+  assert.equal(detail?.run.artifacts[0]?.metadata.saveError, 'cache_expired');
+});
+
+test('save generated media checks quota before promoting cached artifact', async () => {
+  const { runRepository, runId, artifactId } = await createRunWithCachedArtifact({
+    byteLength: 11_000,
+  });
+  const service = createSaveGeneratedMediaService({
+    runRepository,
+    mediaAssetRepository: createMemoryGeneratedMediaAssetRepository(),
+    userStorageRepository: createMemoryUserStorageRepository({
+      'user-1': { storageQuotaBytes: 10_000, storageUsedBytes: 0 },
+    }),
+    cosClient: {
+      async uploadObject() {
+        throw new Error('upload should not be called');
+      },
+      async deleteObject() {},
+    },
+    promoteCachedObject: async () => {
+      throw new Error('promotion should not be called');
+    },
+    fetchSource: async () => {
+      throw new Error('fetch should not be called');
+    },
+    createObjectKey: () => 'unused',
+    now: () => new Date('2026-06-06T00:00:00.000Z'),
+  });
+
+  await assert.rejects(
+    () => service.saveForUser({ userId: 'user-1', runId, artifactId }),
+    /存储空间不足/,
+  );
+
+  const detail = await runRepository.getRunDetailForUser(runId, 'user-1');
+  assert.equal(detail?.run.artifacts[0]?.metadata.saveStatus, 'save_failed');
+  assert.equal(detail?.run.artifacts[0]?.metadata.saveError, 'storage_quota_exceeded');
 });
 
 test('save generated media returns existing asset for duplicate save requests', async () => {

@@ -100,11 +100,13 @@ export function createMediaAssetsRouteHandlers(dependencies: {
 const handlers = createMediaAssetsRouteHandlers({
   requireSession: () => requireAuthenticatedUserPermission('api.user.media_assets.list'),
   saveGeneratedMedia: async (input) => {
+    const cosClient = createTencentCosClient();
     const service = createSaveGeneratedMediaService({
       runRepository: getAgentRunRepository(),
       mediaAssetRepository: getGeneratedMediaAssetRepository(),
       userStorageRepository: getUserStorageRepository(),
-      cosClient: createTencentCosClient(),
+      cosClient,
+      promoteCachedObject: (copyInput) => cosClient.copyObject(copyInput),
       async fetchSource(url) {
         const response = await fetch(url);
         if (!response.ok) {
