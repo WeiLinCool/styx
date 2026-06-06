@@ -20,6 +20,8 @@ export type VideoProviderCreateRequest = {
   prompt: string;
   duration?: number;
   resolution?: string;
+  imageUrl?: string;
+  audioUrl?: string;
   ratio?: string;
   seed?: number;
   watermark?: boolean;

@@ -112,6 +112,59 @@ test('parseCreateAgentRunRawBody requires modelId for video requests', () => {
   );
 });
 
+test('parseCreateAgentRunRawBody accepts canonical video input fields', () => {
+  const parsed = parseCreateAgentRunRawBody({
+    taskType: 'video',
+    prompt: '山水动起来',
+    modelId: 'video-model-1',
+    input: {
+      durationSeconds: 5,
+      resolution: '720p',
+      styleCode: 'stone',
+      imageAssetId: '11111111-1111-4111-8111-111111111111',
+      audioAssetId: '22222222-2222-4222-8222-222222222222',
+    },
+  });
+
+  assert.deepEqual(parsed.input, {
+    durationSeconds: 5,
+    resolution: '720p',
+    styleCode: 'stone',
+    imageAssetId: '11111111-1111-4111-8111-111111111111',
+    audioAssetId: '22222222-2222-4222-8222-222222222222',
+  });
+});
+
+test('parseCreateAgentRunRawBody rejects non-number video duration', () => {
+  assert.throws(
+    () =>
+      parseCreateAgentRunRawBody({
+        taskType: 'video',
+        prompt: '山水动起来',
+        modelId: 'video-model-1',
+        input: { durationSeconds: '5', resolution: '720p' },
+      }),
+    /durationSeconds/,
+  );
+});
+
+test('parseCreateAgentRunRawBody rejects invalid video material IDs', () => {
+  assert.throws(
+    () =>
+      parseCreateAgentRunRawBody({
+        taskType: 'video',
+        prompt: '山水动起来',
+        modelId: 'video-model-1',
+        input: {
+          durationSeconds: 5,
+          resolution: '720p',
+          imageAssetId: 'not-a-uuid',
+        },
+      }),
+    /imageAssetId/,
+  );
+});
+
 test('parseCreateAgentRunRawBody requires source image for edit mode', () => {
   assert.throws(
     () =>

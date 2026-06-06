@@ -4,6 +4,8 @@ import { z } from 'zod';
 import {
   AgentConversationNotFoundError,
   AgentRunModelRequiredError,
+  AgentRunVideoMaterialError,
+  AgentRunVideoSelectionError,
   createAgentRunService,
 } from '@/server/agent/run-service';
 import {
@@ -35,6 +37,29 @@ const sourceImageDataUrlSchema = z
     'source image data URL is too large.',
   );
 
+const optionalNonEmptyStringSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().min(1));
+
+const videoRunInputSchema = z.object({
+  durationSeconds: z
+    .number({
+      message: 'input.durationSeconds must be a positive integer.',
+    })
+    .int('input.durationSeconds must be a positive integer.')
+    .positive('input.durationSeconds must be a positive integer.'),
+  resolution: z
+    .string({
+      message: 'input.resolution is required.',
+    })
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, 'input.resolution is required.')),
+  styleCode: optionalNonEmptyStringSchema.optional(),
+  imageAssetId: z.string().uuid('input.imageAssetId must be a valid UUID.').optional(),
+  audioAssetId: z.string().uuid('input.audioAssetId must be a valid UUID.').optional(),
+});
+
 const createAgentRunBodySchema = z
   .object({
     taskType: z.enum(['chat', 'image', 'video', 'workflow']),
@@ -61,6 +86,19 @@ const createAgentRunBodySchema = z
         path: ['modelId'],
         message: 'modelId is required for video requests.',
       });
+    }
+
+    if (body.taskType === 'video') {
+      const parsed = videoRunInputSchema.safeParse(body.input);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['input', ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
     }
 
     if (body.taskType !== 'image') {
@@ -170,6 +208,14 @@ export function serviceErrorToResponse(error: unknown) {
 
   if (error instanceof AgentRunModelRequiredError) {
     return jsonError('model_required', error.message, 400);
+  }
+
+  if (error instanceof AgentRunVideoSelectionError) {
+    return jsonError(error.code, error.message, error.code === 'forbidden' ? 403 : 400);
+  }
+
+  if (error instanceof AgentRunVideoMaterialError) {
+    return jsonError(error.code, error.message, error.code === 'forbidden' ? 403 : 400);
   }
 
   if (error instanceof ModelNotAvailableError) {

@@ -23,6 +23,12 @@ import {
   createMediaProviderAdapter,
   type MediaProviderAdapter,
 } from '@/server/ai/media-provider-adapters';
+import { listActiveUserEntitlements, type ActiveUserEntitlement } from '@/server/ai/model-entitlements';
+import { createTencentCosClient } from '@/server/media/cos-client';
+import {
+  createDatabaseGeneratedMediaAssetRepository,
+  type GeneratedMediaAssetRepository,
+} from '@/server/repositories/generated-media-assets';
 import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
 import type { AgentArtifactInput, AgentRunRepository } from '@/server/repositories/agent-runs';
 import {
@@ -38,6 +44,19 @@ import {
   type ResolvedImageModel,
   type ResolvedVideoModel,
 } from '@/server/repositories/ai-models';
+import {
+  getVideoPlanConfigByVersionId,
+  listEnabledVideoStylePresets,
+} from '@/server/repositories/video-generation-config';
+import {
+  membershipPlanVersionRepository,
+  resolvePlanVersionForEntitlement,
+} from '@/server/repositories/membership-plan-versions';
+import {
+  resolveVideoGenerationPolicy,
+  validateVideoGenerationSelection,
+  type VideoGenerationPolicy,
+} from '@/server/video/video-generation-policy';
 import type {
   AgentCapabilitySnapshot,
   AgentRunDto,
@@ -45,6 +64,7 @@ import type {
   AiUsage,
   CreateAgentRunResult,
   DirectMediaArtifactCompletedPayload,
+  GeneratedMediaAssetDto,
   TransientAgentArtifactDto,
 } from './types';
 import {
@@ -85,6 +105,26 @@ export class AgentConversationNotFoundError extends Error {
   }
 }
 
+export class AgentRunVideoSelectionError extends Error {
+  readonly code: 'invalid_request' | 'forbidden';
+
+  constructor(input: { message: string; code: 'invalid_request' | 'forbidden' }) {
+    super(input.message);
+    this.name = 'AgentRunVideoSelectionError';
+    this.code = input.code;
+  }
+}
+
+export class AgentRunVideoMaterialError extends Error {
+  readonly code: 'invalid_request' | 'forbidden';
+
+  constructor(input: { message: string; code: 'invalid_request' | 'forbidden' }) {
+    super(input.message);
+    this.name = 'AgentRunVideoMaterialError';
+    this.code = input.code;
+  }
+}
+
 type DebitForAgentRun = (input: {
   userId: string;
   runId: string;
@@ -113,6 +153,8 @@ type MediaRunScheduler = {
   getActiveRunIds(): string[];
 };
 
+type VideoMaterialSigner = (asset: GeneratedMediaAssetDto) => Promise<string>;
+
 export type CreateAgentRunServiceInput = {
   repository: AgentRunRepository;
   conversationRepository?: AgentConversationRepository;
@@ -135,6 +177,9 @@ export type CreateAgentRunServiceInput = {
     modelId: string,
   ) => Promise<ResolvedVideoModel>;
   createVideoProviderAdapter?: (model: ResolvedVideoModel) => MediaProviderAdapter;
+  resolveVideoGenerationPolicyForUser?: (userId: string) => Promise<VideoGenerationPolicy>;
+  mediaAssetRepository?: GeneratedMediaAssetRepository;
+  signVideoMaterialUrl?: VideoMaterialSigner;
   waitForVideoPoll?: (attempt: number) => Promise<void>;
   debitForImageAgentRun?: DebitForImageAgentRun;
 };
@@ -445,24 +490,14 @@ function readNumberInput(input: Record<string, unknown>, key: string) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function readPositiveIntegerInput(input: Record<string, unknown>, key: string) {
+  const value = readNumberInput(input, key);
+  return value !== null && Number.isInteger(value) && value > 0 ? value : null;
+}
+
 function readBooleanInput(input: Record<string, unknown>, key: string) {
   const value = input[key];
   return typeof value === 'boolean' ? value : null;
-}
-
-function readVideoDurationSeconds(input: Record<string, unknown>) {
-  const numeric = readNumberInput(input, 'duration');
-  if (numeric !== null) {
-    return numeric;
-  }
-
-  const text = readStringInput(input, 'duration');
-  if (!text) {
-    return null;
-  }
-
-  const match = text.match(/^(\d+)/);
-  return match ? Number(match[1]) : null;
 }
 
 const MAX_SOURCE_IMAGE_DATA_URL_BYTES = 10 * 1024 * 1024;
@@ -609,12 +644,146 @@ function sanitizeImageRunInput(input: Record<string, unknown>, model: ResolvedIm
 }
 
 function sanitizeVideoRunInput(input: Record<string, unknown>, model: ResolvedVideoModel) {
+  const canonicalInput = toCanonicalVideoInput(input);
   return {
-    ...cloneRecord(input),
+    ...canonicalInput,
     modelId: model.id,
     selectedModel: toSelectedModelSnapshot(model),
     resolvedModel: toResolvedModelSnapshot(model),
   };
+}
+
+function toCanonicalVideoInput(input: Record<string, unknown>) {
+  const durationSeconds = readPositiveIntegerInput(input, 'durationSeconds');
+  const resolution = readStringInput(input, 'resolution');
+  const styleCode = readStringInput(input, 'styleCode');
+  const imageAssetId = readStringInput(input, 'imageAssetId');
+  const audioAssetId = readStringInput(input, 'audioAssetId');
+
+  if (durationSeconds === null || !resolution) {
+    throw new AgentRunVideoSelectionError({
+      code: 'invalid_request',
+      message: 'Video generation requires durationSeconds and resolution.',
+    });
+  }
+
+  return {
+    durationSeconds,
+    resolution,
+    ...(styleCode ? { styleCode } : {}),
+    ...(imageAssetId ? { imageAssetId } : {}),
+    ...(audioAssetId ? { audioAssetId } : {}),
+  };
+}
+
+async function resolveVideoMaterialUrls(input: {
+  userId: string;
+  input: ReturnType<typeof toCanonicalVideoInput>;
+  repository?: GeneratedMediaAssetRepository;
+  signVideoMaterialUrl: VideoMaterialSigner;
+}) {
+  const output: { imageUrl?: string; audioUrl?: string } = {};
+  const repository =
+    input.input.imageAssetId || input.input.audioAssetId
+      ? input.repository ?? createDatabaseGeneratedMediaAssetRepository()
+      : null;
+
+  if (input.input.imageAssetId) {
+    const asset = await repository?.findAssetForUser({
+      userId: input.userId,
+      assetId: input.input.imageAssetId,
+    });
+    if (!asset) {
+      throw new AgentRunVideoMaterialError({
+        code: 'forbidden',
+        message: 'Selected image material was not found.',
+      });
+    }
+    if (asset.kind !== 'image') {
+      throw new AgentRunVideoMaterialError({
+        code: 'invalid_request',
+        message: 'Selected image material must be an image asset.',
+      });
+    }
+    output.imageUrl = await input.signVideoMaterialUrl(asset);
+  }
+
+  if (input.input.audioAssetId) {
+    const asset = await repository?.findAssetForUser({
+      userId: input.userId,
+      assetId: input.input.audioAssetId,
+    });
+    if (!asset) {
+      throw new AgentRunVideoMaterialError({
+        code: 'forbidden',
+        message: 'Selected audio material was not found.',
+      });
+    }
+    if (asset.kind !== 'audio') {
+      throw new AgentRunVideoMaterialError({
+        code: 'invalid_request',
+        message: 'Selected audio material must be an audio asset.',
+      });
+    }
+    output.audioUrl = await input.signVideoMaterialUrl(asset);
+  }
+
+  return output;
+}
+
+function selectMembershipEntitlement(entitlements: ActiveUserEntitlement[]) {
+  const membershipEntitlements = entitlements.filter(
+    (entitlement) =>
+      entitlement.source === 'membership' &&
+      entitlement.benefitCode === null &&
+      (entitlement.planVersionId || entitlement.planCode),
+  );
+
+  return membershipEntitlements.toSorted((left, right) => {
+    const leftHasVersion = left.planVersionId ? 1 : 0;
+    const rightHasVersion = right.planVersionId ? 1 : 0;
+    if (leftHasVersion !== rightHasVersion) {
+      return rightHasVersion - leftHasVersion;
+    }
+
+    const leftExpiry = left.expiresAt ? new Date(left.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+    const rightExpiry = right.expiresAt ? new Date(right.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+    if (leftExpiry !== rightExpiry) {
+      return rightExpiry - leftExpiry;
+    }
+
+    return (left.planCode ?? '').localeCompare(right.planCode ?? '');
+  })[0] ?? null;
+}
+
+async function resolveDefaultVideoGenerationPolicyForUser(userId: string) {
+  const [entitlements, styles] = await Promise.all([
+    listActiveUserEntitlements(userId),
+    listEnabledVideoStylePresets(),
+  ]);
+  const entitlement = selectMembershipEntitlement(entitlements);
+  let planConfig = null;
+
+  if (entitlement?.planVersionId) {
+    planConfig = await getVideoPlanConfigByVersionId(entitlement.planVersionId);
+  } else if (entitlement?.planCode) {
+    const version = await resolvePlanVersionForEntitlement(entitlement.planCode, {
+      loader: membershipPlanVersionRepository,
+    });
+    planConfig =
+      version?.videoGenerationPolicy ??
+      (version ? await getVideoPlanConfigByVersionId(version.id) : null);
+  }
+
+  return resolveVideoGenerationPolicy({
+    entitlement,
+    planConfig,
+    styles,
+  });
+}
+
+async function signVideoMaterialWithTencentCos(asset: GeneratedMediaAssetDto) {
+  return createTencentCosClient().createSignedReadUrl(asset.objectKey, 600);
 }
 
 function toChatProviderMessages(runs: AgentRunDto[], nextPrompt: string): ChatMessage[] {
@@ -728,6 +897,9 @@ export function createAgentRunService({
   createImageProviderAdapter = () => defaultCreateImageProviderAdapter(),
   resolveVideoModelForUser = defaultResolveVideoModelForUser,
   createVideoProviderAdapter = (model) => createMediaProviderAdapter(model),
+  resolveVideoGenerationPolicyForUser = resolveDefaultVideoGenerationPolicyForUser,
+  mediaAssetRepository,
+  signVideoMaterialUrl = signVideoMaterialWithTencentCos,
   waitForVideoPoll = async () => {},
   debitForImageAgentRun = defaultDebitForImageAgentRun,
 }: CreateAgentRunServiceInput) {
@@ -763,6 +935,9 @@ export function createAgentRunService({
           resolveVideoModelForUser,
           assertCanAffordMinimum,
           createVideoProviderAdapter,
+          resolveVideoGenerationPolicyForUser,
+          mediaAssetRepository,
+          signVideoMaterialUrl,
           debitForImageAgentRun,
         });
       }
@@ -852,6 +1027,9 @@ async function createAndRunVideoAgentRun(input: {
     pricing: ResolvedVideoModel['pricing'],
   ) => Promise<void>;
   createVideoProviderAdapter: (model: ResolvedVideoModel) => MediaProviderAdapter;
+  resolveVideoGenerationPolicyForUser: (userId: string) => Promise<VideoGenerationPolicy>;
+  mediaAssetRepository?: GeneratedMediaAssetRepository;
+  signVideoMaterialUrl: VideoMaterialSigner;
   debitForImageAgentRun: DebitForImageAgentRun;
 }): Promise<CreateAgentRunResult> {
   const { repository, resolveVideoModelForUser, assertCanAffordMinimum } = input;
@@ -860,11 +1038,47 @@ async function createAndRunVideoAgentRun(input: {
     throw new AgentRunModelRequiredError();
   }
 
+  const canonicalInput = toCanonicalVideoInput(request.input);
+  const policy = await input.resolveVideoGenerationPolicyForUser(request.userId);
+  const selectedStyleCode = canonicalInput.styleCode ?? policy.defaults.styleCode;
+  if (!selectedStyleCode) {
+    throw new AgentRunVideoSelectionError({
+      code: 'invalid_request',
+      message: 'The selected video style is not available.',
+    });
+  }
+  const selection = validateVideoGenerationSelection({
+    policy,
+    selection: {
+      styleCode: selectedStyleCode,
+      durationSeconds: canonicalInput.durationSeconds,
+      resolution: canonicalInput.resolution,
+    },
+  });
+  if (!selection.ok) {
+    throw new AgentRunVideoSelectionError({
+      code: selection.code === 'policy_disabled' ? 'forbidden' : 'invalid_request',
+      message: selection.message,
+    });
+  }
+
   const model = await resolveVideoModelForUser(request.userId, request.modelId);
   await assertCanAffordMinimum(request.userId, model.pricing);
+  const materialUrls = await resolveVideoMaterialUrls({
+    userId: request.userId,
+    input: canonicalInput,
+    repository: input.mediaAssetRepository,
+    signVideoMaterialUrl: input.signVideoMaterialUrl,
+  });
 
   const capabilitySnapshot = toVideoCapabilitySnapshot(model);
-  const runInput = sanitizeVideoRunInput(request.input, model);
+  const runInput = sanitizeVideoRunInput(
+    {
+      ...canonicalInput,
+      styleCode: selectedStyleCode,
+    },
+    model,
+  );
   const created = await repository.createRun({
     userId: request.userId,
     conversationId: request.conversationId,
@@ -897,8 +1111,10 @@ async function createAndRunVideoAgentRun(input: {
     userId: request.userId,
     model,
     prompt: request.prompt,
-    duration: readVideoDurationSeconds(request.input) ?? undefined,
-    resolution: readStringInput(request.input, 'resolution') ?? readStringInput(request.input, 'clarity') ?? undefined,
+    duration: canonicalInput.durationSeconds,
+    resolution: canonicalInput.resolution,
+    imageUrl: materialUrls.imageUrl,
+    audioUrl: materialUrls.audioUrl,
     ratio: readStringInput(request.input, 'ratio') ?? undefined,
     seed: readNumberInput(request.input, 'seed') ?? undefined,
     watermark: readBooleanInput(request.input, 'watermark') ?? undefined,
