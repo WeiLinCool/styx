@@ -77,6 +77,14 @@ function formatHistoryTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatSaveStatus(metadata: Record<string, unknown>) {
+  if (metadata.saveStatus === 'saved') return '已存储';
+  if (metadata.saveStatus === 'saving') return '存储中';
+  if (metadata.saveStatus === 'save_failed') return '存储失败';
+  if (metadata.saveStatus === 'source_expired') return '已过期';
+  return '未存储';
+}
+
 function readStorageStatus(value: unknown): DirectMediaResultDto['metadata']['storageStatus'] {
   return value === 'provider_direct' || value === 'cached' || value === 'stored' ? value : 'cached';
 }
@@ -448,6 +456,27 @@ export default function ImageGenPage() {
       }
 
       const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
+      const input = detail.internal?.input ?? {};
+      const mode = input.mode;
+      if (mode === 'generate') {
+        setActiveTab('generate');
+        setPrompt(detail.run.prompt);
+      } else if (mode === 'upscale') {
+        setActiveTab('hd-fix');
+        setHdPrompt(detail.run.prompt);
+      } else if (mode === 'edit') {
+        setActiveTab('style-transfer');
+        setStylePrompt(detail.run.prompt);
+      }
+      if (typeof input.size === 'string') {
+        setSelectedSize(input.size);
+      }
+      if (typeof input.scale === 'string') {
+        setHdScale(input.scale);
+      }
+      if (typeof input.style === 'string') {
+        setSelectedStyle(input.style);
+      }
       setHistoryRuns((current) => [
         detail.run,
         ...current.filter((run) => run.id !== detail.run.id),
@@ -707,7 +736,7 @@ export default function ImageGenPage() {
                       </div>
                       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                         <span>{formatHistoryTime(run.createdAt)}</span>
-                        <span>{artifact?.metadata.saveStatus === 'saved' ? '已存储' : '未存储'}</span>
+                        <span>{artifact ? formatSaveStatus(artifact.metadata) : '等待结果'}</span>
                       </div>
                     </button>
                   );
