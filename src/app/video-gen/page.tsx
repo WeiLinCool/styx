@@ -705,13 +705,17 @@ export default function VideoGenPage() {
               <div className="rounded-xl border border-border bg-card p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <ImageIcon size={15} className="text-muted-foreground" />
-                  <label className="text-sm font-medium">参考图（可选）</label>
+                  <span className="text-sm font-medium">参考图（可选）</span>
                 </div>
+                <label htmlFor="video-reference-image-input" className="sr-only">
+                  上传参考图
+                </label>
                 <input
+                  id="video-reference-image-input"
                   ref={imageFileInputRef}
                   type="file"
                   accept={IMAGE_UPLOAD_ACCEPT}
-                  disabled={Boolean(configDisabledMessage)}
+                  disabled={Boolean(configDisabledMessage) || isGenerating}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
                     setPendingImageFile(file);
@@ -719,9 +723,13 @@ export default function VideoGenPage() {
                   }}
                   className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground"
                 />
+                <label htmlFor="video-reference-image-asset" className="sr-only">
+                  从媒体库选择参考图
+                </label>
                 <select
+                  id="video-reference-image-asset"
                   value={selectedImageAssetId}
-                  disabled={Boolean(configDisabledMessage) || pendingImageFile !== null}
+                  disabled={Boolean(configDisabledMessage) || isGenerating || pendingImageFile !== null}
                   onChange={(event) => selectImageAsset(event.target.value)}
                   className="mt-2 h-9 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus:border-ring"
                 >
@@ -735,8 +743,10 @@ export default function VideoGenPage() {
                     <p className="min-w-0 truncate text-xs text-muted-foreground">{pendingImageFile.name}</p>
                     <button
                       type="button"
+                      disabled={isGenerating}
                       onClick={clearPendingImageFile}
-                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                      aria-label="移除待上传参考图"
+                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       移除
                     </button>
@@ -745,8 +755,10 @@ export default function VideoGenPage() {
                 {selectedImageAssetId ? (
                   <button
                     type="button"
+                    disabled={isGenerating}
                     onClick={() => setSelectedImageAssetId('')}
-                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                    aria-label="清除媒体库参考图选择"
+                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     清除媒体库选择
                   </button>
@@ -756,13 +768,17 @@ export default function VideoGenPage() {
               <div className="rounded-xl border border-border bg-card p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <Music size={15} className="text-muted-foreground" />
-                  <label className="text-sm font-medium">音频（可选）</label>
+                  <span className="text-sm font-medium">音频（可选）</span>
                 </div>
+                <label htmlFor="video-audio-input" className="sr-only">
+                  上传音频素材
+                </label>
                 <input
+                  id="video-audio-input"
                   ref={audioFileInputRef}
                   type="file"
                   accept={AUDIO_UPLOAD_ACCEPT}
-                  disabled={Boolean(configDisabledMessage)}
+                  disabled={Boolean(configDisabledMessage) || isGenerating}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
                     setPendingAudioFile(file);
@@ -770,9 +786,13 @@ export default function VideoGenPage() {
                   }}
                   className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground"
                 />
+                <label htmlFor="video-audio-asset" className="sr-only">
+                  从媒体库选择音频素材
+                </label>
                 <select
+                  id="video-audio-asset"
                   value={selectedAudioAssetId}
-                  disabled={Boolean(configDisabledMessage) || pendingAudioFile !== null}
+                  disabled={Boolean(configDisabledMessage) || isGenerating || pendingAudioFile !== null}
                   onChange={(event) => selectAudioAsset(event.target.value)}
                   className="mt-2 h-9 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus:border-ring"
                 >
@@ -786,8 +806,10 @@ export default function VideoGenPage() {
                     <p className="min-w-0 truncate text-xs text-muted-foreground">{pendingAudioFile.name}</p>
                     <button
                       type="button"
+                      disabled={isGenerating}
                       onClick={clearPendingAudioFile}
-                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                      aria-label="移除待上传音频素材"
+                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       移除
                     </button>
@@ -796,8 +818,10 @@ export default function VideoGenPage() {
                 {selectedAudioAssetId ? (
                   <button
                     type="button"
+                    disabled={isGenerating}
                     onClick={() => setSelectedAudioAssetId('')}
-                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                    aria-label="清除媒体库音频素材选择"
+                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     清除媒体库选择
                   </button>
