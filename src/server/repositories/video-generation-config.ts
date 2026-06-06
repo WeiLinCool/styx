@@ -24,6 +24,7 @@ export type VideoGenerationConfigRepository = {
   listEnabledVideoStylePresets(): Promise<VideoStylePreset[]>;
   listAdminVideoStylePresets(): Promise<VideoStylePreset[]>;
   upsertVideoStylePreset(input: VideoStylePresetInput): Promise<VideoStylePreset>;
+  upsertVideoStylePresets(inputs: VideoStylePresetInput[]): Promise<VideoStylePreset[]>;
   getVideoPlanConfigByVersionId(versionId: string): Promise<VideoPlanConfig | null>;
   upsertVideoPlanConfig?(
     planVersionId: string,
@@ -58,13 +59,18 @@ function normalizeText(value: string, fieldName: string) {
 }
 
 function normalizeStyle(input: VideoStylePresetInput): VideoStylePreset {
+  const sortOrder = input.sortOrder ?? 0;
+  if (!Number.isInteger(sortOrder) || !Number.isFinite(sortOrder)) {
+    throw new Error('Video style sort order must be an integer.');
+  }
+
   return {
     id: input.id ?? randomUUID(),
     code: normalizeText(input.code, 'Video style code'),
     name: normalizeText(input.name, 'Video style name'),
     prompt: normalizeText(input.prompt, 'Video style prompt'),
     enabled: input.enabled ?? true,
-    sortOrder: input.sortOrder ?? 0,
+    sortOrder,
   };
 }
 
@@ -205,6 +211,48 @@ export function createDatabaseVideoGenerationConfigRepository(): VideoGeneration
 
       return toVideoStylePreset(row);
     },
+    async upsertVideoStylePresets(inputs) {
+      const database = requireDb('video style preset batch upsert');
+      const styles = inputs.map(normalizeStyle);
+
+      return database.transaction(async (tx) => {
+        for (const style of styles) {
+          const [row] = await tx
+            .insert(schema.videoStylePresets)
+            .values({
+              id: style.id,
+              code: style.code,
+              name: style.name,
+              prompt: style.prompt,
+              enabled: style.enabled,
+              sortOrder: style.sortOrder,
+              updatedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: schema.videoStylePresets.code,
+              set: {
+                name: style.name,
+                prompt: style.prompt,
+                enabled: style.enabled,
+                sortOrder: style.sortOrder,
+                updatedAt: new Date(),
+              },
+            })
+            .returning();
+
+          if (!row) {
+            throw new Error('Video style preset could not be saved.');
+          }
+        }
+
+        const rows = await tx
+          .select()
+          .from(schema.videoStylePresets)
+          .orderBy(asc(schema.videoStylePresets.sortOrder), asc(schema.videoStylePresets.code));
+
+        return rows.map(toVideoStylePreset);
+      });
+    },
     async getVideoPlanConfigByVersionId(versionId) {
       const database = requireDb('video plan config lookup');
       const [row] = await database
@@ -280,6 +328,23 @@ export function createMemoryVideoGenerationConfigRepository(
       stylesByCode.set(stored.code, stored);
       return cloneStyle(stored);
     },
+    async upsertVideoStylePresets(inputs) {
+      const normalizedStyles = inputs.map(normalizeStyle);
+      const nextStylesByCode = new Map(stylesByCode);
+
+      for (const style of normalizedStyles) {
+        const existing = nextStylesByCode.get(style.code);
+        const stored = existing ? { ...style, id: existing.id } : style;
+        nextStylesByCode.set(stored.code, stored);
+      }
+
+      stylesByCode.clear();
+      for (const [code, style] of nextStylesByCode.entries()) {
+        stylesByCode.set(code, style);
+      }
+
+      return sortStyles([...stylesByCode.values()]).map(cloneStyle);
+    },
     async getVideoPlanConfigByVersionId(versionId) {
       const config = configsByVersionId.get(versionId);
       return config ? clonePlanConfig(config) : null;
@@ -323,6 +388,12 @@ export function upsertVideoStylePreset(
   input: VideoStylePresetInput,
 ): Promise<VideoStylePreset> {
   return getVideoGenerationConfigRepository().upsertVideoStylePreset(input);
+}
+
+export function upsertVideoStylePresets(
+  inputs: VideoStylePresetInput[],
+): Promise<VideoStylePreset[]> {
+  return getVideoGenerationConfigRepository().upsertVideoStylePresets(inputs);
 }
 
 export function getVideoPlanConfigByVersionId(

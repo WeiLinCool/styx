@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { Plus, Save, Trash2 } from 'lucide-react';
+import { Plus, PowerOff, Save, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +20,7 @@ import type { VideoStylePreset } from '@/server/repositories/video-generation-co
 
 type DraftStyle = VideoStylePreset & {
   draftId: string;
+  sortOrderInput: string;
 };
 
 type SavePayload = {
@@ -34,6 +35,7 @@ function toDraftStyle(style: VideoStylePreset, index: number): DraftStyle {
   return {
     ...style,
     draftId: style.id || `style-${index}`,
+    sortOrderInput: String(style.sortOrder),
   };
 }
 
@@ -51,17 +53,20 @@ function createEmptyDraft(sortOrder: number): DraftStyle {
     prompt: '',
     enabled: true,
     sortOrder,
+    sortOrderInput: String(sortOrder),
   };
 }
 
 function normalizeDraftForSave(style: DraftStyle) {
+  const sortOrder = Number(style.sortOrderInput);
+
   return {
     ...(style.id ? { id: style.id } : {}),
     code: style.code.trim(),
     name: style.name.trim(),
     prompt: style.prompt.trim(),
     enabled: style.enabled,
-    sortOrder: style.sortOrder,
+    sortOrder,
   };
 }
 
@@ -75,6 +80,14 @@ function getLocalValidationError(styles: DraftStyle[]) {
     }
     if (!style.prompt.trim()) {
       return '提示词不能为空。';
+    }
+    const sortOrder = Number(style.sortOrderInput);
+    if (
+      !style.sortOrderInput.trim() ||
+      !Number.isFinite(sortOrder) ||
+      !Number.isInteger(sortOrder)
+    ) {
+      return '排序必须是整数。';
     }
   }
 
@@ -94,8 +107,15 @@ export function AdminVideoGenerationConfigModule({
   const sortedStyles = useMemo(
     () =>
       [...styles].sort((left, right) => {
-        if (left.sortOrder !== right.sortOrder) {
-          return left.sortOrder - right.sortOrder;
+        const leftSortOrder = Number(left.sortOrderInput);
+        const rightSortOrder = Number(right.sortOrderInput);
+        const leftComparable = Number.isInteger(leftSortOrder) ? leftSortOrder : left.sortOrder;
+        const rightComparable = Number.isInteger(rightSortOrder)
+          ? rightSortOrder
+          : right.sortOrder;
+
+        if (leftComparable !== rightComparable) {
+          return leftComparable - rightComparable;
         }
         return left.code.localeCompare(right.code);
       }),
@@ -117,7 +137,19 @@ export function AdminVideoGenerationConfigModule({
   }
 
   function removeStyle(draftId: string) {
-    setStyles((current) => current.filter((style) => style.draftId !== draftId));
+    setStyles((current) =>
+      current.flatMap((style) => {
+        if (style.draftId !== draftId) {
+          return [style];
+        }
+
+        if (style.id) {
+          return [{ ...style, enabled: false }];
+        }
+
+        return [];
+      }),
+    );
     setMessage(null);
     setError(null);
   }
@@ -192,13 +224,13 @@ export function AdminVideoGenerationConfigModule({
       <CardContent className="px-0 py-0">
         <div className="overflow-x-auto">
           <div className="min-w-[960px]">
-            <div className="grid grid-cols-[120px_150px_minmax(320px,1fr)_88px_92px_64px] gap-2 border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
+            <div className="grid grid-cols-[120px_150px_minmax(320px,1fr)_88px_92px_80px] gap-2 border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
               <div>代码</div>
               <div>名称</div>
               <div>提示词</div>
               <div>启用</div>
               <div>排序</div>
-              <div className="text-right">移除</div>
+              <div className="text-right">下线</div>
             </div>
             {sortedStyles.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -208,7 +240,7 @@ export function AdminVideoGenerationConfigModule({
               sortedStyles.map((style) => (
                 <div
                   key={style.draftId}
-                  className="grid grid-cols-[120px_150px_minmax(320px,1fr)_88px_92px_64px] items-start gap-2 border-b border-border px-4 py-3 last:border-b-0"
+                  className="grid grid-cols-[120px_150px_minmax(320px,1fr)_88px_92px_80px] items-start gap-2 border-b border-border px-4 py-3 last:border-b-0"
                 >
                   <Input
                     value={style.code}
@@ -245,9 +277,10 @@ export function AdminVideoGenerationConfigModule({
                   </label>
                   <Input
                     type="number"
-                    value={style.sortOrder}
+                    step="1"
+                    value={style.sortOrderInput}
                     onChange={(event) =>
-                      updateStyle(style.draftId, { sortOrder: Number(event.target.value) })
+                      updateStyle(style.draftId, { sortOrderInput: event.target.value })
                     }
                     className="h-8 rounded-md text-xs"
                     disabled={isPending}
@@ -260,8 +293,9 @@ export function AdminVideoGenerationConfigModule({
                       className="h-8 w-8 rounded-md"
                       onClick={() => removeStyle(style.draftId)}
                       disabled={isPending}
+                      title={style.id ? '下线已保存风格，保存后生效' : '移除未保存风格'}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {style.id ? <PowerOff className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>

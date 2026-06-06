@@ -107,6 +107,86 @@ test('memory video config repository preserves style id when upserting by existi
   assert.deepEqual(await repository.listAdminVideoStylePresets(), [updated]);
 });
 
+test('memory video config repository batch upserts style presets', async () => {
+  const repository = createMemoryVideoGenerationConfigRepository({
+    styles: [
+      {
+        id: 'style-original',
+        code: 'cinematic',
+        name: 'Cinematic',
+        prompt: 'Original prompt.',
+        enabled: true,
+        sortOrder: 1,
+      },
+    ],
+  });
+
+  const styles = await repository.upsertVideoStylePresets([
+    {
+      code: 'cinematic',
+      name: 'Updated Cinematic',
+      prompt: 'Updated prompt.',
+      enabled: false,
+      sortOrder: 9,
+    },
+    {
+      code: 'stone',
+      name: 'Stone',
+      prompt: 'Stone prompt.',
+      enabled: true,
+      sortOrder: 2,
+    },
+  ]);
+
+  assert.deepEqual(
+    styles.map((style) => style.code),
+    ['stone', 'cinematic'],
+  );
+  assert.equal(styles.find((style) => style.code === 'cinematic')?.id, 'style-original');
+  assert.deepEqual(await repository.listAdminVideoStylePresets(), styles);
+});
+
+test('memory video config repository batch upsert rolls back invalid style lists', async () => {
+  const repository = createMemoryVideoGenerationConfigRepository({
+    styles: [
+      {
+        id: 'style-original',
+        code: 'cinematic',
+        name: 'Cinematic',
+        prompt: 'Original prompt.',
+        enabled: true,
+        sortOrder: 1,
+      },
+    ],
+  });
+
+  await assert.rejects(
+    () =>
+      repository.upsertVideoStylePresets([
+        {
+          code: 'stone',
+          name: 'Stone',
+          prompt: 'Stone prompt.',
+          enabled: true,
+          sortOrder: 2,
+        },
+        {
+          code: 'broken',
+          name: '',
+          prompt: 'Broken prompt.',
+          enabled: true,
+          sortOrder: 3,
+        },
+      ]),
+    /style name/i,
+  );
+
+  assert.deepEqual(
+    (await repository.listAdminVideoStylePresets()).map((style) => style.code),
+    ['cinematic'],
+  );
+});
+
 test('memory video config repository resolves plan version policy', async () => {
   const repository = createMemoryVideoGenerationConfigRepository({
     planConfigs: [

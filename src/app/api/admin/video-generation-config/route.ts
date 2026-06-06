@@ -6,7 +6,7 @@ import { requireAdmin } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import {
   listAdminVideoStylePresets,
-  upsertVideoStylePreset,
+  upsertVideoStylePresets,
   type VideoStylePreset,
   type VideoStylePresetInput,
 } from '@/server/repositories/video-generation-config';
@@ -51,7 +51,7 @@ function jsonValidationError(error: z.ZodError) {
 export function createAdminVideoGenerationConfigRouteHandlers(dependencies: {
   requireAdminSession: () => Promise<AdminSessionLike>;
   listStyles: () => Promise<VideoStylePreset[]>;
-  upsertStyle: (input: VideoStylePresetInput) => Promise<VideoStylePreset>;
+  upsertStyles: (inputs: VideoStylePresetInput[]) => Promise<VideoStylePreset[]>;
 }) {
   return {
     async GET() {
@@ -83,11 +83,7 @@ export function createAdminVideoGenerationConfigRouteHandlers(dependencies: {
             parsedBody,
           },
           async () => {
-            const styles: VideoStylePreset[] = [];
-
-            for (const style of body.styles) {
-              styles.push(await dependencies.upsertStyle(style));
-            }
+            const styles = await dependencies.upsertStyles(body.styles);
 
             return NextResponse.json({
               ok: true,
@@ -111,7 +107,7 @@ export function createAdminVideoGenerationConfigRouteHandlers(dependencies: {
 const handlers = createAdminVideoGenerationConfigRouteHandlers({
   requireAdminSession: requireAdmin,
   listStyles: listAdminVideoStylePresets,
-  upsertStyle: upsertVideoStylePreset,
+  upsertStyles: upsertVideoStylePresets,
 });
 
 export const GET = handlers.GET;
