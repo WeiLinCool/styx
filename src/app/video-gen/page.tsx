@@ -31,6 +31,9 @@ import {
 } from '@/features/public/model-availability';
 import type { DirectMediaResultDto, GeneratedMediaAssetDto } from '@/server/agent/types';
 
+const IMAGE_UPLOAD_ACCEPT = 'image/png,image/jpeg,image/webp';
+const AUDIO_UPLOAD_ACCEPT = 'audio/mpeg,audio/wav,audio/mp4,audio/x-wav';
+
 const emptyVideoConfig: VideoGenerationConfigDto = {
   enabled: false,
   upgradeRequired: false,
@@ -65,6 +68,13 @@ function describeMediaAsset(asset: GeneratedMediaAssetDto) {
   return details ? `${asset.title} (${details})` : asset.title;
 }
 
+function addMediaAssetIfMissing(
+  assets: GeneratedMediaAssetDto[],
+  asset: GeneratedMediaAssetDto,
+) {
+  return assets.some((current) => current.id === asset.id) ? assets : [asset, ...assets];
+}
+
 export default function VideoGenPage() {
   const router = useRouter();
   const { user, isLoggedIn, openLoginModal } = useAuth();
@@ -89,6 +99,8 @@ export default function VideoGenPage() {
   const [generatedVideo, setGeneratedVideo] = useState<DirectMediaResultDto | null>(null);
   const [generatedVideoRunId, setGeneratedVideoRunId] = useState<string | null>(null);
   const videoReceivedRunIdRef = useRef<string | null>(null);
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
   const modelLoading = modelAvailability.status === 'loading';
   const modelMaintenanceMessage =
     modelAvailability.status === 'maintenance' ? buildUnavailableModelMessage() : null;
@@ -321,6 +333,34 @@ export default function VideoGenPage() {
     };
   }, [streamRunId]);
 
+  const clearPendingImageFile = () => {
+    setPendingImageFile(null);
+    if (imageFileInputRef.current) {
+      imageFileInputRef.current.value = '';
+    }
+  };
+
+  const clearPendingAudioFile = () => {
+    setPendingAudioFile(null);
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
+    }
+  };
+
+  const selectImageAsset = (assetId: string) => {
+    setSelectedImageAssetId(assetId);
+    if (assetId) {
+      clearPendingImageFile();
+    }
+  };
+
+  const selectAudioAsset = (assetId: string) => {
+    setSelectedAudioAssetId(assetId);
+    if (assetId) {
+      clearPendingAudioFile();
+    }
+  };
+
   const handleGenerate = async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (!user || requiresActivation(user)) return;
@@ -364,6 +404,9 @@ export default function VideoGenPage() {
           throw new Error('上传的参考图类型无效，请选择图片文件。');
         }
         imageAssetId = asset.id;
+        setSavedImageAssets((current) => addMediaAssetIfMissing(current, asset));
+        setSelectedImageAssetId(asset.id);
+        clearPendingImageFile();
       }
 
       if (pendingAudioFile) {
@@ -373,6 +416,9 @@ export default function VideoGenPage() {
           throw new Error('上传的音频素材类型无效，请选择音频文件。');
         }
         audioAssetId = asset.id;
+        setSavedAudioAssets((current) => addMediaAssetIfMissing(current, asset));
+        setSelectedAudioAssetId(asset.id);
+        clearPendingAudioFile();
       }
 
       const { run } = await createAgentRun({
@@ -662,8 +708,9 @@ export default function VideoGenPage() {
                   <label className="text-sm font-medium">参考图（可选）</label>
                 </div>
                 <input
+                  ref={imageFileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept={IMAGE_UPLOAD_ACCEPT}
                   disabled={Boolean(configDisabledMessage)}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
@@ -675,7 +722,7 @@ export default function VideoGenPage() {
                 <select
                   value={selectedImageAssetId}
                   disabled={Boolean(configDisabledMessage) || pendingImageFile !== null}
-                  onChange={(event) => setSelectedImageAssetId(event.target.value)}
+                  onChange={(event) => selectImageAsset(event.target.value)}
                   className="mt-2 h-9 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus:border-ring"
                 >
                   <option value="">从媒体库选择</option>
@@ -683,7 +730,27 @@ export default function VideoGenPage() {
                     <option key={asset.id} value={asset.id}>{describeMediaAsset(asset)}</option>
                   ))}
                 </select>
-                {pendingImageFile ? <p className="mt-1 truncate text-xs text-muted-foreground">{pendingImageFile.name}</p> : null}
+                {pendingImageFile ? (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs text-muted-foreground">{pendingImageFile.name}</p>
+                    <button
+                      type="button"
+                      onClick={clearPendingImageFile}
+                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                    >
+                      移除
+                    </button>
+                  </div>
+                ) : null}
+                {selectedImageAssetId ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedImageAssetId('')}
+                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                  >
+                    清除媒体库选择
+                  </button>
+                ) : null}
               </div>
 
               <div className="rounded-xl border border-border bg-card p-3">
@@ -692,8 +759,9 @@ export default function VideoGenPage() {
                   <label className="text-sm font-medium">音频（可选）</label>
                 </div>
                 <input
+                  ref={audioFileInputRef}
                   type="file"
-                  accept="audio/*"
+                  accept={AUDIO_UPLOAD_ACCEPT}
                   disabled={Boolean(configDisabledMessage)}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
@@ -705,7 +773,7 @@ export default function VideoGenPage() {
                 <select
                   value={selectedAudioAssetId}
                   disabled={Boolean(configDisabledMessage) || pendingAudioFile !== null}
-                  onChange={(event) => setSelectedAudioAssetId(event.target.value)}
+                  onChange={(event) => selectAudioAsset(event.target.value)}
                   className="mt-2 h-9 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus:border-ring"
                 >
                   <option value="">从媒体库选择</option>
@@ -713,7 +781,27 @@ export default function VideoGenPage() {
                     <option key={asset.id} value={asset.id}>{describeMediaAsset(asset)}</option>
                   ))}
                 </select>
-                {pendingAudioFile ? <p className="mt-1 truncate text-xs text-muted-foreground">{pendingAudioFile.name}</p> : null}
+                {pendingAudioFile ? (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs text-muted-foreground">{pendingAudioFile.name}</p>
+                    <button
+                      type="button"
+                      onClick={clearPendingAudioFile}
+                      className="shrink-0 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                    >
+                      移除
+                    </button>
+                  </div>
+                ) : null}
+                {selectedAudioAssetId ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAudioAssetId('')}
+                    className="mt-2 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                  >
+                    清除媒体库选择
+                  </button>
+                ) : null}
               </div>
             </div>
 
