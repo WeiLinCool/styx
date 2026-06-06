@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AgentConversationNotFoundError, AgentRunModelRequiredError } from '@/server/agent/run-service';
+import {
+  AgentConversationNotFoundError,
+  AgentRunImageSizeInvalidError,
+  AgentRunModelRequiredError,
+} from '@/server/agent/run-service';
 import {
   ProviderConfigurationError,
   ProviderRequestError,
@@ -271,6 +275,15 @@ test('serviceErrorToResponse maps model required errors to stable API code', asy
 
   assert.equal(response.status, 400);
   assert.equal(body.error.code, 'model_required');
+});
+
+test('serviceErrorToResponse maps invalid image size to invalid request', async () => {
+  const response = serviceErrorToResponse(new AgentRunImageSizeInvalidError());
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, 'invalid_request');
+  assert.match(body.error.message, /image size/);
 });
 
 test('serviceErrorToResponse maps model availability errors to stable API code', async () => {

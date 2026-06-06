@@ -120,8 +120,11 @@ export const workflowVideoModels = [
 ];
 
 export const toolSizes = [
-  { label: '1:1', w: 1024, h: 1024 },
-  { label: '16:9', w: 1024, h: 576 },
-  { label: '9:16', w: 576, h: 1024 },
-  { label: '4:3', w: 1024, h: 768 },
+  { label: '1:1', value: '1920x1920', w: 1920, h: 1920 },
+  { label: '16:9', value: '2560x1440', w: 2560, h: 1440 },
+  { label: '9:16', value: '1440x2560', w: 1440, h: 2560 },
+  { label: '4:3', value: '2304x1728', w: 2304, h: 1728 },
+  { label: '2K', value: '2k', w: 2048, h: 2048 },
+  { label: '3K', value: '3k', w: 3072, h: 3072 },
+  { label: '4K', value: '4k', w: 4096, h: 4096 },
 ];

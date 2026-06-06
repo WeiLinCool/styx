@@ -23,6 +23,7 @@ import { calculateImageCreditCost, InsufficientCreditsError } from '@/server/bil
 import { createDeterministicPiRuntime } from './pi-runtime';
 import {
   AgentRunImageSourceRequiredError,
+  AgentRunImageSizeInvalidError,
   AgentRunModelRequiredError,
   AgentRunVideoMaterialError,
   AgentRunVideoSelectionError,
@@ -1008,7 +1009,7 @@ test('image run resolves selected model, returns transient image, persists no me
     taskType: 'image',
     prompt: '山水',
     modelId: 'model-1',
-    input: { mode: 'generate', size: '1024x1024' },
+    input: { mode: 'generate', size: '1920x1920' },
   });
 
   assert.equal(result.run.status, 'running');
@@ -1026,6 +1027,113 @@ test('image run resolves selected model, returns transient image, persists no me
   assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.url, 'data:image/png;base64,RESULT');
   assert.equal(debits.length, 1);
   assert.equal(debits[0]?.amount, 7);
+});
+
+test('image run normalizes ratio size before calling provider', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerSize: string | undefined;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => resolvedImageModel({ id: 'model-1' }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage(request) {
+        providerSize = request.size;
+        return {
+          finalMessage: '图片已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图',
+              body: 'data:image/png;base64,RESULT',
+              metadata: { mimeType: 'image/png' },
+            },
+          ],
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-1', balanceAfter: 100 }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '山水',
+    modelId: 'model-1',
+    input: { mode: 'generate', size: '1:1' },
+  });
+
+  await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+  assert.equal(providerSize, '1920x1920');
+});
+
+test('image run rejects invalid size before creating a run or calling provider', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => resolvedImageModel({ id: 'model-1' }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        throw new Error('provider should not run');
+      },
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '山水',
+        modelId: 'model-1',
+        input: { mode: 'generate', size: 'wide' },
+      }),
+    AgentRunImageSizeInvalidError,
+  );
+
+  assert.equal(providerCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('image run rejects provider size below minimum pixels before creating a run', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => resolvedImageModel({ id: 'model-1' }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        throw new Error('provider should not run');
+      },
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'image',
+        prompt: '山水',
+        modelId: 'model-1',
+        input: { mode: 'generate', size: '1024x1024' },
+      }),
+    AgentRunImageSizeInvalidError,
+  );
+
+  assert.equal(providerCalled, false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
 });
 
 test('image run rejects unsupported selected model before creating a run', async () => {
@@ -1411,7 +1519,7 @@ test('image run strips source image data URL from durable input before provider 
     modelId: 'model-edit',
     input: {
       mode: 'edit',
-      size: '1024x1024',
+      size: '1920x1920',
       sourceImageDataUrl: 'data:image/png;base64,SOURCE',
     },
   });

@@ -99,6 +99,13 @@ export class AgentRunImageSourceRequiredError extends Error {
   }
 }
 
+export class AgentRunImageSizeInvalidError extends Error {
+  constructor() {
+    super("image size must be WIDTHxHEIGHT, 2k, 3k, 4k, or a supported ratio.");
+    this.name = 'AgentRunImageSizeInvalidError';
+  }
+}
+
 export class AgentConversationNotFoundError extends Error {
   constructor() {
     super('Agent conversation was not found.');
@@ -519,6 +526,44 @@ function readRequiredSourceImageDataUrl(mode: ImageModelMode, input: Record<stri
   }
 
   return sourceImageDataUrl;
+}
+
+const IMAGE_SIZE_RATIO_MAP: Record<string, string> = {
+  '1:1': '1920x1920',
+  '16:9': '2560x1440',
+  '9:16': '1440x2560',
+  '4:3': '2304x1728',
+};
+
+const IMAGE_PROVIDER_SIZE_PATTERN = /^(?:[1-9]\d{1,4}x[1-9]\d{1,4}|[234]k)$/;
+const MIN_IMAGE_PROVIDER_PIXELS = 3_686_400;
+
+function imageSizePixelCount(size: string) {
+  const match = /^([1-9]\d{1,4})x([1-9]\d{1,4})$/.exec(size);
+  if (!match) {
+    return null;
+  }
+
+  return Number(match[1]) * Number(match[2]);
+}
+
+function normalizeImageSizeInput(input: Record<string, unknown>) {
+  const rawSize = readStringInput(input, 'size');
+  if (!rawSize) {
+    return undefined;
+  }
+
+  const mapped = IMAGE_SIZE_RATIO_MAP[rawSize] ?? rawSize.toLowerCase();
+  if (!IMAGE_PROVIDER_SIZE_PATTERN.test(mapped)) {
+    throw new AgentRunImageSizeInvalidError();
+  }
+
+  const pixels = imageSizePixelCount(mapped);
+  if (pixels !== null && pixels < MIN_IMAGE_PROVIDER_PIXELS) {
+    throw new AgentRunImageSizeInvalidError();
+  }
+
+  return mapped;
 }
 
 function toChatCapabilitySnapshot(model: ResolvedChatModel): AgentCapabilitySnapshot & Record<string, unknown> {
@@ -1517,6 +1562,7 @@ async function createAndRunImageAgentRun(input: {
 
   const mode = toImageMode(request.input.mode);
   const sourceImageDataUrl = readRequiredSourceImageDataUrl(mode, request.input);
+  const providerSize = normalizeImageSizeInput(request.input);
   const model = await resolveImageModelForUser(request.userId, request.modelId, mode);
   await assertCanAffordMinimum(request.userId, model.pricing);
 
@@ -1553,6 +1599,7 @@ async function createAndRunImageAgentRun(input: {
     model,
     mode,
     sourceImageDataUrl,
+    providerSize,
     runInput,
     capabilitySnapshot,
     createImageProviderAdapter: input.createImageProviderAdapter,
@@ -1588,6 +1635,7 @@ async function runImageProviderOrchestration(input: {
   model: ResolvedImageModel;
   mode: ImageModelMode;
   sourceImageDataUrl?: string;
+  providerSize?: string;
   runInput: Record<string, unknown>;
   capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
   createImageProviderAdapter: (model: ResolvedImageModel) => ImageProviderAdapter;
@@ -1609,7 +1657,7 @@ async function runImageProviderOrchestration(input: {
     model: input.model,
     mode: input.mode,
     prompt: input.request.prompt,
-    size: typeof input.request.input.size === 'string' ? input.request.input.size : undefined,
+    size: input.providerSize,
     scale: typeof input.request.input.scale === 'string' ? input.request.input.scale : undefined,
     sourceImageDataUrl: input.sourceImageDataUrl,
   });

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import {
   AgentConversationNotFoundError,
+  AgentRunImageSizeInvalidError,
   AgentRunModelRequiredError,
   AgentRunVideoMaterialError,
   AgentRunVideoSelectionError,
@@ -208,6 +209,10 @@ export function serviceErrorToResponse(error: unknown) {
 
   if (error instanceof AgentRunModelRequiredError) {
     return jsonError('model_required', error.message, 400);
+  }
+
+  if (error instanceof AgentRunImageSizeInvalidError) {
+    return jsonError('invalid_request', error.message, 400);
   }
 
   if (error instanceof AgentRunVideoSelectionError) {

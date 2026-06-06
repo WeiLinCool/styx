@@ -83,7 +83,7 @@ export default function ImageGenPage() {
     edit: createInitialModelAvailabilityState(),
     upscale: createInitialModelAvailabilityState(),
   });
-  const [selectedSize, setSelectedSize] = useState('1:1');
+  const [selectedSize, setSelectedSize] = useState('1920x1920');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -550,10 +550,10 @@ export default function ImageGenPage() {
                   <div className="flex gap-2">
                     {toolSizes.map((s) => (
                       <button
-                        key={s.label}
-                        onClick={() => setSelectedSize(s.label)}
+                        key={s.value}
+                        onClick={() => setSelectedSize(s.value)}
                         className={`cursor-pointer rounded-lg px-4 py-2 text-sm transition-all ${
-                          selectedSize === s.label ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground'
+                          selectedSize === s.value ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:border-ring hover:text-foreground'
                         }`}
                       >
                         {s.label}

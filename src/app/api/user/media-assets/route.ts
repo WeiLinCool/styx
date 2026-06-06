@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAuthenticatedUserPermission } from '@/server/auth/guards';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { getGeneratedMediaAssetRepository } from '@/server/repositories/generated-media-assets';
 import { getAgentRunRepository } from '@/server/repositories/agent-runs';
 import { createSaveGeneratedMediaService } from '@/server/media/save-generated-media';
@@ -49,17 +50,33 @@ export function createMediaAssetsRouteHandlers(dependencies: {
     async POST(request: Request) {
       try {
         const session = await dependencies.requireSession();
-        const body = createSavedMediaBodySchema.parse(await request.json());
-        const result = await dependencies.saveGeneratedMedia({
-          userId: session.user.id,
-          runId: body.runId,
-          artifactId: body.artifactId,
-        });
+        const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
+        const body = createSavedMediaBodySchema.parse(parsedBody);
 
-        return NextResponse.json({
-          asset: result.asset,
-          artifact: result.updatedArtifact,
-        });
+        return runProtectedMutation(
+          {
+            request,
+            routeKind: 'user-mutation',
+            operation: 'POST /api/user/media-assets',
+            actorType: 'user',
+            actorId: session.user.id,
+            rawBody,
+            decryptedRawBody,
+            parsedBody: body,
+          },
+          async () => {
+            const result = await dependencies.saveGeneratedMedia({
+              userId: session.user.id,
+              runId: body.runId,
+              artifactId: body.artifactId,
+            });
+
+            return NextResponse.json({
+              asset: result.asset,
+              artifact: result.updatedArtifact,
+            });
+          },
+        );
       } catch (error) {
         if (error instanceof z.ZodError) {
           return jsonError('invalid_request', error.issues[0]?.message ?? '媒体保存请求无效。', 400);
