@@ -90,6 +90,10 @@ export type CreateAgentRunRequest = {
   input?: Record<string, unknown>;
 };
 
+export type ListAgentRunsInput = {
+  taskType?: Extract<AgentTaskType, 'image' | 'video'>;
+};
+
 export type GeneratedRunArtifactAccess = {
   runId: string;
   artifactId: string;
@@ -535,8 +539,9 @@ export async function createAgentRun(input: CreateAgentRunRequest): Promise<Crea
   };
 }
 
-export async function listAgentRuns(): Promise<AgentRunDto[]> {
-  const response = await userApiRequest('/api/agent/runs', {
+export async function listAgentRuns(input: ListAgentRunsInput = {}): Promise<AgentRunDto[]> {
+  const query = input.taskType ? `?taskType=${encodeURIComponent(input.taskType)}` : '';
+  const response = await userApiRequest(`/api/agent/runs${query}`, {
     method: 'GET',
     cache: 'no-store',
   });
@@ -770,6 +775,12 @@ const DIRECT_MEDIA_TYPED_METADATA_KEYS = new Set([
   'providerTaskId',
   'model',
   'storageStatus',
+  'cacheStatus',
+  'cacheProvider',
+  'cacheBucket',
+  'cacheRegion',
+  'cacheObjectKey',
+  'cacheExpiresAt',
 ]);
 
 function readMetadataString(metadata: Record<string, unknown>, key: string) {
@@ -780,6 +791,16 @@ function readMetadataString(metadata: Record<string, unknown>, key: string) {
 function readMetadataNumber(metadata: Record<string, unknown>, key: string) {
   const value = metadata[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readDirectMediaStorageStatus(
+  metadata: Record<string, unknown>,
+): DirectMediaResultDto['metadata']['storageStatus'] | null {
+  const value = metadata.storageStatus;
+  if (value === 'provider_direct' || value === 'cached' || value === 'stored') {
+    return value;
+  }
+  return null;
 }
 
 function sanitizeDirectMediaMetadata(metadata: Record<string, unknown>): DirectMediaResultDto['metadata'] {
@@ -797,10 +818,11 @@ function sanitizeDirectMediaMetadata(metadata: Record<string, unknown>): DirectM
   const durationSeconds = readMetadataNumber(metadata, 'durationSeconds');
   const providerTaskId = readMetadataString(metadata, 'providerTaskId');
   const model = readMetadataString(metadata, 'model');
+  const storageStatus = readDirectMediaStorageStatus(metadata);
 
   return {
     ...unknownMetadata,
-    storageStatus: 'provider_direct',
+    storageStatus: storageStatus ?? 'provider_direct',
     ...(mimeType !== undefined ? { mimeType } : {}),
     ...(filename !== undefined ? { filename } : {}),
     ...(width !== undefined ? { width } : {}),
@@ -845,7 +867,7 @@ export function parseDirectMediaArtifactPayload(value: unknown): DirectMediaResu
     (delivery.mode !== 'provider_url' && delivery.mode !== 'data_url') ||
     typeof delivery.url !== 'string' ||
     !metadata ||
-    metadata.storageStatus !== 'provider_direct'
+    !readDirectMediaStorageStatus(metadata)
   ) {
     return null;
   }

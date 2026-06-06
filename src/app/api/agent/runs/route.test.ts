@@ -18,6 +18,8 @@ import {
 import {
   createAgentRunResponse,
   createDeleteAgentRunResponse,
+  createListAgentRunsRouteHandlers,
+  parseAgentRunTaskTypeFilter,
   parseCreateAgentRunBody,
   parseCreateAgentRunRawBody,
   parseCreateAgentRunRequestBody,
@@ -47,6 +49,65 @@ test('createSyncAgentRunResponse returns synced run payload', async () => {
   assert.equal(response.status, 200);
   assert.equal(body.run.id, 'run-1');
   assert.equal(body.run.taskType, 'video');
+});
+
+test('parseAgentRunTaskTypeFilter accepts multimodal filters only', () => {
+  assert.equal(parseAgentRunTaskTypeFilter('image'), 'image');
+  assert.equal(parseAgentRunTaskTypeFilter('video'), 'video');
+  assert.equal(parseAgentRunTaskTypeFilter(null), undefined);
+  assert.equal(parseAgentRunTaskTypeFilter(''), undefined);
+  assert.throws(() => parseAgentRunTaskTypeFilter('chat'), /Invalid taskType/);
+  assert.throws(() => parseAgentRunTaskTypeFilter('bad'), /Invalid taskType/);
+});
+
+test('GET /api/agent/runs passes optional taskType filter to repository list', async () => {
+  const calls: Array<{ userId: string; taskType: string | undefined }> = [];
+  const handlers = createListAgentRunsRouteHandlers({
+    requireSession: async () => ({ user: { id: 'user-1' } }),
+    listRuns: async (userId, options) => {
+      calls.push({ userId, taskType: options?.taskType });
+      return [
+        {
+          id: 'run-image',
+          conversationId: 'run-image',
+          taskType: 'image',
+          status: 'succeeded',
+          prompt: '山水',
+          finalMessage: '完成',
+          errorMessage: null,
+          capabilitySummary: { provider: 'doubao', model: 'seedream', capabilities: [] },
+          selectedModel: null,
+          usage: null,
+          billing: null,
+          artifacts: [],
+          createdAt: '2026-06-06T00:00:00.000Z',
+          updatedAt: '2026-06-06T00:00:00.000Z',
+        },
+      ];
+    },
+  });
+
+  const response = await handlers.GET(new Request('https://example.com/api/agent/runs?taskType=image'));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.runs[0].id, 'run-image');
+  assert.deepEqual(calls, [{ userId: 'user-1', taskType: 'image' }]);
+});
+
+test('GET /api/agent/runs rejects invalid taskType filter', async () => {
+  const handlers = createListAgentRunsRouteHandlers({
+    requireSession: async () => ({ user: { id: 'user-1' } }),
+    listRuns: async () => {
+      throw new Error('list should not be called');
+    },
+  });
+
+  const response = await handlers.GET(new Request('https://example.com/api/agent/runs?taskType=bad'));
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.error.code, 'invalid_request');
 });
 
 test('parseCreateAgentRunBody accepts valid chat request', () => {

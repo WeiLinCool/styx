@@ -24,7 +24,7 @@ import {
   ModelEntitlementRequiredError,
   ModelNotAvailableError,
 } from '@/server/repositories/ai-models';
-import type { AgentRunDto, CreateAgentRunResult } from '@/server/agent/types';
+import type { AgentRunDto, AgentTaskType, CreateAgentRunResult } from '@/server/agent/types';
 
 const MAX_SOURCE_IMAGE_DATA_URL_BYTES = 10 * 1024 * 1024;
 
@@ -195,6 +195,45 @@ export function createAgentRunResponse(result: CreateAgentRunResult) {
   });
 }
 
+type AgentRunTaskTypeFilter = Extract<AgentTaskType, 'image' | 'video'>;
+
+export function parseAgentRunTaskTypeFilter(value: string | null): AgentRunTaskTypeFilter | undefined {
+  if (value === null || value === '') {
+    return undefined;
+  }
+  if (value === 'image' || value === 'video') {
+    return value;
+  }
+  throw new Error('Invalid taskType.');
+}
+
+export function createListAgentRunsRouteHandlers(dependencies: {
+  requireSession: () => Promise<{ user: { id: string } }>;
+  listRuns: (
+    userId: string,
+    options?: { taskType?: AgentRunTaskTypeFilter },
+  ) => Promise<AgentRunDto[]>;
+}) {
+  return {
+    async GET(request: Request) {
+      try {
+        const taskType = parseAgentRunTaskTypeFilter(
+          new URL(request.url).searchParams.get('taskType'),
+        );
+        const session = await dependencies.requireSession();
+        const runs = await dependencies.listRuns(session.user.id, { taskType });
+
+        return NextResponse.json({ runs });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Invalid taskType.') {
+          return jsonError('invalid_request', error.message, 400);
+        }
+        return serviceErrorToResponse(error);
+      }
+    },
+  };
+}
+
 function validationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? 'Invalid agent run request.';
 }
@@ -299,13 +338,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
-  try {
-    const session = await requireActiveAccount();
-    const runs = await getAgentRunRepository().listRunsForUser(session.user.id);
+const listHandlers = createListAgentRunsRouteHandlers({
+  requireSession: requireActiveAccount,
+  listRuns: (userId, options) => getAgentRunRepository().listRunsForUser(userId, options),
+});
 
-    return NextResponse.json({ runs });
-  } catch (error) {
-    return serviceErrorToResponse(error);
-  }
-}
+export const GET = listHandlers.GET;

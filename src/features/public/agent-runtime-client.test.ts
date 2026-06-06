@@ -14,6 +14,7 @@ import {
   getVideoGenerationConfig,
   getPublicSharedMedia,
   listAgentConversations,
+  listAgentRuns,
   listSavedMediaAssets,
   listImageModels,
   listChatModels,
@@ -581,6 +582,49 @@ test('getAgentRunDetail returns typed run detail payload from API', async () => 
   }
 });
 
+test('listAgentRuns requests optional task type filter without cache', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; method: string | undefined; cache: RequestCache | undefined }> = [];
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method, cache: init?.cache });
+    return Response.json({
+      runs: [
+        {
+          id: 'run-image',
+          conversationId: 'run-image',
+          taskType: 'image',
+          status: 'succeeded',
+          prompt: '山水',
+          finalMessage: '完成',
+          errorMessage: null,
+          capabilitySummary: { provider: 'doubao', model: 'seedream', capabilities: [] },
+          selectedModel: null,
+          usage: null,
+          billing: null,
+          artifacts: [],
+          createdAt: '2026-06-06T00:00:00.000Z',
+          updatedAt: '2026-06-06T00:00:00.000Z',
+        },
+      ],
+    });
+  };
+
+  try {
+    const runs = await listAgentRuns({ taskType: 'image' });
+
+    assert.equal(runs[0]?.id, 'run-image');
+    assert.deepEqual(requests, [
+      {
+        url: '/api/agent/runs?taskType=image',
+        method: 'GET',
+        cache: 'no-store',
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('syncAgentRun returns synced run payload from API', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
@@ -1023,6 +1067,28 @@ test('parseDirectMediaArtifactPayload accepts direct artifact payloads', () => {
   assert.equal(parsed?.kind, 'video');
   assert.equal(parsed?.delivery.mode, 'provider_url');
   assert.equal(parsed?.delivery.url, 'https://provider.example/video.mp4');
+});
+
+test('parseDirectMediaArtifactPayload preserves cached storage status without exposing object keys', () => {
+  const parsed = parseDirectMediaArtifactPayload({
+    kind: 'image',
+    title: '生成图片',
+    delivery: {
+      mode: 'provider_url',
+      url: '/api/agent/runs/run-1/artifacts/artifact-1/access',
+      expiresAt: '2026-06-06T00:10:00.000Z',
+    },
+    metadata: {
+      storageStatus: 'cached',
+      cacheObjectKey: 'secret/cache/object.png',
+      mimeType: 'image/png',
+      width: 512,
+    },
+  });
+
+  assert.equal(parsed?.metadata.storageStatus, 'cached');
+  assert.equal(parsed?.metadata.width, 512);
+  assert.equal('cacheObjectKey' in (parsed?.metadata ?? {}), false);
 });
 
 test('parseDirectMediaArtifactPayload normalizes omitted expiresAt to null', () => {
