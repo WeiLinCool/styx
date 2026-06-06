@@ -10,6 +10,7 @@ import {
   disableMediaShare,
   enableMediaShare,
   getAgentRunDetail,
+  getGeneratedRunArtifactAccess,
   getVideoGenerationConfig,
   getPublicSharedMedia,
   listAgentConversations,
@@ -660,6 +661,67 @@ test('saveGeneratedMedia returns saved asset payload and artifact save state', a
     const result = await saveGeneratedMedia({ runId: 'run-1', artifactId: 'artifact-1' });
     assert.equal(result.asset.id, 'asset-1');
     assert.equal(result.artifact.metadata.saveStatus, 'saved');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('getGeneratedRunArtifactAccess fetches cached artifact preview access without cache', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; method: string | undefined; cache: RequestCache | undefined }> = [];
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method, cache: init?.cache });
+    return Response.json({
+      access: {
+        runId: 'run-1',
+        artifactId: 'artifact-1',
+        url: 'https://signed.example/cache/object.png',
+        expiresAt: '2026-06-06T00:10:00.000Z',
+        mimeType: 'image/png',
+        disposition: 'preview',
+      },
+    });
+  };
+
+  try {
+    const access = await getGeneratedRunArtifactAccess('run-1', 'artifact-1');
+
+    assert.deepEqual(requests, [
+      {
+        url: '/api/agent/runs/run-1/artifacts/artifact-1/access?disposition=preview',
+        method: 'GET',
+        cache: 'no-store',
+      },
+    ]);
+    assert.equal(access.url, 'https://signed.example/cache/object.png');
+    assert.equal(access.mimeType, 'image/png');
+    assert.equal(access.disposition, 'preview');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('getGeneratedRunArtifactAccess throws typed errors from access route failures', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json(
+      {
+        error: {
+          code: 'cache_expired',
+          message: 'Temporary generated media has expired.',
+        },
+      },
+      { status: 410 },
+    );
+
+  try {
+    await assert.rejects(
+      () => getGeneratedRunArtifactAccess('run-1', 'artifact-1', 'download'),
+      (error) =>
+        error instanceof AgentRuntimeApiError &&
+        error.code === 'cache_expired' &&
+        error.status === 410,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

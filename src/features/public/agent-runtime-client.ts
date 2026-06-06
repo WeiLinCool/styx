@@ -90,6 +90,16 @@ export type CreateAgentRunRequest = {
   input?: Record<string, unknown>;
 };
 
+export type GeneratedRunArtifactAccess = {
+  runId: string;
+  artifactId: string;
+  savedAssetId?: string;
+  url: string;
+  expiresAt: string;
+  mimeType: string | null;
+  disposition: 'preview' | 'download';
+};
+
 export type UpdateAgentConversationRequest = {
   titleOverride?: string | null;
   folderId?: string | null;
@@ -582,6 +592,29 @@ export async function saveGeneratedMedia(input: {
   }
 
   return payload;
+}
+
+export async function getGeneratedRunArtifactAccess(
+  runId: string,
+  artifactId: string,
+  disposition: 'preview' | 'download' = 'preview',
+): Promise<GeneratedRunArtifactAccess> {
+  const response = await userApiRequest(
+    `/api/agent/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(
+      artifactId,
+    )}/access?disposition=${encodeURIComponent(disposition)}`,
+    {
+      method: 'GET',
+      cache: 'no-store',
+    },
+  );
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '生成结果访问失败');
+  }
+
+  return payload.access;
 }
 
 export async function listSavedMediaAssets(): Promise<GeneratedMediaAssetDto[]> {
