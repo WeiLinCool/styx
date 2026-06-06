@@ -578,15 +578,15 @@ git commit -m "feat: pass media to doubao video tasks"
 - Modify: `src/features/public/agent-runtime-client.ts`
 - Add tests if local component test pattern supports this page
 
-- [ ] **Step 1: Replace hardcoded options with config state**
+- [x] **Step 1: Replace hardcoded options with config state**
 
 Use `getVideoGenerationConfig`. Remove local `VIDEO_STYLES`, `DURATIONS`, `CLARITIES`. State should store `selectedStyleCode`, `durationSeconds`, and `resolution`.
 
-- [ ] **Step 2: Add member gate**
+- [x] **Step 2: Add member gate**
 
 If config returns `enabled: false`, show upgrade messaging and link to `/membership`; do not render active submit controls. Keep activation and login gates intact.
 
-- [ ] **Step 3: Add prompt auto-fill**
+- [x] **Step 3: Add prompt auto-fill**
 
 Style button click:
 
@@ -596,7 +596,7 @@ setSelectedStyleCode(styleCode);
 if (style) setPrompt(style.prompt);
 ```
 
-- [ ] **Step 4: Add material controls**
+- [x] **Step 4: Add material controls**
 
 Add two compact sections:
 
@@ -605,7 +605,7 @@ Add two compact sections:
 
 Local uploads call existing `uploadUserMedia` before `createAgentRun`. Media library selection uses `listSavedMediaAssets`.
 
-- [ ] **Step 5: Submit canonical input**
+- [x] **Step 5: Submit canonical input**
 
 Call `createAgentRun` with:
 
@@ -619,7 +619,7 @@ input: {
 }
 ```
 
-- [ ] **Step 6: Run focused checks and commit**
+- [x] **Step 6: Run focused checks and commit**
 
 Run:
 
@@ -643,25 +643,25 @@ git commit -m "feat: wire member video generation page"
 - Modify only if verification finds defects.
 - Create: `docs/superpowers/verification/2026-06-05-member-video-generation-mvp.md`
 
-- [ ] **Step 1: Run full static validation**
+- [x] **Step 1: Run full static validation**
 
 Run: `pnpm validate`
 
 Expected: PASS.
 
-- [ ] **Step 2: Run production build**
+- [x] **Step 2: Run production build**
 
 Run: `pnpm build`
 
 Expected: PASS. If blocked by missing environment such as `DATABASE_URL`, record the exact blocker and run all non-dependent tests.
 
-- [ ] **Step 3: Run database migration locally if configured**
+- [x] **Step 3: Run database migration locally if configured**
 
 Run: `pnpm db:migrate`
 
 Expected: PASS when `DATABASE_URL` is available. If unavailable, record blocker.
 
-- [ ] **Step 4: Browser verification**
+- [x] **Step 4: Browser verification**
 
 Run the dev server:
 
@@ -678,11 +678,11 @@ Verify in browser:
 - media library selection displays selected material
 - submit starts a run and shows existing progress/result states
 
-- [ ] **Step 5: Write verification note**
+- [x] **Step 5: Write verification note**
 
 Create `docs/superpowers/verification/2026-06-05-member-video-generation-mvp.md` with commands run, pass/fail output summary, browser coverage, and any blockers.
 
-- [ ] **Step 6: Final commit**
+- [x] **Step 6: Final commit**
 
 ```bash
 git add docs/superpowers/verification/2026-06-05-member-video-generation-mvp.md
