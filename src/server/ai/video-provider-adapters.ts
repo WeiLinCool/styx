@@ -13,6 +13,20 @@ import { readSafeProviderErrorBody } from './provider-error-body';
 type FetchLike = typeof fetch;
 type ReadEnv = (key: string) => string | undefined | null;
 
+type VideoTaskContentEntry =
+  | {
+      type: 'text';
+      text: string;
+    }
+  | {
+      type: 'image_url';
+      image_url: { url: string };
+    }
+  | {
+      type: 'audio_url';
+      audio_url: { url: string };
+    };
+
 export type VideoProviderCreateRequest = {
   runId: string;
   userId: string;
@@ -162,15 +176,30 @@ function createVideoTaskBody(request: VideoProviderCreateRequest): Record<string
   if (typeof request.watermark === 'boolean') suffix.push(`--wm ${request.watermark}`);
 
   const text = suffix.length > 0 ? `${request.prompt} ${suffix.join(' ')}` : request.prompt;
+  const content: VideoTaskContentEntry[] = [
+    {
+      type: 'text',
+      text,
+    },
+  ];
+
+  if (request.imageUrl) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: request.imageUrl },
+    });
+  }
+
+  if (request.audioUrl) {
+    content.push({
+      type: 'audio_url',
+      audio_url: { url: request.audioUrl },
+    });
+  }
 
   return {
     model: request.model.model,
-    content: [
-      {
-        type: 'text',
-        text,
-      },
-    ],
+    content,
   };
 }
 
