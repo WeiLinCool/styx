@@ -117,6 +117,57 @@ test('GET /api/agent/video-config returns resolved member config and video model
   assert.deepEqual(payload.models, videoModels);
 });
 
+test('GET /api/agent/video-config deterministically selects versioned membership entitlements only', async () => {
+  const selectedVersionIds: string[] = [];
+  const handlers = createHandlers({
+    listEntitlements: async () => [
+      {
+        planCode: null,
+        planVersionId: 'benefit-version',
+        benefitCode: 'video-addon',
+        source: 'manual',
+        startsAt: '2026-06-01T00:00:00.000Z',
+        expiresAt: null,
+      },
+      {
+        planCode: 'legacy-monthly',
+        planVersionId: null,
+        benefitCode: null,
+        source: 'membership',
+        startsAt: '2026-06-01T00:00:00.000Z',
+        expiresAt: null,
+      },
+      {
+        planCode: 'pro-monthly',
+        planVersionId: 'version-1',
+        benefitCode: null,
+        source: 'membership',
+        startsAt: '2026-06-01T00:00:00.000Z',
+        expiresAt: '2026-07-01T00:00:00.000Z',
+      },
+      {
+        planCode: 'team-yearly',
+        planVersionId: 'version-2',
+        benefitCode: null,
+        source: 'membership',
+        startsAt: '2026-06-01T00:00:00.000Z',
+        expiresAt: null,
+      },
+    ],
+    getVideoPlanConfigByVersionId: async (versionId) => {
+      selectedVersionIds.push(versionId);
+      return versionId === 'version-2' ? planConfig : null;
+    },
+  });
+
+  const response = await handlers.GET();
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.enabled, true);
+  assert.deepEqual(selectedVersionIds, ['version-2']);
+});
+
 test('GET /api/agent/video-config disables member access when video plan config is missing', async () => {
   const handlers = createHandlers({
     listEntitlements: async () => [memberEntitlement],
@@ -133,6 +184,31 @@ test('GET /api/agent/video-config disables member access when video plan config 
   assert.deepEqual(payload.durations, []);
   assert.deepEqual(payload.resolutions, []);
   assert.deepEqual(payload.models, []);
+});
+
+test('GET /api/agent/video-config maps unexpected plan version resolver errors as server errors', async () => {
+  const handlers = createHandlers({
+    listEntitlements: async () => [
+      {
+        ...memberEntitlement,
+        planVersionId: null,
+      },
+    ],
+    resolvePlanVersion: async () => {
+      throw new Error('membership repository unavailable');
+    },
+  });
+
+  const response = await handlers.GET();
+  const payload = await response.json();
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(payload, {
+    error: {
+      code: 'internal_error',
+      message: '账户服务发生未知错误。',
+    },
+  });
 });
 
 test('GET /api/agent/video-config maps account errors through route response style', async () => {

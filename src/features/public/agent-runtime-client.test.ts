@@ -294,6 +294,29 @@ test('parseVideoGenerationConfig drops malformed usable options and models', () 
   assert.deepEqual(config.models.map((model) => model.id), ['model-video']);
 });
 
+test('parseVideoGenerationConfig clears leaked options when payload is disabled', () => {
+  const config = parseVideoGenerationConfig({
+    ...makeVideoConfig({
+      enabled: false,
+      upgradeRequired: true,
+      message: 'upgrade required',
+    }),
+  });
+
+  assert.equal(config.enabled, false);
+  assert.equal(config.upgradeRequired, true);
+  assert.equal(config.message, 'upgrade required');
+  assert.deepEqual(config.styles, []);
+  assert.deepEqual(config.durations, []);
+  assert.deepEqual(config.resolutions, []);
+  assert.deepEqual(config.models, []);
+  assert.deepEqual(config.defaults, {
+    styleCode: null,
+    durationSeconds: null,
+    resolution: null,
+  });
+});
+
 test('getVideoGenerationConfig fetches current user video config without cache', async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<{ url: string; cache: RequestCache | undefined }> = [];

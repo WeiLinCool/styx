@@ -243,6 +243,24 @@ export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfi
   const enabled = payload.enabled === true;
   const upgradeRequired = payload.upgradeRequired === true;
   const message = typeof payload.message === 'string' ? payload.message : null;
+
+  if (!enabled) {
+    return {
+      enabled: false,
+      upgradeRequired,
+      message,
+      styles: [],
+      durations: [],
+      resolutions: [],
+      defaults: {
+        styleCode: null,
+        durationSeconds: null,
+        resolution: null,
+      },
+      models: [],
+    };
+  }
+
   const rawStyles = Array.isArray(payload.styles) ? payload.styles : [];
   const rawDurations = Array.isArray(payload.durations) ? payload.durations : [];
   const rawResolutions = Array.isArray(payload.resolutions) ? payload.resolutions : [];

@@ -24,16 +24,49 @@ type SessionLike = {
   };
 };
 
-type MembershipEntitlement = Pick<ActiveUserEntitlement, 'planCode' | 'planVersionId'>;
+type MembershipEntitlement = Pick<
+  ActiveUserEntitlement,
+  'planCode' | 'planVersionId' | 'expiresAt'
+>;
 
 export type AgentVideoConfigDto = ReturnType<typeof toVideoConfigDto>;
 
 function selectMembershipEntitlement(
   entitlements: ActiveUserEntitlement[],
 ): MembershipEntitlement | null {
-  return (
-    entitlements.find((entitlement) => entitlement.planVersionId || entitlement.planCode) ?? null
+  const membershipEntitlements = entitlements.filter(
+    (entitlement) =>
+      entitlement.source === 'membership' &&
+      entitlement.benefitCode === null &&
+      (entitlement.planVersionId || entitlement.planCode),
   );
+
+  return membershipEntitlements.toSorted(compareMembershipEntitlements)[0] ?? null;
+}
+
+function compareMembershipEntitlements(
+  left: MembershipEntitlement,
+  right: MembershipEntitlement,
+) {
+  const leftHasVersion = left.planVersionId ? 1 : 0;
+  const rightHasVersion = right.planVersionId ? 1 : 0;
+  if (leftHasVersion !== rightHasVersion) {
+    return rightHasVersion - leftHasVersion;
+  }
+
+  const leftExpiry = left.expiresAt ? new Date(left.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+  const rightExpiry = right.expiresAt ? new Date(right.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+  if (leftExpiry !== rightExpiry) {
+    return rightExpiry - leftExpiry;
+  }
+
+  const leftPlanCode = left.planCode ?? '';
+  const rightPlanCode = right.planCode ?? '';
+  if (leftPlanCode !== rightPlanCode) {
+    return leftPlanCode.localeCompare(rightPlanCode);
+  }
+
+  return (left.planVersionId ?? '').localeCompare(right.planVersionId ?? '');
 }
 
 function toVideoConfigDto(
@@ -133,7 +166,7 @@ const handlers = createAgentVideoConfigRouteHandlers({
   resolvePlanVersion: async (planCode) =>
     resolvePlanVersionForEntitlement(planCode, {
       loader: membershipPlanVersionRepository,
-    }).catch(() => null),
+    }),
   getVideoPlanConfigByVersionId,
   listStyles: listEnabledVideoStylePresets,
   listVideoModels: listAvailableVideoModelsForUser,
