@@ -15,6 +15,7 @@ import {
 } from '@/server/ai/provider-adapters';
 import { InsufficientCreditsError } from '@/server/billing/credits';
 import { createDeterministicPiRuntime } from '@/server/agent/pi-runtime';
+import { createDefaultGeneratedMediaCacheService } from '@/server/media/generated-media-cache';
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireActiveAccount } from '@/server/auth/guards';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
@@ -259,6 +260,7 @@ function createService() {
   return createAgentRunService({
     repository: getAgentRunRepository(),
     runtime: createDeterministicPiRuntime(),
+    generatedMediaCache: createDefaultGeneratedMediaCacheService(),
   });
 }
 

@@ -126,6 +126,41 @@ function enabledVideoPolicy() {
   };
 }
 
+function testGeneratedMediaCache() {
+  return {
+    async cacheGeneratedMedia(input: {
+      userId: string;
+      runId: string;
+      artifactId: string;
+      kind: 'image' | 'video';
+      sourceUrl?: string;
+      dataUrl?: string;
+      mimeType?: string;
+      metadata?: Record<string, unknown>;
+    }) {
+      assert.equal(input.userId, 'user-1');
+      assert.ok(input.sourceUrl || input.dataUrl);
+      const mimeType =
+        input.mimeType ??
+        (typeof input.metadata?.mimeType === 'string' ? input.metadata.mimeType : null) ??
+        (input.kind === 'video' ? 'video/mp4' : 'image/png');
+      return {
+        storageProvider: 'tencent_cos' as const,
+        bucket: 'cache-bucket',
+        region: 'ap-shanghai',
+        objectKey: `cache/${input.runId}/${input.artifactId}`,
+        mimeType,
+        byteSize: 6,
+        width: input.kind === 'image' ? 1024 : null,
+        height: input.kind === 'image' ? 1024 : null,
+        durationSeconds: input.kind === 'video' ? 5 : null,
+        expiresAt: '2026-06-13T00:00:00.000Z',
+        metadata: input.metadata ?? {},
+      };
+    },
+  };
+}
+
 async function waitForRunStatus(
   repository: AgentRunRepository,
   runId: string,
@@ -239,6 +274,7 @@ test('createAndRunAgentRun returns running image run and streams direct media co
       },
     }),
     debitForImageAgentRun: async () => ({ entryId: 'ledger-image', balanceAfter: 90 }),
+    generatedMediaCache: testGeneratedMediaCache(),
   });
 
   const result = await service.createAndRunAgentRun({
@@ -260,7 +296,10 @@ test('createAndRunAgentRun returns running image run and streams direct media co
   assert.equal(completed?.status, 'succeeded');
   assert.equal(completed?.artifacts[0]?.body, null);
   assert.equal(completed?.artifacts[0]?.url, null);
-  assert.equal(completed?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.equal(completed?.artifacts[0]?.metadata.storageStatus, 'cached');
+  assert.equal(completed?.artifacts[0]?.metadata.cacheStatus, 'available');
+  assert.equal(completed?.artifacts[0]?.metadata.cacheObjectKey, `cache/${result.run.id}/${result.run.id}-1`);
+  assert.equal(completed?.artifacts[0]?.metadata.saveStatus, 'not_saved');
   assert.deepEqual(
     events.map((event) => event.eventType),
     ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],
@@ -299,6 +338,7 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
       },
     }),
     debitForImageAgentRun: async () => ({ entryId: 'ledger-video', balanceAfter: 88 }),
+    generatedMediaCache: testGeneratedMediaCache(),
   });
 
   const result = await service.createAndRunAgentRun({
@@ -320,7 +360,9 @@ test('createAndRunAgentRun returns running video run and streams provider URL co
   const events = await repository.listRunEvents(result.run.id);
 
   assert.equal(completed.status, 'succeeded');
-  assert.equal(completed.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.equal(completed.artifacts[0]?.metadata.storageStatus, 'cached');
+  assert.equal(completed.artifacts[0]?.metadata.cacheStatus, 'available');
+  assert.equal(completed.artifacts[0]?.metadata.cacheObjectKey, 'cache/' + result.run.id + '/task-1');
   assert.deepEqual(
     events.map((event) => event.eventType),
     ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],

@@ -27,6 +27,10 @@ import {
 import { listActiveUserEntitlements, type ActiveUserEntitlement } from '@/server/ai/model-entitlements';
 import { createTencentCosClient } from '@/server/media/cos-client';
 import {
+  type CachedGeneratedMedia,
+  type CacheGeneratedMediaInput,
+} from '@/server/media/generated-media-cache';
+import {
   createDatabaseGeneratedMediaAssetRepository,
   type GeneratedMediaAssetRepository,
 } from '@/server/repositories/generated-media-assets';
@@ -162,6 +166,10 @@ type MediaRunScheduler = {
 };
 
 type VideoMaterialSigner = (asset: GeneratedMediaAssetDto) => Promise<string>;
+type GeneratedMediaCache = {
+  cacheGeneratedMedia(input: CacheGeneratedMediaInput): Promise<CachedGeneratedMedia>;
+};
+type GeneratedMediaCacheResolver = () => GeneratedMediaCache | null;
 
 export type CreateAgentRunServiceInput = {
   repository: AgentRunRepository;
@@ -190,6 +198,7 @@ export type CreateAgentRunServiceInput = {
   signVideoMaterialUrl?: VideoMaterialSigner;
   waitForVideoPoll?: (attempt: number) => Promise<void>;
   debitForImageAgentRun?: DebitForImageAgentRun;
+  generatedMediaCache?: GeneratedMediaCache;
 };
 
 export type CreateAndRunAgentRunInput = {
@@ -302,6 +311,64 @@ function runResult(
   transientArtifacts: TransientAgentArtifactDto[] = [],
 ): CreateAgentRunResult {
   return { run, transientArtifacts };
+}
+
+async function cacheDirectMediaArtifact(input: {
+  cache: GeneratedMediaCache | null;
+  userId: string;
+  runId: string;
+  cacheId: string;
+  artifact: AgentArtifactInput;
+  directMedia: NonNullable<ReturnType<typeof toDirectMediaResult>>;
+}): Promise<AgentArtifactInput> {
+  if (!input.cache) {
+    return sanitizeDirectMediaArtifact(input.artifact);
+  }
+
+  const cached = await input.cache.cacheGeneratedMedia({
+    userId: input.userId,
+    runId: input.runId,
+    artifactId: input.cacheId,
+    kind: input.directMedia.kind,
+    title: input.directMedia.title,
+    sourceUrl:
+      input.directMedia.delivery.mode === 'provider_url'
+        ? input.directMedia.delivery.url
+        : undefined,
+    dataUrl:
+      input.directMedia.delivery.mode === 'data_url'
+        ? input.directMedia.delivery.url
+        : undefined,
+    mimeType: input.directMedia.metadata.mimeType,
+    filename: input.directMedia.metadata.filename,
+    metadata: input.directMedia.metadata,
+  });
+
+  return {
+    kind: input.artifact.kind,
+    title: input.artifact.title,
+    body: null,
+    url: null,
+    metadata: {
+      ...cloneRecord(input.directMedia.metadata),
+      storageStatus: 'cached',
+      cacheStatus: 'available',
+      cacheProvider: cached.storageProvider,
+      cacheBucket: cached.bucket,
+      cacheRegion: cached.region,
+      cacheObjectKey: cached.objectKey,
+      cacheExpiresAt: cached.expiresAt,
+      saveStatus: 'not_saved',
+      sourceUrl: input.directMedia.delivery.url,
+      providerExpiresAt: input.directMedia.delivery.expiresAt,
+      mimeType: cached.mimeType,
+      byteLength: cached.byteSize,
+      width: cached.width ?? input.directMedia.metadata.width,
+      height: cached.height ?? input.directMedia.metadata.height,
+      durationSeconds:
+        cached.durationSeconds ?? input.directMedia.metadata.durationSeconds,
+    },
+  };
 }
 
 function createMediaRunScheduler(): MediaRunScheduler {
@@ -957,7 +1024,11 @@ export function createAgentRunService({
   signVideoMaterialUrl = signVideoMaterialWithTencentCos,
   waitForVideoPoll = async () => {},
   debitForImageAgentRun = defaultDebitForImageAgentRun,
+  generatedMediaCache,
 }: CreateAgentRunServiceInput) {
+  const resolveGeneratedMediaCache: GeneratedMediaCacheResolver = () =>
+    generatedMediaCache ?? null;
+
   return {
     async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<CreateAgentRunResult> {
       if (input.taskType === 'chat') {
@@ -980,6 +1051,7 @@ export function createAgentRunService({
           assertCanAffordMinimum,
           createImageProviderAdapter,
           debitForImageAgentRun,
+          resolveGeneratedMediaCache,
         });
       }
 
@@ -1068,6 +1140,7 @@ export function createAgentRunService({
         createVideoProviderAdapter,
         debitForImageAgentRun,
         waitForVideoPoll,
+        resolveGeneratedMediaCache,
       });
     },
   };
@@ -1238,6 +1311,7 @@ async function syncVideoAgentRunForUser(input: {
   createVideoProviderAdapter: (model: ResolvedVideoModel) => MediaProviderAdapter;
   debitForImageAgentRun: DebitForImageAgentRun;
   waitForVideoPoll: (attempt: number) => Promise<void>;
+  resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
 }): Promise<AgentRunDto> {
   const detail = await input.repository.getRunDetailForUser(input.runId, input.userId);
   if (!detail) {
@@ -1325,6 +1399,18 @@ async function syncVideoAgentRunForUser(input: {
       ...(isRecord(providerResult.rawMetadata.usage) ? { usage: providerResult.rawMetadata.usage } : {}),
     },
   };
+  const directMedia = toDirectMediaResult(artifact);
+  if (!directMedia) {
+    throw new Error('Provider response did not include video output.');
+  }
+  const cachedArtifact = await cacheDirectMediaArtifact({
+    cache: input.resolveGeneratedMediaCache(),
+    userId: input.userId,
+    runId: detail.run.id,
+    cacheId: providerTaskId,
+    artifact,
+    directMedia,
+  });
   const creditCost = calculateMediaRunCreditCost({
     taskType: 'video',
     model,
@@ -1358,7 +1444,7 @@ async function syncVideoAgentRunForUser(input: {
   const completed = requireUpdatedRun(
     await input.repository.completeRun(detail.run.id, {
       finalMessage: '视频已生成',
-      artifacts: [sanitizeDirectMediaArtifact(artifact)],
+      artifacts: [cachedArtifact],
       capabilitySnapshot: completedSnapshot,
       input: {
         ...(detail.internal?.input ?? {}),
@@ -1368,10 +1454,6 @@ async function syncVideoAgentRunForUser(input: {
     'complete run',
   );
 
-  const directMedia = toDirectMediaResult(artifact);
-  if (!directMedia) {
-    throw new Error('Provider response did not include video output.');
-  }
   try {
     await appendRunEventIfSupported(input.repository, completed.id, {
       eventType: 'billing_recorded',
@@ -1553,6 +1635,7 @@ async function createAndRunImageAgentRun(input: {
   ) => Promise<void>;
   createImageProviderAdapter: (model: ResolvedImageModel) => ImageProviderAdapter;
   debitForImageAgentRun: DebitForImageAgentRun;
+  resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
 }): Promise<CreateAgentRunResult> {
   const { repository, resolveImageModelForUser, assertCanAffordMinimum } = input;
   const request = input.input;
@@ -1604,6 +1687,7 @@ async function createAndRunImageAgentRun(input: {
     capabilitySnapshot,
     createImageProviderAdapter: input.createImageProviderAdapter,
     debitForImageAgentRun: input.debitForImageAgentRun,
+    resolveGeneratedMediaCache: input.resolveGeneratedMediaCache,
   }).catch(async (error) => {
     const errorMessage = toErrorMessage(error);
     const failedSnapshot = toFailedImageSnapshot({ capabilitySnapshot, errorMessage });
@@ -1640,6 +1724,7 @@ async function runImageProviderOrchestration(input: {
   capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
   createImageProviderAdapter: (model: ResolvedImageModel) => ImageProviderAdapter;
   debitForImageAgentRun: DebitForImageAgentRun;
+  resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
 }) {
   const adapter = input.createImageProviderAdapter(input.model);
   await appendRunEventIfSupported(input.repository, input.running.id, {
@@ -1673,6 +1758,23 @@ async function runImageProviderOrchestration(input: {
   if (directMediaResults.length === 0) {
     throw new Error('Provider response did not include image output.');
   }
+
+  const cachedArtifacts = await Promise.all(
+    acceptedArtifacts.map((artifact, index) => {
+      const directMedia = directMediaResults[index];
+      if (!directMedia) {
+        throw new Error('Provider response did not include image output.');
+      }
+      return cacheDirectMediaArtifact({
+        userId: input.request.userId,
+        runId: input.running.id,
+        cacheId: `${input.running.id}-${index + 1}`,
+        artifact,
+        directMedia,
+        cache: input.resolveGeneratedMediaCache(),
+      });
+    }),
+  );
 
   const creditCost = calculateMediaRunCreditCost({
     taskType: input.request.taskType === 'video' ? 'video' : 'image',
@@ -1711,7 +1813,7 @@ async function runImageProviderOrchestration(input: {
     await input.repository.failRun(input.running.id, {
       errorMessage,
       finalMessage: providerResult.finalMessage,
-      artifacts: acceptedArtifacts.map(sanitizeDirectMediaArtifact),
+      artifacts: cachedArtifacts,
       capabilitySnapshot: failedSnapshot,
       input: {
         ...input.runInput,
@@ -1742,7 +1844,7 @@ async function runImageProviderOrchestration(input: {
   const completed = requireUpdatedRun(
     await input.repository.completeRun(input.running.id, {
       finalMessage: providerResult.finalMessage,
-      artifacts: acceptedArtifacts.map(sanitizeDirectMediaArtifact),
+      artifacts: cachedArtifacts,
       capabilitySnapshot: completedSnapshot,
       input: {
         ...input.runInput,
