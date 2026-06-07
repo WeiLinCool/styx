@@ -1,6 +1,6 @@
 export function buildPromptOptimizationPrompt(currentPrompt: string) {
   return [
-    '请将下面这段 AI 视频工作流提示词优化为更清晰、更具体、更适合生成石头印画风格视频的版本。',
+    '请将下面这段 AI 视频工作流提示词优化为更清晰、更具体、更适合石头印画风格视频制作的版本。',
     '只返回优化后的提示词正文，不要加解释。',
     '',
     currentPrompt.trim(),

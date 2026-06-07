@@ -19,6 +19,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { DirectMediaResultDto } from '@/server/agent/types';
 import {
   buildPromptOptimizationPrompt,
@@ -63,6 +70,14 @@ function readStorageStatus(value: unknown): DirectMediaResultDto['metadata']['st
   return value === 'provider_direct' || value === 'cached' || value === 'stored' ? value : 'cached';
 }
 
+export function filterWorkflowChatModels(models: ChatModelOption[]) {
+  return models.filter((model) => model.providerName !== 'Development Provider');
+}
+
+export function getWorkflowChatModelLabel(model: ChatModelOption) {
+  return `${model.name} · ${model.providerName}`;
+}
+
 export type PromptOptimizationDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -90,6 +105,8 @@ export function PromptOptimizationDialog({
   const [optimizing, setOptimizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const operationRef = useRef(0);
+  const selectedChatModel = chatModels.find((model) => model.id === selectedChatModelId) ?? null;
+  const canOptimize = Boolean(selectedChatModelId) && !loadingModels && !optimizing;
 
   useEffect(() => {
     if (!open) {
@@ -115,8 +132,10 @@ export function PromptOptimizationDialog({
         if (cancelled) {
           return;
         }
-        setChatModels(models);
-        setSelectedChatModelId(selectChatModelId(models));
+
+        const filteredModels = filterWorkflowChatModels(models);
+        setChatModels(filteredModels);
+        setSelectedChatModelId(selectChatModelId(filteredModels));
       })
       .catch((loadError) => {
         if (cancelled) {
@@ -213,10 +232,32 @@ export function PromptOptimizationDialog({
           <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3 text-xs text-muted-foreground">
             {loadingModels
               ? '正在加载聊天模型...'
-              : selectedChatModelId
-                ? `当前优化模型：${chatModels.find((model) => model.id === selectedChatModelId)?.name ?? '默认模型'}`
+              : selectedChatModel
+                ? `当前优化模型：${selectedChatModel.name}`
                 : '当前没有可用聊天模型。'}
           </div>
+
+          {chatModels.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">选择优化模型</p>
+              <Select
+                value={selectedChatModelId ?? ''}
+                onValueChange={setSelectedChatModelId}
+                disabled={loadingModels || optimizing}
+              >
+                <SelectTrigger className="w-full rounded-xl border-input bg-card px-4 py-3 text-sm">
+                  <SelectValue placeholder="选择模型" />
+                </SelectTrigger>
+                <SelectContent>
+                  {chatModels.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {getWorkflowChatModelLabel(model)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground">当前提示词</p>
@@ -241,7 +282,11 @@ export function PromptOptimizationDialog({
                 {optimizedPrompt}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-card/60 px-4 py-3 text-sm text-muted-foreground">
+              生成后会在这里显示一版可直接应用的提示词。
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -255,7 +300,7 @@ export function PromptOptimizationDialog({
           <button
             type="button"
             onClick={handleOptimize}
-            disabled={optimizing || draftPrompt.trim().length === 0}
+            disabled={!canOptimize || draftPrompt.trim().length === 0}
             className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
             {optimizing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -286,7 +331,7 @@ export type ReferenceImageDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   prompt: string;
-  selectedImageModelId: string;
+  selectedImageModelId: string | null;
   isLoggedIn: boolean;
   activationRequired: boolean;
   openLoginModal: () => void;

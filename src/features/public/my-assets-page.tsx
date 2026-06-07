@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, FileAudio, Image as ImageIcon, Link2, Loader2, MessageSquarePlus, Search, Trash2, Upload, Video } from 'lucide-react';
+import { ArrowLeft, Download, Link2, Loader2, MessageSquarePlus, Search, Trash2, Upload } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth-context';
@@ -18,6 +18,7 @@ import {
   listSavedMediaAssets,
   uploadUserMedia,
 } from './agent-runtime-client';
+import { MediaThumbnail } from './media-thumbnail';
 import { deriveMyAssetsView } from './my-assets-state';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
@@ -58,18 +59,53 @@ function kindLabel(kind: GeneratedMediaAssetDto['kind']) {
   return kind === 'video' ? '视频' : kind === 'audio' ? '音频' : '图片';
 }
 
-function AssetPlaceholder({ kind }: { kind: GeneratedMediaAssetDto['kind'] }) {
-  return (
-    <div className="flex aspect-[4/3] items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
-      {kind === 'video' ? (
-        <Video className="h-10 w-10" />
-      ) : kind === 'audio' ? (
-        <FileAudio className="h-10 w-10" />
-      ) : (
-        <ImageIcon className="h-10 w-10" />
-      )}
-    </div>
-  );
+function useVisiblePreviewUrl(assetId: string, enabled: boolean) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const cacheRef = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    if (!enabled) {
+      setPreviewUrl(null);
+      setLoading(false);
+      return;
+    }
+
+    const cached = cacheRef.current.get(assetId);
+    if (cached) {
+      setPreviewUrl(cached);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    void (async () => {
+      try {
+        const access = await getSavedMediaAssetAccess(assetId, 'preview');
+        if (cancelled) {
+          return;
+        }
+        cacheRef.current.set(assetId, access.url);
+        setPreviewUrl(access.url);
+      } catch {
+        if (!cancelled) {
+          setPreviewUrl(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assetId, enabled]);
+
+  return { previewUrl, loading };
 }
 
 export function MyAssetsPageClient() {
@@ -139,6 +175,7 @@ export function MyAssetsPageClient() {
       }),
     [assets, kind, search, sort, sourceType],
   );
+  const visibleAssetIds = useMemo(() => new Set(visibleAssets.map((asset) => asset.id)), [visibleAssets]);
 
   const handleDeleteAsset = async (asset: GeneratedMediaAssetDto) => {
     if (deletingAssetId) {
@@ -407,13 +444,7 @@ export function MyAssetsPageClient() {
                 key={asset.id}
                 className="overflow-hidden rounded-3xl border border-border bg-card p-4 shadow-sm"
               >
-                <button
-                  type="button"
-                  onClick={() => void handlePreviewAsset(asset)}
-                  className="block w-full text-left"
-                >
-                  <AssetPlaceholder kind={asset.kind} />
-                </button>
+                <MediaCardThumbnail asset={asset} isVisible={visibleAssetIds.has(asset.id)} onPreview={() => void handlePreviewAsset(asset)} />
 
                 <div className="mt-4">
                   <div className="flex items-start justify-between gap-3">
@@ -543,5 +574,23 @@ export function MyAssetsPageClient() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function MediaCardThumbnail({
+  asset,
+  isVisible,
+  onPreview,
+}: {
+  asset: GeneratedMediaAssetDto;
+  isVisible: boolean;
+  onPreview: () => void;
+}) {
+  const { previewUrl, loading } = useVisiblePreviewUrl(asset.id, isVisible);
+
+  return (
+    <button type="button" onClick={onPreview} className="block w-full text-left">
+      <MediaThumbnail kind={asset.kind} title={asset.title} previewUrl={previewUrl} loading={loading} />
+    </button>
   );
 }

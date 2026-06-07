@@ -37,6 +37,10 @@ import {
   nextReloadKey,
   reconcileSelectedModelId,
 } from '@/features/public/model-availability';
+import {
+  VIDEO_RUN_CONNECTION_LOST_MESSAGE,
+  shouldKeepVideoRunPolling,
+} from './video-run-control';
 import type {
   AgentArtifactDto,
   AgentRunDto,
@@ -401,30 +405,30 @@ export default function VideoGenPage() {
     });
     eventSource.onerror = () => {
       eventSource.close();
-      setIsGenerating(false);
-      setStreamRunId((current) => (current === streamRunId ? null : current));
       if (
         videoReceivedRunIdRef.current !== streamRunId &&
         videoRunCompletedRunIdRef.current !== streamRunId
       ) {
-        void getAgentRunDetail(streamRunId)
-          .then((detail) => {
-            if (detail.run.status === 'succeeded') {
+        void syncAgentRun(streamRunId)
+          .then((run) => {
+            if (shouldKeepVideoRunPolling(run.status)) {
+              setGenerationMessage(VIDEO_RUN_CONNECTION_LOST_MESSAGE);
+              setGenerationError(null);
+              return;
+            }
+
+            if (run.status === 'succeeded') {
               videoRunCompletedRunIdRef.current = streamRunId;
               void loadVideoRunPreview(streamRunId).catch(() => null);
-              return;
+            } else if (run.status === 'failed') {
+              setGenerationError(run.errorMessage ?? '视频生成请求失败');
             }
 
-            if (detail.run.status === 'failed') {
-              setGenerationError(detail.run.errorMessage ?? '视频生成请求失败');
-              return;
-            }
-
-            setGenerationMessage('连接已中断，任务仍可能在后台运行，请稍后从历史记录查看。');
-            setGenerationError(null);
+            setIsGenerating(false);
+            setStreamRunId((current) => (current === streamRunId ? null : current));
           })
           .catch(() => {
-            setGenerationMessage('连接已中断，任务仍可能在后台运行，请稍后从历史记录查看。');
+            setGenerationMessage(VIDEO_RUN_CONNECTION_LOST_MESSAGE);
             setGenerationError(null);
           });
       }
@@ -500,23 +504,30 @@ export default function VideoGenPage() {
     const intervalId = window.setInterval(() => {
       void syncAgentRun(streamRunId)
         .then((run) => {
-          if (cancelled || (run.status !== 'succeeded' && run.status !== 'failed')) {
+          if (cancelled) {
             return;
+          }
+
+          if (shouldKeepVideoRunPolling(run.status)) {
+            return;
+          }
+
+          if (run.status === 'succeeded') {
+            videoRunCompletedRunIdRef.current = streamRunId;
+            void loadVideoRunPreview(streamRunId).catch(() => null);
+          } else if (run.status === 'failed') {
+            setGenerationError(run.errorMessage ?? '视频生成请求失败');
           }
 
           setIsGenerating(false);
           setStreamRunId((current) => (current === streamRunId ? null : current));
-          if (run.status === 'failed') {
-            setGenerationError(run.errorMessage ?? '视频生成请求失败');
-          }
         })
         .catch(() => {
           if (cancelled) {
             return;
           }
-          setGenerationError('视频任务同步失败，请稍后重试。');
-          setIsGenerating(false);
-          setStreamRunId((current) => (current === streamRunId ? null : current));
+          setGenerationMessage(VIDEO_RUN_CONNECTION_LOST_MESSAGE);
+          setGenerationError(null);
         });
     }, 3000);
 

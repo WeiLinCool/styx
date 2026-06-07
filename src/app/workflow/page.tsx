@@ -7,11 +7,14 @@ import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 import {
   createAgentRun,
+  listImageModels,
   getVideoGenerationConfig,
+  selectImageModelId,
   type VideoGenerationConfigDto,
+  type ImageModelMode,
+  type ImageModelOption,
   type VideoModelOption,
 } from '@/features/public/agent-runtime-client';
-import { workflowImageModels } from '@/features/public/tool-data';
 import {
   buildUnavailableModelMessage,
   createInitialModelAvailabilityState,
@@ -74,6 +77,10 @@ type WorkflowModelCard = {
   logoBg: string;
 };
 
+type WorkflowImageModelCard = WorkflowModelCard & {
+  supportedModes: ImageModelMode[];
+};
+
 const emptyVideoConfig: VideoGenerationConfigDto = {
   enabled: false,
   upgradeRequired: false,
@@ -108,6 +115,34 @@ function decorateVideoModel(model: VideoModelOption): WorkflowModelCard {
     vip: isPremium,
     logo: isFast ? '⚡' : isSeedance ? '🎬' : '🎥',
     logoBg: isFast ? 'bg-green-50' : isPremium ? 'bg-amber-50' : 'bg-red-50',
+  };
+}
+
+function decorateImageModel(model: ImageModelOption): WorkflowImageModelCard {
+  const signature = `${model.code} ${model.name}`.toLowerCase();
+  const isPremium = /vip|pro|会员|midjourney|flux/i.test(signature) || /vip|pro|会员/i.test(model.entitlementLabel);
+  const supportsGenerate = model.supportedModes.includes('generate');
+  const supportsEdit = model.supportedModes.includes('edit');
+  const supportsUpscale = model.supportedModes.includes('upscale');
+  const isDefault = model.isDefault;
+
+  return {
+    id: model.id,
+    name: model.name,
+    desc:
+      model.supportedModes.length === 3
+        ? `${model.providerName} · 支持生图 / 风格 / 修复`
+        : model.supportedModes.includes('generate') && model.supportedModes.includes('edit')
+          ? `${model.providerName} · 支持生图 / 风格`
+          : model.supportedModes.includes('generate') && model.supportedModes.includes('upscale')
+            ? `${model.providerName} · 支持生图 / 修复`
+            : `${model.providerName} · ${model.pricingSummary}`,
+    badge: isDefault ? '默认' : supportsGenerate && supportsEdit && supportsUpscale ? '全能' : supportsUpscale ? '修复' : supportsEdit ? '风格' : null,
+    badgeColor: isDefault ? 'bg-blue-500 text-white' : 'bg-blue-500 text-white',
+    vip: isPremium,
+    logo: supportsGenerate ? '🤖' : supportsEdit ? '🎨' : supportsUpscale ? '⚡' : '🖼️',
+    logoBg: supportsGenerate ? 'bg-green-50' : supportsEdit ? 'bg-purple-50' : supportsUpscale ? 'bg-yellow-50' : 'bg-slate-50',
+    supportedModes: model.supportedModes,
   };
 }
 
@@ -620,7 +655,9 @@ export default function WorkflowPage() {
   const { user, isLoggedIn, openLoginModal } = useAuth();
   const [step, setStep] = useState(0); // 0: upload, 1: storyboard, 2: scene, 3: dream
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [selectedImageModel, setSelectedImageModel] = useState('gpt-image-2.0');
+  const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
+  const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null);
+  const [imageModelAvailability, setImageModelAvailability] = useState(createInitialModelAvailabilityState());
   const [videoConfig, setVideoConfig] = useState<VideoGenerationConfigDto>(emptyVideoConfig);
   const [videoModels, setVideoModels] = useState<VideoModelOption[]>([]);
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
@@ -640,12 +677,19 @@ export default function WorkflowPage() {
   const storyboardOperationRef = useRef(0);
   const sceneOperationRef = useRef(0);
   const dreamOperationRef = useRef(0);
+  const selectedImageModelRef = useRef<string | null>(null);
   const selectedVideoModelRef = useRef<string | null>(null);
   const activationRequired = isLoggedIn && user ? requiresActivation(user) : false;
-  const currentImageModel = workflowImageModels.find((model) => model.id === selectedImageModel) as WorkflowModelCard | undefined;
+  const decoratedImageModels = imageModels.map(decorateImageModel);
+  const currentImageModel = decoratedImageModels.find((model) => model.id === selectedImageModel) ?? null;
   const decoratedVideoModels = videoModels.map(decorateVideoModel);
   const currentVideoModel = decoratedVideoModels.find((model) => model.id === selectedVideoModel) ?? null;
   const referenceImageDialogState = createReferenceImageDialogState(step);
+  const imageModelLoading = imageModelAvailability.status === 'loading';
+  const imageModelUnavailableMessage =
+    imageModelAvailability.status === 'maintenance'
+      ? imageModelAvailability.message ?? buildUnavailableModelMessage()
+      : null;
   const videoModelLoading = videoModelAvailability.status === 'loading';
   const videoModelUnavailableMessage =
     videoModelAvailability.status === 'maintenance' ? videoModelAvailability.message ?? buildUnavailableModelMessage() : null;
@@ -657,6 +701,58 @@ export default function WorkflowPage() {
   useEffect(() => {
     selectedVideoModelRef.current = selectedVideoModel;
   }, [selectedVideoModel]);
+
+  useEffect(() => {
+    selectedImageModelRef.current = selectedImageModel;
+  }, [selectedImageModel]);
+
+  useEffect(() => {
+    if (!isLoggedIn || activationRequired) {
+      setImageModels([]);
+      setSelectedImageModel(null);
+      setImageModelAvailability(createInitialModelAvailabilityState());
+      return;
+    }
+
+    let cancelled = false;
+    setImageModelAvailability((current) => ({
+      ...current,
+      status: 'loading',
+      message: null,
+    }));
+
+    void listImageModels('generate')
+      .then((models) => {
+        if (cancelled) {
+          return;
+        }
+
+        setImageModels(models);
+        setSelectedImageModel(selectImageModelId(models, selectedImageModelRef.current));
+        setImageModelAvailability((current) => ({
+          ...current,
+          status: models.length > 0 ? 'ready' : 'maintenance',
+          message: models.length > 0 ? null : buildUnavailableModelMessage(),
+        }));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setImageModels([]);
+        setSelectedImageModel(null);
+        setImageModelAvailability((current) => ({
+          ...current,
+          status: 'maintenance',
+          message: buildUnavailableModelMessage(),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activationRequired, isLoggedIn, imageModelAvailability.reloadKey]);
 
   useEffect(() => {
     if (!isLoggedIn || activationRequired) {
@@ -779,6 +875,13 @@ export default function WorkflowPage() {
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback]);
 
+  const reloadImageModels = useCallback(() => {
+    setImageModelAvailability((current) => ({
+      ...current,
+      reloadKey: nextReloadKey(current.reloadKey),
+    }));
+  }, []);
+
   const runWorkflowAgent = useCallback(async (
     runPrompt: string,
     input: Record<string, unknown>,
@@ -800,6 +903,10 @@ export default function WorkflowPage() {
     if (activationRequired) return;
     if (!uploadedImage) return;
     if (storyboardGenerating) return;
+    if (!selectedImageModel) {
+      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
+      return;
+    }
     const operationId = storyboardOperationRef.current + 1;
     storyboardOperationRef.current = operationId;
     setStep(1);
@@ -823,7 +930,7 @@ export default function WorkflowPage() {
       setStoryboardGenerated(false);
       setRuntimeError(error instanceof Error ? error.message : '分镜生成请求失败');
     }
-  }, [activationRequired, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, storyboardGenerating, uploadedImage]);
+  }, [activationRequired, imageModelUnavailableMessage, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, storyboardGenerating, uploadedImage]);
 
   const handleCancelStoryboard = useCallback(() => {
     storyboardOperationRef.current += 1;
@@ -837,6 +944,10 @@ export default function WorkflowPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
     if (storyboardGenerating) return;
+    if (!selectedImageModel) {
+      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
+      return;
+    }
     const operationId = storyboardOperationRef.current + 1;
     storyboardOperationRef.current = operationId;
     setStoryboardGenerating(true);
@@ -859,7 +970,17 @@ export default function WorkflowPage() {
       setStoryboardGenerated(false);
       setRuntimeError(error instanceof Error ? error.message : '分镜重新生成请求失败');
     }
-  }, [activationRequired, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, storyboardGenerating, uploadedImage]);
+  }, [
+    activationRequired,
+    imageModelUnavailableMessage,
+    isLoggedIn,
+    openLoginModal,
+    prompt,
+    runWorkflowAgent,
+    selectedImageModel,
+    storyboardGenerating,
+    uploadedImage,
+  ]);
 
   const handleNextFromStoryboard = useCallback(() => {
     setStep(2);
@@ -896,6 +1017,10 @@ export default function WorkflowPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
     if (aiSceneGenerating) return;
+    if (!selectedImageModel) {
+      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
+      return;
+    }
     const operationId = sceneOperationRef.current + 1;
     sceneOperationRef.current = operationId;
     setAiSceneGenerating(true);
@@ -919,7 +1044,18 @@ export default function WorkflowPage() {
       setAiSceneGenerated(false);
       setRuntimeError(error instanceof Error ? error.message : 'AI 场景生成请求失败');
     }
-  }, [activationRequired, aiSceneGenerating, customSceneUrl, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, selectedScene]);
+  }, [
+    activationRequired,
+    imageModelUnavailableMessage,
+    aiSceneGenerating,
+    customSceneUrl,
+    isLoggedIn,
+    openLoginModal,
+    prompt,
+    runWorkflowAgent,
+    selectedImageModel,
+    selectedScene,
+  ]);
 
   const handleAiSceneCancel = useCallback(() => {
     sceneOperationRef.current += 1;
@@ -932,6 +1068,10 @@ export default function WorkflowPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
     if (aiSceneGenerating) return;
+    if (!selectedImageModel) {
+      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
+      return;
+    }
     const operationId = sceneOperationRef.current + 1;
     sceneOperationRef.current = operationId;
     setAiSceneGenerating(true);
@@ -955,12 +1095,27 @@ export default function WorkflowPage() {
       setAiSceneGenerated(false);
       setRuntimeError(error instanceof Error ? error.message : 'AI 场景重新生成请求失败');
     }
-  }, [activationRequired, aiSceneGenerating, customSceneUrl, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, selectedScene]);
+  }, [
+    activationRequired,
+    imageModelUnavailableMessage,
+    aiSceneGenerating,
+    customSceneUrl,
+    isLoggedIn,
+    openLoginModal,
+    prompt,
+    runWorkflowAgent,
+    selectedImageModel,
+    selectedScene,
+  ]);
 
   const handleStartDream = useCallback(async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
     if (dreaming) return;
+    if (!selectedImageModel) {
+      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
+      return;
+    }
     if (videoModelAvailability.status === 'loading') {
       setRuntimeError('视频模型加载中，请稍后再试。');
       return;
@@ -996,10 +1151,12 @@ export default function WorkflowPage() {
     aiSceneGenerated,
     customSceneUrl,
     dreaming,
+    imageModelUnavailableMessage,
     isLoggedIn,
     openLoginModal,
     prompt,
     runWorkflowAgent,
+    selectedImageModel,
     selectedScene,
     selectedVideoModel,
     videoConfig.enabled,
@@ -1100,19 +1257,40 @@ export default function WorkflowPage() {
                   <PatternUploadZone uploadedImage={uploadedImage} onUpload={handlePatternUpload} />
                 </div>
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
-                  <ModelSelector
-                    models={workflowImageModels as WorkflowModelCard[]}
-                    selectedModel={selectedImageModel}
-                    onSelect={handleSelectImageModel}
-                    title="选择生图模型"
-                    icon={Zap}
-                  />
+                  {imageModelAvailability.status === 'ready' && decoratedImageModels.length > 0 ? (
+                    <ModelSelector
+                      models={decoratedImageModels}
+                      selectedModel={selectedImageModel}
+                      onSelect={handleSelectImageModel}
+                      title="选择生图模型"
+                      icon={Zap}
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <Zap size={14} className="text-muted-foreground" />
+                        选择生图模型
+                      </div>
+                      <div className="rounded-xl border border-border bg-card px-4 py-4 text-sm text-muted-foreground">
+                        <p>{imageModelLoading ? '生图模型加载中...' : imageModelUnavailableMessage ?? '当前没有可用的生图模型。'}</p>
+                        {isLoggedIn && imageModelAvailability.status === 'maintenance' ? (
+                          <button
+                            type="button"
+                            onClick={reloadImageModels}
+                            className="mt-3 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                          >
+                            重新加载模型
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={handleSubmitStoryboard}
-                  disabled={!uploadedImage}
+                  disabled={!uploadedImage || imageModelLoading || !selectedImageModel || Boolean(imageModelUnavailableMessage)}
                   className={`w-full cursor-pointer rounded-xl py-3.5 text-sm font-medium transition-all ${
-                    uploadedImage && !activationRequired
+                    uploadedImage && !activationRequired && !imageModelLoading && selectedImageModel && !imageModelUnavailableMessage
                       ? 'bg-primary text-primary-foreground hover:bg-primary/85'
                       : 'cursor-not-allowed bg-secondary text-muted-foreground'
                   }`}
@@ -1203,18 +1381,24 @@ export default function WorkflowPage() {
           {/* 右侧面板 */}
           <div className="lg:col-span-2 space-y-4">
             {/* 当前图片模型 */}
-            {(step === 0 || step === 1) && currentImageModel && (
+            {(step === 0 || step === 1) && (
               <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-5">
                 <p className="mb-2 text-xs text-muted-foreground">当前生图模型</p>
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-xl ${currentImageModel.logoBg}`}>
-                    {currentImageModel.logo}
+                {currentImageModel ? (
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-xl ${currentImageModel.logoBg}`}>
+                      {currentImageModel.logo}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{currentImageModel.name}</p>
+                      <p className="text-xs text-muted-foreground">{currentImageModel.desc}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{currentImageModel.name}</p>
-                    <p className="text-xs text-muted-foreground">{currentImageModel.desc}</p>
+                ) : (
+                  <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                    {imageModelLoading ? '生图模型加载中...' : imageModelUnavailableMessage ?? '当前没有可用的生图模型。'}
                   </div>
-                </div>
+                )}
               </div>
             )}
 
