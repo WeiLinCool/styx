@@ -36,6 +36,11 @@ export type ExistingUserPasswordAuthDeps = {
   ) => boolean;
 };
 
+export type ExistingUserLookupDeps = Pick<
+  ExistingUserPasswordAuthDeps,
+  'getUserByEmail' | 'getUserByPhone'
+>;
+
 const defaultExistingUserPasswordAuthDeps: ExistingUserPasswordAuthDeps = {
   getUserByEmail,
   getUserByPhone,
@@ -61,14 +66,23 @@ function createCredentialFailure() {
   return new AccountDomainError('session_required', '账号或密码错误。', 401);
 }
 
+export async function findExistingUserByLogin(
+  login: string,
+  deps: ExistingUserLookupDeps = existingUserPasswordAuthDeps,
+) {
+  const normalizedLogin = login.trim();
+  if (normalizedLogin.includes('@')) {
+    return deps.getUserByEmail(normalizedLogin.toLowerCase());
+  }
+
+  return deps.getUserByPhone(normalizedLogin);
+}
+
 export async function authenticateExistingUserWithPassword(
   input: { login: string; password: string },
   deps: ExistingUserPasswordAuthDeps = existingUserPasswordAuthDeps,
 ) {
-  const login = input.login.trim();
-  const user = login.includes('@')
-    ? await deps.getUserByEmail(login.toLowerCase())
-    : await deps.getUserByPhone(login);
+  const user = await findExistingUserByLogin(input.login, deps);
 
   if (!user) {
     throw createCredentialFailure();

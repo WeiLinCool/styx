@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   authenticateExistingUserWithPassword,
+  findExistingUserByLogin,
   setExistingUserPasswordAuthDepsForTesting,
   type ExistingUserPasswordAuthDeps,
 } from './account-service';
@@ -92,6 +93,17 @@ test('authenticateExistingUserWithPassword returns existing user for email and v
   assert.deepEqual(deps.emailLookups, ['user@example.com']);
   assert.deepEqual(deps.phoneLookups, []);
   assert.equal(deps.passwordChecks.length, 1);
+});
+
+test('findExistingUserByLogin resolves email and phone logins', async () => {
+  const emailUser = createUser({ id: 'email_user', email: 'user@example.com' });
+  const phoneUser = createUser({ id: 'phone_user', email: null, phone: '13800138000' });
+  const deps = createDeps({ byEmail: emailUser, byPhone: phoneUser });
+
+  assert.equal(await findExistingUserByLogin(' User@Example.COM ', deps), emailUser);
+  assert.equal(await findExistingUserByLogin(' 13800138000 ', deps), phoneUser);
+  assert.deepEqual(deps.emailLookups, ['user@example.com']);
+  assert.deepEqual(deps.phoneLookups, ['13800138000']);
 });
 
 test('authenticateExistingUserWithPassword rejects existing user without password setup', async () => {

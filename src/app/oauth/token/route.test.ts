@@ -11,14 +11,14 @@ import { createTokenRoutePost, parseOAuthTokenRequestBody } from './route';
 
 test('createOAuthErrorJsonResponse returns standard OAuth error JSON and status', async () => {
   const response = createOAuthErrorJsonResponse(
-    new EnterpriseOAuthError('invalid_grant', 'Authorization code is invalid.', 418),
+    new EnterpriseOAuthError('invalid_grant', '授权码无效。', 418),
   );
   const body = await response.json();
 
   assert.equal(response.status, 418);
   assert.deepEqual(body, {
     error: 'invalid_grant',
-    error_description: 'Authorization code is invalid.',
+    error_description: '授权码无效。',
   });
 });
 
@@ -109,7 +109,7 @@ test('parseOAuthTokenRequestBody rejects unsupported content types with OAuth in
 test('createProtectedEnterpriseJsonGet rejects invalid bearer token errors', async () => {
   const GET = createProtectedEnterpriseJsonGet({
     async resolveEnterpriseBearerToken() {
-      throw new EnterpriseOAuthError('invalid_token', 'Bearer token is invalid.', 401);
+      throw new EnterpriseOAuthError('invalid_token', 'Bearer 令牌无效。', 401);
     },
     async handleResolvedBearer() {
       assert.fail('handler should not run when bearer resolution fails');
@@ -126,19 +126,19 @@ test('createProtectedEnterpriseJsonGet rejects invalid bearer token errors', asy
   assert.equal(response.status, 401);
   assert.equal(
     response.headers.get('www-authenticate'),
-    'Bearer error="invalid_token", error_description="Bearer token is invalid."',
+    'Bearer error="invalid_token", error_description="Bearer 令牌无效。"'
   );
   assert.deepEqual(body, {
     error: 'invalid_token',
-    error_description: 'Bearer token is invalid.',
+    error_description: 'Bearer 令牌无效。',
   });
 });
 
 test('parseBearerAuthorizationHeader creates bearer challenge for invalid token errors', () => {
   assert.equal(
     parseBearerAuthorizationHeader(
-      new EnterpriseOAuthError('invalid_token', 'Bearer token is invalid.', 401),
+      new EnterpriseOAuthError('invalid_token', 'Bearer 令牌无效。', 401),
     ),
-    'Bearer error="invalid_token", error_description="Bearer token is invalid."',
+    'Bearer error="invalid_token", error_description="Bearer 令牌无效。"'
   );
 });

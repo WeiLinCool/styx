@@ -21,7 +21,7 @@ test('HOME_CONTENT_SLUGS covers the initial homepage block contract', () => {
 test('parseHomepageBlockMetadata accepts valid hero metadata', () => {
   const parsed = parseHomepageBlockMetadata('home.hero', {
     eyebrow: 'AI赋能',
-    headline: '南风石印工坊',
+    headline: '太极台',
     subheadline: '把照片印进一块石头里',
     body: '手工转印工艺打造独一无二石头印画。',
     primaryCta: { label: '开始创作', href: '/image-gen' },
@@ -29,13 +29,13 @@ test('parseHomepageBlockMetadata accepts valid hero metadata', () => {
   });
 
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.value.headline, '南风石印工坊');
+  assert.equal(parsed.value.headline, '太极台');
 });
 
 test('parseHomepageBlockMetadata rejects unsafe CTA hrefs', () => {
   const parsed = parseHomepageBlockMetadata('home.hero', {
     eyebrow: 'AI赋能',
-    headline: '南风石印工坊',
+    headline: '太极台',
     subheadline: '把照片印进一块石头里',
     body: '手工转印工艺打造独一无二石头印画。',
     primaryCta: { label: '开始创作', href: 'https://external.example' },

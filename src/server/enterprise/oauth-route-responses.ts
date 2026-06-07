@@ -48,7 +48,7 @@ export function enterpriseRouteErrorToJsonResponse(error: unknown) {
   return NextResponse.json(
     {
       error: 'server_error',
-      error_description: 'Enterprise OAuth request failed.',
+      error_description: '企业 OAuth 请求失败。',
     },
     { status: 500 },
   );

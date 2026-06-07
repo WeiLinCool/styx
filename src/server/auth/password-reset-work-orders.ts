@@ -35,7 +35,7 @@ function requireDb() {
 
 function generateTemporaryPassword() {
   const suffix = Math.random().toString(36).slice(-6).toUpperCase();
-  return `NF-${suffix}`;
+  return `TJ-${suffix}`;
 }
 
 function toRecord(row: {

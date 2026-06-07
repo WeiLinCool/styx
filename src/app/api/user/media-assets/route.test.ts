@@ -71,7 +71,7 @@ test('POST /api/user/media-assets saves a generated artifact for the current use
           runId: '11111111-1111-4111-8111-111111111111',
           artifactId: '22222222-2222-4222-8222-222222222222',
         }),
-        'idempotency-key': 'user:ea8159dd-819d-40cb-8503-bb7acb81ce5c',
+        'idempotency-key': 'user:media-save-success-case',
       },
       body: JSON.stringify({
         runId: '11111111-1111-4111-8111-111111111111',
@@ -156,7 +156,7 @@ test('POST /api/user/media-assets accepts encrypted request bodies', async () =>
         'x-request-nonce': '8e4da50c-339e-4571-ba8e-b31f1648497c',
         'x-client-timestamp': String(Date.now()),
         'x-request-body-hash': buildStableRequestBodyHash(payload),
-        'idempotency-key': 'user:ea8159dd-819d-40cb-8503-bb7acb81ce5c',
+        'idempotency-key': 'user:media-save-encrypted-case',
       },
       body: encryptedBody,
     }),
@@ -237,4 +237,40 @@ test('GET /api/user/media-assets returns permission_denied when session guard re
 
   assert.equal(response.status, 403);
   assert.equal(body.error.code, 'permission_denied');
+});
+
+test('POST /api/user/media-assets returns storage_quota_exceeded for quota failures', async () => {
+  const handlers = createMediaAssetsRouteHandlers({
+    requireSession: async () => ({ user: { id: 'user-1' } }),
+    saveGeneratedMedia: async () => {
+      throw new Error('存储空间不足，无法保存到我的媒体。');
+    },
+    listSavedAssets: async () => [],
+  });
+
+  const response = await handlers.POST(
+    new Request('https://example.com/api/user/media-assets', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': '20a64df4-8999-432e-a94d-458bd2889373',
+        'x-request-nonce': '8e4da50c-339e-4571-ba8e-b31f1648497c',
+        'x-client-timestamp': String(Date.now()),
+        'x-request-body-hash': buildStableRequestBodyHash({
+          runId: '11111111-1111-4111-8111-111111111111',
+          artifactId: '22222222-2222-4222-8222-222222222222',
+        }),
+        'idempotency-key': 'user:media-save-quota-failure-case',
+      },
+      body: JSON.stringify({
+        runId: '11111111-1111-4111-8111-111111111111',
+        artifactId: '22222222-2222-4222-8222-222222222222',
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.equal(body.error.code, 'storage_quota_exceeded');
+  assert.equal(body.error.message, '存储空间不足，无法保存到我的媒体。');
 });

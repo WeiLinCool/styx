@@ -41,7 +41,7 @@ function ShopNav() {
             <span className="hidden text-sm sm:inline">返回</span>
           </Link>
           <div className="h-4 w-px bg-border" />
-          <span className="text-sm font-semibold tracking-tight text-foreground">南风商城</span>
+          <span className="text-sm font-semibold tracking-tight text-foreground">太极商城</span>
         </div>
         <div className="flex items-center gap-3">
           {isLoggedIn && user ? (

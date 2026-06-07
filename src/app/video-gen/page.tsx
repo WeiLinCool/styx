@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { StorageUpgradeDialog } from '@/features/public/storage-upgrade-dialog';
 import {
   createAgentRun,
   createAgentRunEventsUrl,
@@ -20,6 +21,10 @@ import {
   listSavedMediaAssets,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
+  formatMediaSaveActionLabel,
+  formatMediaSaveStatus,
+  isStorageQuotaExceededSaveError,
+  readMediaSaveErrorMessage,
   saveGeneratedMedia,
   syncAgentRun,
   uploadUserMedia,
@@ -92,14 +97,6 @@ function formatHistoryTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatSaveStatus(metadata: Record<string, unknown>) {
-  if (metadata.saveStatus === 'saved') return '已存储';
-  if (metadata.saveStatus === 'saving') return '存储中';
-  if (metadata.saveStatus === 'save_failed') return '存储失败';
-  if (metadata.saveStatus === 'source_expired') return '已过期';
-  return '未存储';
-}
-
 function readStorageStatus(value: unknown): DirectMediaResultDto['metadata']['storageStatus'] {
   return value === 'provider_direct' || value === 'cached' || value === 'stored' ? value : 'cached';
 }
@@ -170,7 +167,9 @@ export default function VideoGenPage() {
   const [selectedHistoryRunId, setSelectedHistoryRunId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [showStorageUpgradeDialog, setShowStorageUpgradeDialog] = useState(false);
   const videoReceivedRunIdRef = useRef<string | null>(null);
+  const videoRunCompletedRunIdRef = useRef<string | null>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
   const modelLoading = modelAvailability.status === 'loading';
@@ -377,15 +376,8 @@ export default function VideoGenPage() {
       setGenerationMessage('视频已生成，请及时下载。');
     });
     eventSource.addEventListener('run_completed', () => {
-      void getAgentRunDetail(streamRunId)
-        .then((detail) => {
-          setHistoryRuns((current) => [
-            detail.run,
-            ...current.filter((run) => run.id !== detail.run.id),
-          ]);
-          setSelectedHistoryRunId(detail.run.id);
-        })
-        .catch(() => null);
+      videoRunCompletedRunIdRef.current = streamRunId;
+      void loadVideoRunPreview(streamRunId).catch(() => null);
       void syncAgentRun(streamRunId)
         .catch(() => null)
         .finally(() => {
@@ -411,8 +403,30 @@ export default function VideoGenPage() {
       eventSource.close();
       setIsGenerating(false);
       setStreamRunId((current) => (current === streamRunId ? null : current));
-      if (videoReceivedRunIdRef.current !== streamRunId) {
-        setGenerationError('视频生成连接中断，请重试。');
+      if (
+        videoReceivedRunIdRef.current !== streamRunId &&
+        videoRunCompletedRunIdRef.current !== streamRunId
+      ) {
+        void getAgentRunDetail(streamRunId)
+          .then((detail) => {
+            if (detail.run.status === 'succeeded') {
+              videoRunCompletedRunIdRef.current = streamRunId;
+              void loadVideoRunPreview(streamRunId).catch(() => null);
+              return;
+            }
+
+            if (detail.run.status === 'failed') {
+              setGenerationError(detail.run.errorMessage ?? '视频生成请求失败');
+              return;
+            }
+
+            setGenerationMessage('连接已中断，任务仍可能在后台运行，请稍后从历史记录查看。');
+            setGenerationError(null);
+          })
+          .catch(() => {
+            setGenerationMessage('连接已中断，任务仍可能在后台运行，请稍后从历史记录查看。');
+            setGenerationError(null);
+          });
       }
     };
 
@@ -570,7 +584,8 @@ export default function VideoGenPage() {
     setGenerationMessage(null);
     setGeneratedVideo(null);
     setGeneratedVideoRunId(null);
-    videoReceivedRunIdRef.current = null;
+      videoReceivedRunIdRef.current = null;
+      videoRunCompletedRunIdRef.current = null;
 
     try {
       let imageAssetId = selectedImageAssetId || null;
@@ -669,6 +684,7 @@ export default function VideoGenPage() {
 
     try {
       setGenerationError(null);
+      setShowStorageUpgradeDialog(false);
       setGenerationMessage('正在保存到我的媒体...');
       const result = await saveGeneratedMedia({
         runId: generatedVideoRunId,
@@ -690,12 +706,19 @@ export default function VideoGenPage() {
       );
       setGenerationMessage('已保存到我的媒体，可在用户中心重复引用。');
     } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : '保存媒体失败');
+      if (isStorageQuotaExceededSaveError(error)) {
+        setShowStorageUpgradeDialog(true);
+      }
+      setGenerationError(readMediaSaveErrorMessage(error, '保存媒体失败'));
     }
   };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <StorageUpgradeDialog
+        open={showStorageUpgradeDialog}
+        onOpenChange={setShowStorageUpgradeDialog}
+      />
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4">
@@ -764,7 +787,7 @@ export default function VideoGenPage() {
                       </div>
                       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                         <span>{formatHistoryTime(run.createdAt)}</span>
-                        <span>{artifact ? formatSaveStatus(artifact.metadata) : '等待结果'}</span>
+                        <span>{artifact ? formatMediaSaveStatus(artifact.metadata) : '等待结果'}</span>
                       </div>
                     </button>
                   );
@@ -1098,13 +1121,25 @@ export default function VideoGenPage() {
                     onClick={handleSaveVideo}
                     className="flex-1 cursor-pointer rounded-xl border border-border px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring"
                   >
-                    {generatedVideo.metadata.saveStatus === 'saved' ? '已保存到我的媒体' : '保存到我的媒体'}
+                    {formatMediaSaveActionLabel(generatedVideo.metadata)}
                   </button>
                 </div>
                 <div className="w-full rounded-xl border border-warning/30 bg-warning-surface px-3 py-2 text-left text-xs leading-5 text-warning">
                   {generatedVideo.metadata.saveStatus === 'saved'
                     ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
-                    : '生成结果已临时缓存，暂未进入我的媒体。需要长期使用时请点击“保存到我的媒体”。'}
+                    : generatedVideo.metadata.saveStatus === 'saving'
+                      ? '生成结果正在保存到我的媒体，请稍候。'
+                      : generatedVideo.metadata.saveStatus === 'save_failed' &&
+                          typeof generatedVideo.metadata.saveError === 'string' &&
+                          generatedVideo.metadata.saveError.startsWith(
+                            'cache_missing_fallback_failed:',
+                          )
+                        ? '缓存对象已失效，已自动改用源文件重试，但保存仍失败。你可以重新点击“重试保存”。'
+                        : generatedVideo.metadata.saveStatus === 'save_failed'
+                          ? '生成结果保存失败。'
+                          : generatedVideo.metadata.saveStatus === 'source_expired'
+                            ? '生成结果已过期，无法保存。'
+                            : '结果已临时缓存。'}
                 </div>
                 {generationError ? (
                   <div className="w-full rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-xs leading-5 text-destructive">
@@ -1112,6 +1147,7 @@ export default function VideoGenPage() {
                   </div>
                 ) : null}
                 {generationMessage ? <p className="text-xs text-muted-foreground">{generationMessage}</p> : null}
+                <p className="text-xs text-muted-foreground">存储状态：{formatMediaSaveStatus(generatedVideo.metadata)}</p>
               </div>
             ) : isGenerating ? (
               <div className="flex flex-col items-center">

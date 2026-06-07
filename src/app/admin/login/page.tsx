@@ -10,7 +10,7 @@ export default function AdminLoginPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.28em] text-white/70">
               <LockKeyhole className="h-3.5 w-3.5" />
-              Styx Admin
+              Taiji Admin
             </div>
             <h1 className="mt-6 max-w-xl text-4xl font-semibold tracking-tight text-background">
               资产管理控制台需要独立、完整、可审计的登录验证。

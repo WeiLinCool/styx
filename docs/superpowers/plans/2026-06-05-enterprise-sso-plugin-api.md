@@ -9,7 +9,7 @@ archived-with: 2026-06-06-enterprise-sso-plugin-api
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build OpenPawz enterprise OAuth2 PKCE, entitlement, userinfo, and OpenAI-compatible gateway APIs backed by existing users, entitlements, models, and provider adapters.
+**Goal:** Build Taiji enterprise OAuth2 PKCE, entitlement, userinfo, and OpenAI-compatible gateway APIs backed by existing users, entitlements, models, and provider adapters.
 
 **Architecture:** Add `src/server/enterprise` as the domain boundary for OAuth state, bearer validation, entitlement mapping, and gateway response shaping. Route handlers under `src/app` only parse transport input and delegate to enterprise services. Durable OAuth codes/tokens are stored hashed through repository helpers, while account identity and model access continue to use existing auth and AI repositories.
 
@@ -24,7 +24,7 @@ archived-with: 2026-06-06-enterprise-sso-plugin-api
 - Test: `src/server/auth/account-domain.test.ts` or `src/server/auth/public-auth.test.ts` for password-auth helper behavior.
 - Create: `src/server/enterprise/oauth.ts` for OAuth parsing, PKCE, redirect validation, code issuance, token exchange, and bearer validation.
 - Create: `src/server/enterprise/entitlements.ts` for `models:proxy`/`all` mapping from existing model availability.
-- Create: `src/server/enterprise/userinfo.ts` for OpenPawz-compatible identity claims.
+- Create: `src/server/enterprise/userinfo.ts` for Taiji-compatible identity claims.
 - Create: `src/server/enterprise/gateway.ts` for OpenAI-compatible model/chat response shaping.
 - Test: `src/server/enterprise/oauth.test.ts`, `src/server/enterprise/entitlements.test.ts`, `src/server/enterprise/gateway.test.ts`.
 - Create: `src/app/oauth/authorize/page.tsx` for browser login form.

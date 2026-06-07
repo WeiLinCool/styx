@@ -82,6 +82,90 @@ export class AgentRuntimeApiError extends Error {
   }
 }
 
+export function readMediaSaveErrorMessage(error: unknown, fallbackMessage = '保存媒体失败') {
+  if (error instanceof AgentRuntimeApiError) {
+    if (
+      error.message.includes('缓存对象缺失，已回退到源文件，但重新保存失败：') ||
+      error.message.startsWith('cache_missing_fallback_failed:')
+    ) {
+      const detail = error.message
+        .replace('cache_missing_fallback_failed:', '')
+        .replace('缓存对象缺失，已回退到源文件，但重新保存失败：', '')
+        .trim();
+      return detail
+        ? `缓存对象已失效，已自动改用源文件重试，但保存仍失败：${detail}`
+        : '缓存对象已失效，已自动改用源文件重试，但保存仍失败。';
+    }
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (
+      message.includes('缓存对象缺失，已回退到源文件，但重新保存失败：') ||
+      message.startsWith('cache_missing_fallback_failed:')
+    ) {
+      const detail = message
+        .replace('cache_missing_fallback_failed:', '')
+        .replace('缓存对象缺失，已回退到源文件，但重新保存失败：', '')
+        .trim();
+      return detail
+        ? `缓存对象已失效，已自动改用源文件重试，但保存仍失败：${detail}`
+        : '缓存对象已失效，已自动改用源文件重试，但保存仍失败。';
+    }
+    return message;
+  }
+
+  return fallbackMessage;
+}
+
+export function isStorageQuotaExceededSaveError(error: unknown) {
+  if (error instanceof AgentRuntimeApiError) {
+    return (
+      error.code === 'storage_quota_exceeded' ||
+      error.message === '存储空间不足，无法保存到我的媒体。' ||
+      error.message === 'storage_quota_exceeded' ||
+      error.message.includes('存储空间不足，无法保存到我的媒体。')
+    );
+  }
+
+  if (error instanceof Error) {
+    return (
+      error.message === '存储空间不足，无法保存到我的媒体。' ||
+      error.message === 'storage_quota_exceeded' ||
+      error.message.includes('存储空间不足，无法保存到我的媒体。')
+    );
+  }
+
+  return false;
+}
+
+function isCacheFallbackSaveFailure(metadata: Record<string, unknown>) {
+  return (
+    metadata.saveStatus === 'save_failed' &&
+    typeof metadata.saveError === 'string' &&
+    metadata.saveError.startsWith('cache_missing_fallback_failed:')
+  );
+}
+
+export function formatMediaSaveStatus(metadata: Record<string, unknown>) {
+  if (metadata.saveStatus === 'saved') return '已存储';
+  if (metadata.saveStatus === 'saving') return '存储中';
+  if (metadata.saveStatus === 'source_expired') return '已过期';
+  if (isCacheFallbackSaveFailure(metadata)) return '回退重试失败';
+  if (metadata.saveStatus === 'save_failed') return '存储失败';
+  return '未存储';
+}
+
+export function formatMediaSaveActionLabel(metadata: Record<string, unknown>) {
+  if (metadata.saveStatus === 'saved') return '已保存到我的媒体';
+  if (metadata.saveStatus === 'saving') return '保存中...';
+  if (isCacheFallbackSaveFailure(metadata)) return '重试保存';
+  if (metadata.saveStatus === 'save_failed') return '重新保存';
+  if (metadata.saveStatus === 'source_expired') return '已过期';
+  return '保存到我的媒体';
+}
+
 export type CreateAgentRunRequest = {
   taskType: AgentTaskType;
   prompt: string;

@@ -119,6 +119,34 @@ function isExpired(expiresAt: string, now: Date) {
   return Number.isFinite(timestamp) && timestamp <= now.getTime();
 }
 
+function isMissingSourceObjectError(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const record = error as Record<string, unknown>;
+  const code =
+    readString(record, 'Code') ?? readString(record, 'code') ?? readString(record, 'name');
+  const message = readString(record, 'message');
+
+  return (
+    code === 'NoSuchKey' ||
+    code === 'NoSuchObject' ||
+    code === 'NotFound' ||
+    (message !== null &&
+      /NoSuchKey|NoSuchObject|not found|source object/i.test(message))
+  );
+}
+
+function buildCacheMissingFallbackErrorMessage(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error);
+  return `cache_missing_fallback_failed: ${detail}`;
+}
+
+function isRecordedSaveError(error: unknown) {
+  return Boolean(error && typeof error === 'object' && (error as { __saveErrorRecorded?: boolean }).__saveErrorRecorded);
+}
+
 function readCachedMedia(metadata: Record<string, unknown>, now: Date) {
   if (metadata.storageStatus !== 'cached' || metadata.cacheStatus !== 'available') {
     return null;
@@ -199,6 +227,112 @@ export function createSaveGeneratedMediaService(dependencies: SaveGeneratedMedia
         throw new Error('用户存储额度不存在。');
       }
 
+      const finalizeSavedMedia = async (media: {
+        uploaded: CosUploadResult;
+        mimeType: string;
+        byteSize: number;
+        width: number | null;
+        height: number | null;
+        durationSeconds: number | null;
+      }) => {
+        if (quota.storageUsedBytes + media.byteSize > quota.storageQuotaBytes) {
+          await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+            saveStatus: 'save_failed',
+            saveError: 'storage_quota_exceeded',
+          });
+          throw new Error('存储空间不足，无法保存到我的媒体。');
+        }
+
+        const savedAsset = await dependencies.mediaAssetRepository.createSavedAsset({
+          userId: input.userId,
+          runId: run.id,
+          conversationId: run.conversationId,
+          artifactId: artifact.id,
+          kind: artifact.kind === 'video' ? 'video' : 'image',
+          title: artifact.title,
+          sourceType: 'ai_generated',
+          sourceProvider: run.capabilitySummary.provider,
+          sourceModel: run.capabilitySummary.model,
+          sourceUrl,
+          sourceExpiresAt: readString(metadata, 'providerExpiresAt'),
+          originalFilename: null,
+          sha256: null,
+          shareId: null,
+          shareStatus: 'disabled',
+          sharedAt: null,
+          storageProvider: 'tencent_cos',
+          bucket: media.uploaded.bucket,
+          region: media.uploaded.region,
+          objectKey: media.uploaded.objectKey,
+          mimeType: media.mimeType,
+          byteSize: media.byteSize,
+          width: media.width,
+          height: media.height,
+          durationSeconds: media.durationSeconds,
+          metadata: {},
+        });
+
+        await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+          saveStatus: 'saved',
+          savedAssetId: savedAsset.id,
+        });
+        await dependencies.userStorageRepository.incrementStorageUsedBytes(
+          input.userId,
+          media.byteSize,
+        );
+
+        const updatedDetail = await dependencies.runRepository.getRunDetailForUser(
+          input.runId,
+          input.userId,
+        );
+        const updatedArtifact = readSaveEligibleArtifact(
+          updatedDetail?.run.artifacts ?? [],
+          input.artifactId,
+        );
+        if (!updatedArtifact) {
+          throw new Error('保存后无法读取生成结果。');
+        }
+
+        return {
+          asset: savedAsset,
+          updatedArtifact,
+        };
+      };
+
+      const saveFromSource = async (source: string) => {
+        const downloaded = await dependencies.fetchSource(source);
+        const assetId = randomUUID();
+        const objectKey =
+          dependencies.createObjectKey?.({
+            userId: input.userId,
+            conversationId: run.conversationId,
+            runId: run.id,
+            assetId,
+            mimeType: downloaded.mimeType,
+          }) ??
+          inferObjectKey({
+            userId: input.userId,
+            conversationId: run.conversationId,
+            runId: run.id,
+            assetId,
+            mimeType: downloaded.mimeType,
+          });
+        const uploaded = await dependencies.cosClient.uploadObject({
+          objectKey,
+          body: downloaded.bytes,
+          contentType: downloaded.mimeType,
+        });
+
+        return finalizeSavedMedia({
+          uploaded,
+          mimeType: downloaded.mimeType,
+          byteSize: downloaded.byteSize,
+          width: downloaded.width ?? readNumber(metadata, 'width'),
+          height: downloaded.height ?? readNumber(metadata, 'height'),
+          durationSeconds: downloaded.durationSeconds ?? readNumber(metadata, 'durationSeconds'),
+        });
+      };
+
       if (cachedMedia && !cachedMedia.expired) {
         if (quota.storageUsedBytes + cachedMedia.byteSize > quota.storageQuotaBytes) {
           await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
@@ -240,58 +374,38 @@ export function createSaveGeneratedMediaService(dependencies: SaveGeneratedMedia
             contentType: cachedMedia.mimeType,
           });
 
-          const savedAsset = await dependencies.mediaAssetRepository.createSavedAsset({
-            userId: input.userId,
-            runId: run.id,
-            conversationId: run.conversationId,
-            artifactId: artifact.id,
-            kind: artifact.kind === 'video' ? 'video' : 'image',
-            title: artifact.title,
-            sourceType: 'ai_generated',
-            sourceProvider: run.capabilitySummary.provider,
-            sourceModel: run.capabilitySummary.model,
-            sourceUrl,
-            sourceExpiresAt: readString(metadata, 'providerExpiresAt'),
-            originalFilename: null,
-            sha256: null,
-            shareId: null,
-            shareStatus: 'disabled',
-            sharedAt: null,
-            storageProvider: 'tencent_cos',
-            bucket: uploaded.bucket,
-            region: uploaded.region,
-            objectKey: uploaded.objectKey,
+          return finalizeSavedMedia({
+            uploaded,
             mimeType: cachedMedia.mimeType,
             byteSize: cachedMedia.byteSize,
             width: cachedMedia.width,
             height: cachedMedia.height,
             durationSeconds: cachedMedia.durationSeconds,
-            metadata: {},
           });
-
-          await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
-            saveStatus: 'saved',
-            savedAssetId: savedAsset.id,
-          });
-          await dependencies.userStorageRepository.incrementStorageUsedBytes(
-            input.userId,
-            cachedMedia.byteSize,
-          );
-
-          const updatedDetail = await dependencies.runRepository.getRunDetailForUser(input.runId, input.userId);
-          const updatedArtifact = readSaveEligibleArtifact(
-            updatedDetail?.run.artifacts ?? [],
-            input.artifactId,
-          );
-          if (!updatedArtifact) {
-            throw new Error('保存后无法读取生成结果。');
+        } catch (error) {
+          if (isMissingSourceObjectError(error) && sourceUrl) {
+            try {
+              return await saveFromSource(sourceUrl);
+            } catch (fallbackError) {
+              const fallbackMessage = buildCacheMissingFallbackErrorMessage(fallbackError);
+              await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
+                saveStatus: 'save_failed',
+                saveError: fallbackMessage,
+              });
+              const error = new Error(
+                `缓存对象缺失，已回退到源文件，但重新保存失败：${
+                  fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+                }`,
+              );
+              (error as { __saveErrorRecorded?: boolean }).__saveErrorRecorded = true;
+              throw error;
+            }
           }
 
-          return {
-            asset: savedAsset,
-            updatedArtifact,
-          };
-        } catch (error) {
+          if (isRecordedSaveError(error)) {
+            throw error;
+          }
+
           await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
             saveStatus: 'save_failed',
             saveError: error instanceof Error ? error.message : String(error),
@@ -312,89 +426,7 @@ export function createSaveGeneratedMediaService(dependencies: SaveGeneratedMedia
       });
 
       try {
-        const downloaded = await dependencies.fetchSource(sourceUrl);
-        if (quota.storageUsedBytes + downloaded.byteSize > quota.storageQuotaBytes) {
-          await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
-            saveStatus: 'save_failed',
-            saveError: 'storage_quota_exceeded',
-          });
-          throw new Error('存储空间不足，无法保存到我的媒体。');
-        }
-
-        const assetId = randomUUID();
-        const objectKey =
-          dependencies.createObjectKey?.({
-            userId: input.userId,
-            conversationId: run.conversationId,
-            runId: run.id,
-            assetId,
-            mimeType: downloaded.mimeType,
-          }) ??
-          inferObjectKey({
-            userId: input.userId,
-            conversationId: run.conversationId,
-            runId: run.id,
-            assetId,
-            mimeType: downloaded.mimeType,
-          });
-
-        const uploaded = await dependencies.cosClient.uploadObject({
-          objectKey,
-          body: downloaded.bytes,
-          contentType: downloaded.mimeType,
-        });
-
-        const savedAsset = await dependencies.mediaAssetRepository.createSavedAsset({
-          userId: input.userId,
-          runId: run.id,
-          conversationId: run.conversationId,
-          artifactId: artifact.id,
-          kind: artifact.kind === 'video' ? 'video' : 'image',
-          title: artifact.title,
-          sourceType: 'ai_generated',
-          sourceProvider: run.capabilitySummary.provider,
-          sourceModel: run.capabilitySummary.model,
-          sourceUrl,
-          sourceExpiresAt: readString(metadata, 'providerExpiresAt'),
-          originalFilename: null,
-          sha256: null,
-          shareId: null,
-          shareStatus: 'disabled',
-          sharedAt: null,
-          storageProvider: 'tencent_cos',
-          bucket: uploaded.bucket,
-          region: uploaded.region,
-          objectKey: uploaded.objectKey,
-          mimeType: downloaded.mimeType,
-          byteSize: downloaded.byteSize,
-          width: downloaded.width ?? readNumber(metadata, 'width'),
-          height: downloaded.height ?? readNumber(metadata, 'height'),
-          durationSeconds: downloaded.durationSeconds ?? readNumber(metadata, 'durationSeconds'),
-          metadata: {},
-        });
-
-        await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
-          saveStatus: 'saved',
-          savedAssetId: savedAsset.id,
-        });
-        await dependencies.userStorageRepository.incrementStorageUsedBytes(
-          input.userId,
-          downloaded.byteSize,
-        );
-
-        const updatedDetail = await dependencies.runRepository.getRunDetailForUser(input.runId, input.userId);
-        const updatedArtifact = readSaveEligibleArtifact(
-          updatedDetail?.run.artifacts ?? [],
-          input.artifactId,
-        );
-        if (!updatedArtifact) {
-          throw new Error('保存后无法读取生成结果。');
-        }
-
-        return {
-          asset: savedAsset,
-          updatedArtifact,
-        };
+        return await saveFromSource(sourceUrl);
       } catch (error) {
         await dependencies.runRepository.updateArtifactSaveState(input.runId, input.artifactId, {
           saveStatus: 'save_failed',

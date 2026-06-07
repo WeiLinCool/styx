@@ -10,11 +10,11 @@ import { removeUserFromCookie } from '@/lib/cookie';
 import { userApiRequest } from '@/lib/user-api-client';
 
 type SetPasswordFormProps = {
-  phone: string;
+  account: string;
   mode?: 'initial' | 'reset';
 };
 
-export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProps) {
+export function SetPasswordForm({ account, mode = 'initial' }: SetPasswordFormProps) {
   const router = useRouter();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -24,7 +24,7 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!phone || !password || !confirmPassword) {
+    if (!account || !password || !confirmPassword) {
       return;
     }
 
@@ -36,7 +36,7 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
       const response = await userApiRequest('/api/auth/set-password', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone, password, confirmPassword, mode }),
+        body: JSON.stringify({ login: account, password, confirmPassword, mode }),
       });
       const payload = await readJsonResponse(response);
 
@@ -61,12 +61,12 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground" htmlFor="set-password-phone">
-          手机号
+        <label className="text-sm font-medium text-foreground" htmlFor="set-password-account">
+          账号
         </label>
         <Input
-          id="set-password-phone"
-          value={phone}
+          id="set-password-account"
+          value={account}
           readOnly
           className="h-12 rounded-xl border-input bg-secondary text-foreground"
         />
@@ -107,7 +107,11 @@ export function SetPasswordForm({ phone, mode = 'initial' }: SetPasswordFormProp
           {successMessage}
         </div>
       ) : null}
-      <Button type="submit" disabled={pending || password.length < 6 || confirmPassword.length < 6} className="h-12 w-full rounded-xl">
+      <Button
+        type="submit"
+        disabled={pending || password.length < 6 || confirmPassword.length < 6}
+        className="h-12 w-full rounded-xl"
+      >
         {pending ? '保存中...' : '保存密码'}
       </Button>
     </form>

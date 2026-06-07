@@ -161,6 +161,14 @@ function testGeneratedMediaCache() {
   };
 }
 
+function failingGeneratedMediaCache(message = 'cache upload failed') {
+  return {
+    async cacheGeneratedMedia() {
+      throw new Error(message);
+    },
+  };
+}
+
 async function waitForRunStatus(
   repository: AgentRunRepository,
   runId: string,
@@ -307,6 +315,56 @@ test('createAndRunAgentRun returns running image run and streams direct media co
   assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.kind, 'image');
   assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.url, 'data:image/png;base64,abc');
   assert.equal(typeof directMediaPayload(events[2]?.payload ?? {}).artifact.metadata.artifactId, 'string');
+});
+
+test('createAndRunAgentRun keeps image run succeeded when cache upload fails', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveImageModelForUser: async () => resolvedImageModel({ id: 'model-image' }),
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        return {
+          finalMessage: '图片已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '生成图片',
+              body: 'data:image/png;base64,abc',
+              metadata: { mimeType: 'image/png', width: 1024, height: 1024 },
+            },
+          ],
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-image', balanceAfter: 90 }),
+    generatedMediaCache: failingGeneratedMediaCache('cos unavailable'),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'image',
+    prompt: '山谷里的石头印画',
+    modelId: 'model-image',
+    input: { mode: 'generate', size: '1:1' },
+  });
+
+  assert.equal(result.run.status, 'running');
+  const completed = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+  const events = await repository.listRunEvents(result.run.id);
+
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.equal(completed?.artifacts[0]?.metadata.cacheStatus, 'cache_failed');
+  assert.equal(completed?.artifacts[0]?.metadata.cacheError, 'cos unavailable');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],
+  );
 });
 
 test('createAndRunAgentRun returns running video run and streams provider URL completion', async () => {

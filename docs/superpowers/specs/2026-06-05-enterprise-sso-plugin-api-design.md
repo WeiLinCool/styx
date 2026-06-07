@@ -9,7 +9,7 @@ Change: enterprise-sso-plugin-api
 
 ## Context
 
-OpenPawz enterprise desktop builds need this Next.js application to act as the OAuth, entitlement, and model-gateway backend. The desktop app is a public OAuth client, so it uses Authorization Code with PKCE and a loopback redirect URI. The user account is not separate from the WebUI account: the browser authorization flow logs in with the existing user account/password credentials, and all feature access is resolved from existing user entitlements and model configuration.
+Taiji enterprise desktop builds need this Next.js application to act as the OAuth, entitlement, and model-gateway backend. The desktop app is a public OAuth client, so it uses Authorization Code with PKCE and a loopback redirect URI. The user account is not separate from the WebUI account: the browser authorization flow logs in with the existing user account/password credentials, and all feature access is resolved from existing user entitlements and model configuration.
 
 Relevant local owners:
 
@@ -54,7 +54,7 @@ Relevant local owners:
 ## Architecture
 
 ```
-OpenPawz desktop
+Taiji desktop
   -> system browser /oauth/authorize
       -> OAuth login page validates query
       -> existing account credential verification
@@ -100,7 +100,7 @@ The OAuth authorize service then applies the active-account check before issuing
 
 The desktop client uses loopback callbacks. The first implementation should allow only `http://127.0.0.1:{port}/callback` and `http://localhost:{port}/callback` redirect URIs. Any other host, scheme, or path is rejected before login.
 
-This keeps the public-client redirect surface tight while matching the OpenPawz contract.
+This keeps the public-client redirect surface tight while matching the Taiji contract.
 
 ### Entitlement Mapping
 

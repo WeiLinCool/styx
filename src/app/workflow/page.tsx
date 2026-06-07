@@ -5,24 +5,42 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
-import { createAgentRun } from '@/features/public/agent-runtime-client';
-import { workflowImageModels, workflowVideoModels } from '@/features/public/tool-data';
+import {
+  createAgentRun,
+  getVideoGenerationConfig,
+  type VideoGenerationConfigDto,
+  type VideoModelOption,
+} from '@/features/public/agent-runtime-client';
+import { workflowImageModels } from '@/features/public/tool-data';
+import {
+  buildUnavailableModelMessage,
+  createInitialModelAvailabilityState,
+  nextReloadKey,
+} from '@/features/public/model-availability';
+import {
+  applyGeneratedReferenceScene,
+  resetWorkflowForImageSourceChange,
+  resetWorkflowForSceneChange,
+  resolveWorkflowVideoModelAvailability,
+  type WorkflowStateSnapshot,
+} from './workflow-state';
+import { createReferenceImageDialogState } from './workflow-quick-actions';
+import {
+  PromptOptimizationDialog,
+  ReferenceImageDialog,
+} from './workflow-quick-action-dialogs';
 import {
   ArrowLeft,
   Upload,
   Wand2,
-  Download,
   ChevronRight,
   Check,
   Film,
   RotateCcw,
-  Volume2,
-  Share2,
   User,
   Menu,
   X,
   Workflow,
-  Pencil,
   Sparkles,
   RefreshCw,
   Zap,
@@ -44,6 +62,54 @@ const PRESET_SCENES = [
   { id: 'cave', name: '溶洞奇观', desc: '钟乳石洞中的光影变幻', icon: '🕳️' },
   { id: 'night', name: '月光石径', desc: '月光下石板路的静谧', icon: '🌙' },
 ];
+
+type WorkflowModelCard = {
+  id: string;
+  name: string;
+  desc: string;
+  badge: string | null;
+  badgeColor: string;
+  vip: boolean;
+  logo: string;
+  logoBg: string;
+};
+
+const emptyVideoConfig: VideoGenerationConfigDto = {
+  enabled: false,
+  upgradeRequired: false,
+  message: null,
+  styles: [],
+  durations: [],
+  resolutions: [],
+  defaults: {
+    styleCode: null,
+    durationSeconds: null,
+    resolution: null,
+  },
+  models: [],
+};
+
+function buildWorkflowStateSnapshot(input: WorkflowStateSnapshot): WorkflowStateSnapshot {
+  return input;
+}
+
+function decorateVideoModel(model: VideoModelOption): WorkflowModelCard {
+  const signature = `${model.code} ${model.name}`.toLowerCase();
+  const isFast = signature.includes('fast');
+  const isSeedance = signature.includes('seedance');
+  const isPremium = /vip|pro|会员/i.test(model.entitlementLabel);
+
+  return {
+    id: model.id,
+    name: model.name,
+    desc: `${model.providerName} · ${model.pricingSummary}`,
+    badge: model.isDefault ? '默认' : isSeedance ? 'New' : null,
+    badgeColor: model.isDefault ? 'bg-blue-500 text-white' : 'bg-blue-500 text-white',
+    vip: isPremium,
+    logo: isFast ? '⚡' : isSeedance ? '🎬' : '🎥',
+    logoBg: isFast ? 'bg-green-50' : isPremium ? 'bg-amber-50' : 'bg-red-50',
+  };
+}
 
 // 导航栏
 function WorkflowNav() {
@@ -160,8 +226,8 @@ function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string 
 
 // 模型选择器（通用）
 function ModelSelector({ models, selectedModel, onSelect, title, icon: Icon }: {
-  models: typeof workflowImageModels | typeof workflowVideoModels;
-  selectedModel: string;
+  models: WorkflowModelCard[];
+  selectedModel: string | null;
   onSelect: (id: string) => void;
   title: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
@@ -173,46 +239,43 @@ function ModelSelector({ models, selectedModel, onSelect, title, icon: Icon }: {
         {title}
       </div>
       <div className="space-y-2">
-        {models.map((model) => {
-          const m = model as typeof workflowImageModels[number] & typeof workflowVideoModels[number];
-          return (
-            <button
-              key={m.id}
-              onClick={() => onSelect(m.id)}
-              className={`group flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left transition-all ${
-                selectedModel === m.id
-                  ? 'border-border bg-secondary shadow-sm'
-                  : 'border-border bg-card hover:border-ring hover:shadow-sm'
-              }`}
-            >
-              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg ${m.logoBg} ${selectedModel === m.id ? 'ring-1 ring-black/10' : ''}`}>
-                {m.logo}
+        {models.map((model) => (
+          <button
+            key={model.id}
+            onClick={() => onSelect(model.id)}
+            className={`group flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left transition-all ${
+              selectedModel === model.id
+                ? 'border-border bg-secondary shadow-sm'
+                : 'border-border bg-card hover:border-ring hover:shadow-sm'
+            }`}
+          >
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg ${model.logoBg} ${selectedModel === model.id ? 'ring-1 ring-black/10' : ''}`}>
+              {model.logo}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-foreground">{model.name}</span>
+                {model.badge && (
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${model.badgeColor}`}>
+                    {model.badge}
+                  </span>
+                )}
+                {model.vip && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    <Crown size={10} />
+                    VIP
+                  </span>
+                )}
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">{m.name}</span>
-                  {m.badge && (
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${m.badgeColor}`}>
-                      {m.badge}
-                    </span>
-                  )}
-                  {m.vip && (
-                    <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                      <Crown size={10} />
-                      VIP
-                    </span>
-                  )}
-                </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{m.desc}</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{model.desc}</p>
+            </div>
+            {selectedModel === model.id && (
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#1d1d1f]">
+                <Check size={12} className="text-white" />
               </div>
-              {selectedModel === m.id && (
-                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#1d1d1f]">
-                  <Check size={12} className="text-white" />
-                </div>
-              )}
-            </button>
-          );
-        })}
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -535,7 +598,7 @@ function DreamGeneration({ videoModel }: { videoModel: string }) {
               <Film size={24} className="text-foreground" />
             </div>
           </div>
-          <p className="text-lg font-semibold text-foreground">Seedance 2.0 正在造梦</p>
+          <p className="text-lg font-semibold text-foreground">{videoModel || '视频模型'} 正在造梦</p>
           <p className="mt-1 text-sm text-muted-foreground">AI视频生成中，请稍候...</p>
           <div className="mt-4 h-1.5 w-48 overflow-hidden rounded-full bg-secondary">
             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${dreamProgress}%` }} />
@@ -558,7 +621,10 @@ export default function WorkflowPage() {
   const [step, setStep] = useState(0); // 0: upload, 1: storyboard, 2: scene, 3: dream
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [selectedImageModel, setSelectedImageModel] = useState('gpt-image-2.0');
-  const [selectedVideoModel, setSelectedVideoModel] = useState('seedance-2.0-fast');
+  const [videoConfig, setVideoConfig] = useState<VideoGenerationConfigDto>(emptyVideoConfig);
+  const [videoModels, setVideoModels] = useState<VideoModelOption[]>([]);
+  const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
+  const [videoModelAvailability, setVideoModelAvailability] = useState(createInitialModelAvailabilityState());
   const [storyboardGenerating, setStoryboardGenerating] = useState(false);
   const [storyboardGenerated, setStoryboardGenerated] = useState(false);
   const [selectedScene, setSelectedScene] = useState<string | null>(null);
@@ -569,13 +635,149 @@ export default function WorkflowPage() {
   const [dreaming, setDreaming] = useState(false);
   const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [referenceImageDialogOpen, setReferenceImageDialogOpen] = useState(false);
   const storyboardOperationRef = useRef(0);
   const sceneOperationRef = useRef(0);
   const dreamOperationRef = useRef(0);
+  const selectedVideoModelRef = useRef<string | null>(null);
   const activationRequired = isLoggedIn && user ? requiresActivation(user) : false;
+  const currentImageModel = workflowImageModels.find((model) => model.id === selectedImageModel) as WorkflowModelCard | undefined;
+  const decoratedVideoModels = videoModels.map(decorateVideoModel);
+  const currentVideoModel = decoratedVideoModels.find((model) => model.id === selectedVideoModel) ?? null;
+  const referenceImageDialogState = createReferenceImageDialogState(step);
+  const videoModelLoading = videoModelAvailability.status === 'loading';
+  const videoModelUnavailableMessage =
+    videoModelAvailability.status === 'maintenance' ? videoModelAvailability.message ?? buildUnavailableModelMessage() : null;
+  const videoModelPlaceholderMessage =
+    videoModelAvailability.status === 'unauthenticated'
+      ? videoModelAvailability.message
+      : videoModelUnavailableMessage;
 
-  const currentImageModel = workflowImageModels.find(m => m.id === selectedImageModel);
-  const currentVideoModel = workflowVideoModels.find(m => m.id === selectedVideoModel);
+  useEffect(() => {
+    selectedVideoModelRef.current = selectedVideoModel;
+  }, [selectedVideoModel]);
+
+  useEffect(() => {
+    if (!isLoggedIn || activationRequired) {
+      setVideoConfig(emptyVideoConfig);
+      setVideoModels([]);
+      setSelectedVideoModel(null);
+      setVideoModelAvailability(createInitialModelAvailabilityState());
+      return;
+    }
+
+    let cancelled = false;
+    setVideoModelAvailability((current) => ({
+      ...current,
+      status: 'loading',
+      message: null,
+    }));
+
+    void getVideoGenerationConfig()
+      .then((config) => {
+        if (cancelled) {
+          return;
+        }
+
+        setVideoConfig(config);
+        setVideoModels(config.models);
+        const nextVideoModelState = resolveWorkflowVideoModelAvailability(
+          config,
+          selectedVideoModelRef.current,
+        );
+        setSelectedVideoModel(nextVideoModelState.selectedModelId);
+
+        setVideoModelAvailability((current) => ({
+          ...current,
+          status: nextVideoModelState.status,
+          message: nextVideoModelState.message,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setVideoConfig(emptyVideoConfig);
+        setVideoModels([]);
+        setSelectedVideoModel(null);
+        setVideoModelAvailability((current) => ({
+          ...current,
+          status: 'maintenance',
+          message: buildUnavailableModelMessage(),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activationRequired, isLoggedIn, videoModelAvailability.reloadKey]);
+
+  const currentSnapshot = useCallback(
+    () =>
+      buildWorkflowStateSnapshot({
+        step,
+        storyboardGenerated,
+        storyboardGenerating,
+        selectedScene,
+        customSceneUrl,
+        aiSceneGenerated,
+        aiSceneGenerating,
+        dreaming,
+      }),
+    [
+      aiSceneGenerated,
+      aiSceneGenerating,
+      customSceneUrl,
+      dreaming,
+      selectedScene,
+      step,
+      storyboardGenerated,
+      storyboardGenerating,
+    ],
+  );
+
+  const clearRuntimeFeedback = useCallback(() => {
+    setRuntimeStatus(null);
+    setRuntimeError(null);
+  }, []);
+
+  const handlePatternUpload = useCallback((nextImage: string) => {
+    setUploadedImage(nextImage || null);
+    const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
+    setStep(resetState.step);
+    setStoryboardGenerated(resetState.storyboardGenerated);
+    setStoryboardGenerating(resetState.storyboardGenerating);
+    setSelectedScene(resetState.selectedScene);
+    setCustomSceneUrl(resetState.customSceneUrl);
+    setAiSceneGenerated(resetState.aiSceneGenerated);
+    setAiSceneGenerating(resetState.aiSceneGenerating);
+    setDreaming(resetState.dreaming);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback, currentSnapshot]);
+
+  const handleSelectImageModel = useCallback((modelId: string) => {
+    if (modelId === selectedImageModel) {
+      return;
+    }
+    setSelectedImageModel(modelId);
+    const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
+    setStep(resetState.step);
+    setStoryboardGenerated(resetState.storyboardGenerated);
+    setStoryboardGenerating(resetState.storyboardGenerating);
+    setSelectedScene(resetState.selectedScene);
+    setCustomSceneUrl(resetState.customSceneUrl);
+    setAiSceneGenerated(resetState.aiSceneGenerated);
+    setAiSceneGenerating(resetState.aiSceneGenerating);
+    setDreaming(resetState.dreaming);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback, currentSnapshot, selectedImageModel]);
+
+  const handleSelectVideoModel = useCallback((modelId: string) => {
+    setSelectedVideoModel(modelId);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback]);
 
   const runWorkflowAgent = useCallback(async (
     runPrompt: string,
@@ -627,9 +829,9 @@ export default function WorkflowPage() {
     storyboardOperationRef.current += 1;
     setStoryboardGenerating(false);
     setStoryboardGenerated(false);
-    setRuntimeStatus(null);
+    clearRuntimeFeedback();
     setStep(0);
-  }, []);
+  }, [clearRuntimeFeedback]);
 
   const handleRegenerateStoryboard = useCallback(async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
@@ -663,17 +865,32 @@ export default function WorkflowPage() {
     setStep(2);
   }, []);
 
+  const handleGoToPreviousStep = useCallback(() => {
+    setStep((current) => Math.max(current - 1, 0));
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback]);
+
   const handleSelectPresetScene = useCallback((id: string) => {
+    const resetState = resetWorkflowForSceneChange(currentSnapshot());
+    setStep(resetState.step);
+    setDreaming(resetState.dreaming);
     setSelectedScene(id);
     setCustomSceneUrl(null);
     setAiSceneGenerated(false);
-  }, []);
+    setAiSceneGenerating(false);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback, currentSnapshot]);
 
   const handleCustomSceneUpload = useCallback((url: string) => {
+    const resetState = resetWorkflowForSceneChange(currentSnapshot());
+    setStep(resetState.step);
+    setDreaming(resetState.dreaming);
     setCustomSceneUrl(url);
     setSelectedScene(null);
     setAiSceneGenerated(false);
-  }, []);
+    setAiSceneGenerating(false);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback, currentSnapshot]);
 
   const handleAIGenerateScene = useCallback(async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
@@ -708,8 +925,8 @@ export default function WorkflowPage() {
     sceneOperationRef.current += 1;
     setAiSceneGenerating(false);
     setAiSceneGenerated(false);
-    setRuntimeStatus(null);
-  }, []);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback]);
 
   const handleAiSceneRegenerate = useCallback(async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
@@ -744,6 +961,14 @@ export default function WorkflowPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
     if (dreaming) return;
+    if (videoModelAvailability.status === 'loading') {
+      setRuntimeError('视频模型加载中，请稍后再试。');
+      return;
+    }
+    if (!videoConfig.enabled || videoModelAvailability.status === 'maintenance' || !selectedVideoModel) {
+      setRuntimeError(videoModelUnavailableMessage ?? '当前没有可用的视频模型。');
+      return;
+    }
     const operationId = dreamOperationRef.current + 1;
     dreamOperationRef.current = operationId;
     setStep(3);
@@ -766,7 +991,37 @@ export default function WorkflowPage() {
       setDreaming(false);
       setRuntimeError(error instanceof Error ? error.message : '造梦请求失败');
     }
-  }, [activationRequired, aiSceneGenerated, customSceneUrl, dreaming, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedScene, selectedVideoModel]);
+  }, [
+    activationRequired,
+    aiSceneGenerated,
+    customSceneUrl,
+    dreaming,
+    isLoggedIn,
+    openLoginModal,
+    prompt,
+    runWorkflowAgent,
+    selectedScene,
+    selectedVideoModel,
+    videoConfig.enabled,
+    videoModelAvailability.status,
+    videoModelUnavailableMessage,
+  ]);
+
+  const handleApplyOptimizedPrompt = useCallback((nextPrompt: string) => {
+    setPrompt(nextPrompt);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback]);
+
+  const handleApplyReferenceScene = useCallback((sceneUrl: string) => {
+    const nextState = applyGeneratedReferenceScene(currentSnapshot(), sceneUrl);
+    setStep(nextState.step);
+    setSelectedScene(nextState.selectedScene);
+    setCustomSceneUrl(nextState.customSceneUrl);
+    setAiSceneGenerated(nextState.aiSceneGenerated);
+    setAiSceneGenerating(nextState.aiSceneGenerating);
+    setDreaming(nextState.dreaming);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback, currentSnapshot]);
 
   const steps = [
     { label: '上传图案', icon: Upload },
@@ -777,6 +1032,25 @@ export default function WorkflowPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <PromptOptimizationDialog
+        open={promptDialogOpen}
+        onOpenChange={setPromptDialogOpen}
+        currentPrompt={prompt}
+        isLoggedIn={isLoggedIn}
+        activationRequired={activationRequired}
+        openLoginModal={openLoginModal}
+        onApply={handleApplyOptimizedPrompt}
+      />
+      <ReferenceImageDialog
+        open={referenceImageDialogOpen}
+        onOpenChange={setReferenceImageDialogOpen}
+        prompt={prompt}
+        selectedImageModelId={selectedImageModel}
+        isLoggedIn={isLoggedIn}
+        activationRequired={activationRequired}
+        openLoginModal={openLoginModal}
+        onApply={handleApplyReferenceScene}
+      />
       <WorkflowNav />
 
       <div className="mx-auto max-w-7xl px-4 pt-20 pb-12 sm:px-6">
@@ -823,10 +1097,16 @@ export default function WorkflowPage() {
               <div className="space-y-6">
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
                   <h2 className="mb-4 text-lg font-semibold text-foreground">上传图案</h2>
-                  <PatternUploadZone uploadedImage={uploadedImage} onUpload={setUploadedImage} />
+                  <PatternUploadZone uploadedImage={uploadedImage} onUpload={handlePatternUpload} />
                 </div>
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
-                  <ModelSelector models={workflowImageModels} selectedModel={selectedImageModel} onSelect={setSelectedImageModel} title="选择生图模型" icon={Zap} />
+                  <ModelSelector
+                    models={workflowImageModels as WorkflowModelCard[]}
+                    selectedModel={selectedImageModel}
+                    onSelect={handleSelectImageModel}
+                    title="选择生图模型"
+                    icon={Zap}
+                  />
                 </div>
                 <button
                   onClick={handleSubmitStoryboard}
@@ -845,7 +1125,17 @@ export default function WorkflowPage() {
             {/* Step 1: 12宫格分镜图 */}
             {step === 1 && (
               <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
-                <h2 className="mb-4 text-lg font-semibold text-foreground">12宫格分镜图</h2>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-foreground">12宫格分镜图</h2>
+                  <button
+                    type="button"
+                    onClick={handleGoToPreviousStep}
+                    disabled={storyboardGenerating}
+                    className="rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    上一步
+                  </button>
+                </div>
                 <StoryboardSingleImage
                   generating={storyboardGenerating}
                   generated={storyboardGenerated}
@@ -860,7 +1150,16 @@ export default function WorkflowPage() {
             {/* Step 2: 选择场景 */}
             {step === 2 && (
               <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
-                <h2 className="mb-4 text-lg font-semibold text-foreground">选择场景</h2>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-foreground">选择场景</h2>
+                  <button
+                    type="button"
+                    onClick={handleGoToPreviousStep}
+                    className="rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
+                  >
+                    上一步
+                  </button>
+                </div>
                 <SceneSelector
                   selectedScene={selectedScene}
                   customSceneUrl={customSceneUrl}
@@ -877,10 +1176,26 @@ export default function WorkflowPage() {
             )}
 
             {/* Step 3: 开始造梦 */}
-            {step === 3 && dreaming && (
+            {step === 3 && (
               <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
-                <h2 className="mb-4 text-lg font-semibold text-foreground">开始造梦</h2>
-                <DreamGeneration videoModel={currentVideoModel?.name || ''} />
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-foreground">开始造梦</h2>
+                  <button
+                    type="button"
+                    onClick={handleGoToPreviousStep}
+                    disabled={dreaming}
+                    className="rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    上一步
+                  </button>
+                </div>
+                {dreaming ? (
+                  <DreamGeneration videoModel={currentVideoModel?.name || ''} />
+                ) : (
+                  <div className="rounded-xl border border-border bg-secondary/40 px-4 py-6 text-sm text-muted-foreground">
+                    造梦任务已结束。你可以返回上一步继续调整场景、提示词或视频模型后重新开始。
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -909,20 +1224,61 @@ export default function WorkflowPage() {
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-5">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-medium text-foreground">提示词</p>
-                    <button onClick={() => setPrompt(DEFAULT_PROMPT)} className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                    <button
+                      onClick={() => {
+                        setPrompt(DEFAULT_PROMPT);
+                        clearRuntimeFeedback();
+                      }}
+                      className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
                       <RotateCcw size={10} />
                       恢复默认
                     </button>
                   </div>
                   <textarea
                     value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
+                    onChange={(e) => {
+                      setPrompt(e.target.value);
+                      clearRuntimeFeedback();
+                    }}
                     rows={4}
                     className="w-full resize-none rounded-xl border border-input bg-card p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                   />
                 </div>
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-5">
-                  <ModelSelector models={workflowVideoModels} selectedModel={selectedVideoModel} onSelect={setSelectedVideoModel} title="视频生成模型" icon={Film} />
+                  {videoModelAvailability.status === 'ready' ? (
+                    <ModelSelector
+                      models={decoratedVideoModels}
+                      selectedModel={selectedVideoModel}
+                      onSelect={handleSelectVideoModel}
+                      title="视频生成模型"
+                      icon={Film}
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <Film size={14} className="text-muted-foreground" />
+                        视频生成模型
+                      </div>
+                      <div className="rounded-xl border border-border bg-card px-4 py-4 text-sm text-muted-foreground">
+                        <p>{videoModelLoading ? '视频模型加载中...' : videoModelPlaceholderMessage}</p>
+                        {videoModelAvailability.status === 'maintenance' ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVideoModelAvailability((current) => ({
+                                ...current,
+                                reloadKey: nextReloadKey(current.reloadKey),
+                              }))
+                            }
+                            className="mt-3 text-xs font-medium text-foreground transition-colors hover:text-muted-foreground"
+                          >
+                            重新加载模型
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -941,12 +1297,30 @@ export default function WorkflowPage() {
             <div className="rounded-2xl border border-border bg-secondary/50 backdrop-blur-md p-5">
               <p className="mb-3 text-sm font-medium text-foreground">快捷操作</p>
               <div className="space-y-2">
-                <Link href="/chat" className="flex items-center gap-2 rounded-lg border border-border bg-card p-2.5 text-xs text-muted-foreground transition-all hover:border-ring hover:text-foreground">
+                <button
+                  type="button"
+                  onClick={() => setPromptDialogOpen(true)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-border bg-card p-2.5 text-left text-xs text-muted-foreground transition-all hover:border-ring hover:text-foreground"
+                >
                   <Wand2 size={12} /> AI对话优化提示词
-                </Link>
-                <Link href="/image-gen" className="flex items-center gap-2 rounded-lg border border-border bg-card p-2.5 text-xs text-muted-foreground transition-all hover:border-ring hover:text-foreground">
-                  <Mountain size={12} /> 生成参考图
-                </Link>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!referenceImageDialogState.disabled) {
+                      setReferenceImageDialogOpen(true);
+                    }
+                  }}
+                  disabled={referenceImageDialogState.disabled}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card p-2.5 text-left text-xs text-muted-foreground transition-all hover:border-ring hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="flex items-center gap-2">
+                    <Mountain size={12} /> 生成参考图
+                  </span>
+                  {referenceImageDialogState.message ? (
+                    <span className="text-[10px] text-muted-foreground">{referenceImageDialogState.message}</span>
+                  ) : null}
+                </button>
               </div>
             </div>
           </div>

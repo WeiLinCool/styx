@@ -1,4 +1,5 @@
 import { collectBrowserFingerprint, type BrowserFingerprintPayload } from '@/features/account/browser-fingerprint';
+import { getAuthToken, getUserFromCookie } from '@/lib/cookie';
 import {
   decryptResponseBody,
   encryptRequestBody,
@@ -13,6 +14,7 @@ export type ApiClientOptions = {
   now?: () => number;
   createId?: () => string;
   collectBrowserFingerprint?: () => BrowserFingerprintPayload | null | undefined;
+  getRequestDeduplicationScope?: () => string | null | undefined;
 };
 
 export type UserApiClient = {
@@ -52,6 +54,17 @@ function isMutationMethod(method: string) {
 
 function requestDedupeKey(input: RequestInfo | URL, init?: RequestInit) {
   return `${resolveMethod(init)} ${input.toString()}`;
+}
+
+function defaultRequestDeduplicationScope() {
+  const authToken = getAuthToken();
+  const user = getUserFromCookie();
+
+  if (!authToken && !user?.id) {
+    return null;
+  }
+
+  return `${authToken ?? ''}:${user?.id ?? ''}`;
 }
 
 function normalizeBodyForHash(body: BodyInit | null | undefined) {
@@ -220,13 +233,17 @@ export function createApiClient(
   const now = options.now ?? Date.now;
   const createId = options.createId ?? defaultCreateId;
   const fingerprintCollector = options.collectBrowserFingerprint ?? defaultCollectBrowserFingerprint;
+  const requestDeduplicationScope =
+    options.getRequestDeduplicationScope ?? defaultRequestDeduplicationScope;
   const inFlightGets = new Map<string, Promise<Response>>();
 
   return {
     async request(input, init) {
       const method = resolveMethod(init);
       const useDedupe = options.dedupeGetRequests && method === 'GET';
-      const dedupeKey = useDedupe ? requestDedupeKey(input, init) : null;
+      const dedupeScope = useDedupe ? requestDeduplicationScope() : null;
+      const dedupeKey =
+        useDedupe && dedupeScope ? `${dedupeScope} ${requestDedupeKey(input, init)}` : null;
 
       if (dedupeKey) {
         const existing = inFlightGets.get(dedupeKey);

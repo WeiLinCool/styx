@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { readJsonResponse } from '@/lib/api-response';
 import { userApiRequest } from '@/lib/user-api-client';
@@ -98,6 +98,7 @@ function MembershipNav() {
 
 export default function MembershipPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isLoggedIn, openLoginModal } = useAuth();
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [subscriptionWorkOrder, setSubscriptionWorkOrder] =
@@ -142,6 +143,16 @@ export default function MembershipPage() {
     setSelectedPlanCode(planCode);
     setSubscriptionMessage(null);
   };
+
+  useEffect(() => {
+    const plan = searchParams.get('plan');
+    if (plan === 'monthly' || plan === 'yearly') {
+      handleSubscribe(plan);
+    }
+    // handleSubscribe only depends on the current auth state and setters.
+    // The search param effect should re-run when the target plan changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const handleSubmitSubscriptionWorkOrder = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

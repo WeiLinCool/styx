@@ -19,11 +19,15 @@ import {
   listImageModels,
   listChatModels,
   listVideoModels,
+  formatMediaSaveActionLabel,
+  formatMediaSaveStatus,
+  isStorageQuotaExceededSaveError,
   parseDirectMediaArtifactPayload,
   parseImageModel,
   parseVideoGenerationConfig,
   parseVideoModel,
   parseStreamEventPayload,
+  readMediaSaveErrorMessage,
   saveGeneratedMedia,
   syncAgentRun,
   selectImageModelId,
@@ -473,6 +477,47 @@ test('createAgentRun throws typed API error codes from JSON responses', async ()
   }
 });
 
+test('readMediaSaveErrorMessage rewrites cache fallback failures into user-friendly text', () => {
+  const error = new AgentRuntimeApiError({
+    code: 'media_save_failed',
+    status: 400,
+    message: 'cache_missing_fallback_failed: generated media source download failed.',
+  });
+
+  assert.equal(
+    readMediaSaveErrorMessage(error, '保存媒体失败'),
+    '缓存对象已失效，已自动改用源文件重试，但保存仍失败：generated media source download failed.',
+  );
+});
+
+test('formatMediaSaveStatus and action label expose cache fallback retry state', () => {
+  const metadata = {
+    saveStatus: 'save_failed',
+    saveError: 'cache_missing_fallback_failed: generated media source download failed.',
+  };
+
+  assert.equal(formatMediaSaveStatus(metadata), '回退重试失败');
+  assert.equal(formatMediaSaveActionLabel(metadata), '重试保存');
+});
+
+test('isStorageQuotaExceededSaveError recognizes quota errors from save flow', () => {
+  assert.equal(
+    isStorageQuotaExceededSaveError(new Error('存储空间不足，无法保存到我的媒体。')),
+    true,
+  );
+  assert.equal(
+    isStorageQuotaExceededSaveError(
+      new AgentRuntimeApiError({
+        code: 'storage_quota_exceeded',
+        status: 400,
+        message: '保存媒体失败',
+      }),
+    ),
+    true,
+  );
+  assert.equal(isStorageQuotaExceededSaveError(new Error('other error')), false);
+});
+
 test('createAgentRun returns run and transient artifacts from API payload', async () => {
   const originalFetch = globalThis.fetch;
   let requestBody: unknown = null;
@@ -705,6 +750,32 @@ test('saveGeneratedMedia returns saved asset payload and artifact save state', a
     const result = await saveGeneratedMedia({ runId: 'run-1', artifactId: 'artifact-1' });
     assert.equal(result.asset.id, 'asset-1');
     assert.equal(result.artifact.metadata.saveStatus, 'saved');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('saveGeneratedMedia throws typed storage_quota_exceeded errors', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json(
+      {
+        error: {
+          code: 'storage_quota_exceeded',
+          message: '存储空间不足，无法保存到我的媒体。',
+        },
+      },
+      { status: 400 },
+    );
+
+  try {
+    await assert.rejects(
+      () => saveGeneratedMedia({ runId: 'run-1', artifactId: 'artifact-1' }),
+      (error) =>
+        error instanceof AgentRuntimeApiError &&
+        error.code === 'storage_quota_exceeded' &&
+        error.message === '存储空间不足，无法保存到我的媒体。',
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

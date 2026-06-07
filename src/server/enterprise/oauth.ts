@@ -100,23 +100,23 @@ export function validateLoopbackRedirectUri(value: string): string {
   try {
     url = new URL(value);
   } catch {
-    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri is invalid.');
+    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri 无效。');
   }
 
   if (url.protocol !== 'http:') {
-    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri must use http.');
+    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri 必须使用 http。');
   }
 
   if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
-    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri must be loopback.');
+    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri 必须是环回地址。');
   }
 
   if (url.pathname !== '/callback') {
-    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri path must be /callback.');
+    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri 路径必须是 /callback。');
   }
 
   if (!url.port) {
-    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri must include a port.');
+    throw new EnterpriseOAuthError('invalid_request', 'redirect_uri 必须包含端口。');
   }
 
   url.hash = '';
@@ -149,17 +149,17 @@ export function validateAuthorizeRequest(
   const state = requireParam(params, 'state');
 
   if (responseType !== 'code') {
-    throw new EnterpriseOAuthError('invalid_request', 'response_type must be code.');
+    throw new EnterpriseOAuthError('invalid_request', 'response_type 必须为 code。');
   }
 
   if (clientId !== ENTERPRISE_DESKTOP_CLIENT_ID) {
-    throw new EnterpriseOAuthError('unauthorized_client', 'client_id is not allowed.', 401);
+    throw new EnterpriseOAuthError('unauthorized_client', 'client_id 不被允许。', 401);
   }
 
   if (codeChallengeMethod !== 'S256') {
     throw new EnterpriseOAuthError(
       'invalid_request',
-      'code_challenge_method must be S256.',
+      'code_challenge_method 必须为 S256。',
     );
   }
 
@@ -183,11 +183,11 @@ export function validateTokenRequest(formDataLike: unknown): EnterpriseTokenRequ
   const codeVerifier = requireParam(params, 'code_verifier');
 
   if (grantType !== 'authorization_code') {
-    throw new EnterpriseOAuthError('invalid_request', 'grant_type must be authorization_code.');
+    throw new EnterpriseOAuthError('invalid_request', 'grant_type 必须为 authorization_code。');
   }
 
   if (clientId !== ENTERPRISE_DESKTOP_CLIENT_ID) {
-    throw new EnterpriseOAuthError('invalid_client', 'client_id is invalid.', 401);
+    throw new EnterpriseOAuthError('invalid_client', 'client_id 无效。', 401);
   }
 
   return {
@@ -269,7 +269,7 @@ export async function exchangeEnterpriseAuthorizationCode(
     resolvedDeps.now(),
   );
   if (!authorizationCode) {
-    throw new EnterpriseOAuthError('invalid_grant', 'Authorization code is invalid.', 400);
+    throw new EnterpriseOAuthError('invalid_grant', '授权码无效。', 400);
   }
 
   if (
@@ -278,7 +278,7 @@ export async function exchangeEnterpriseAuthorizationCode(
     authorizationCode.codeChallengeMethod !== 'S256' ||
     !verifyPkceS256(input.codeVerifier, authorizationCode.codeChallenge)
   ) {
-    throw new EnterpriseOAuthError('invalid_grant', 'Authorization code binding is invalid.');
+    throw new EnterpriseOAuthError('invalid_grant', '授权码绑定无效。');
   }
 
   const consumed = await resolvedDeps.repository.consumeEnterpriseAuthorizationCode(
@@ -286,12 +286,12 @@ export async function exchangeEnterpriseAuthorizationCode(
     resolvedDeps.now(),
   );
   if (!consumed) {
-    throw new EnterpriseOAuthError('invalid_grant', 'Authorization code is invalid.', 400);
+    throw new EnterpriseOAuthError('invalid_grant', '授权码无效。', 400);
   }
 
   const user = await resolvedDeps.getUserById(authorizationCode.userId);
   if (!user) {
-    throw new EnterpriseOAuthError('invalid_grant', 'Authorization code user is missing.');
+    throw new EnterpriseOAuthError('invalid_grant', '授权码对应的用户不存在。');
   }
   assertActiveUser(user);
 
@@ -326,12 +326,12 @@ export async function resolveEnterpriseBearerToken(
   );
 
   if (!token) {
-    throw new EnterpriseOAuthError('invalid_token', 'Bearer token is invalid.', 401);
+    throw new EnterpriseOAuthError('invalid_token', 'Bearer 令牌无效。', 401);
   }
 
   const user = await resolvedDeps.getUserById(token.userId);
   if (!user) {
-    throw new EnterpriseOAuthError('invalid_token', 'Bearer token user is missing.', 401);
+    throw new EnterpriseOAuthError('invalid_token', 'Bearer 令牌对应的用户不存在。', 401);
   }
   assertActiveUser(user);
 
@@ -390,7 +390,7 @@ function toFormParams(formDataLike: unknown): URLSearchParams {
     }
     return params;
   }
-  throw new EnterpriseOAuthError('invalid_request', 'Token request body is invalid.');
+  throw new EnterpriseOAuthError('invalid_request', '令牌请求体无效。');
 }
 
 function hasGet(value: unknown): value is { get(name: string): unknown } {
@@ -400,33 +400,34 @@ function hasGet(value: unknown): value is { get(name: string): unknown } {
 function requireParam(params: Pick<URLSearchParams, 'get'>, name: string): string {
   const value = params.get(name)?.trim();
   if (!value) {
-    throw new EnterpriseOAuthError('invalid_request', `${name} is required.`);
+    const label = name === 'login' ? '账号' : name === 'password' ? '密码' : name;
+    throw new EnterpriseOAuthError('invalid_request', `${label} 是必填项。`);
   }
   return value;
 }
 
 function assertDesktopClient(clientId: string): asserts clientId is typeof ENTERPRISE_DESKTOP_CLIENT_ID {
   if (clientId !== ENTERPRISE_DESKTOP_CLIENT_ID) {
-    throw new EnterpriseOAuthError('unauthorized_client', 'client_id is not allowed.', 401);
+    throw new EnterpriseOAuthError('unauthorized_client', 'client_id 不被允许。', 401);
   }
 }
 
 function assertTokenRequest(input: EnterpriseTokenRequest) {
   if (input.grantType !== 'authorization_code') {
-    throw new EnterpriseOAuthError('invalid_request', 'grant_type must be authorization_code.');
+    throw new EnterpriseOAuthError('invalid_request', 'grant_type 必须为 authorization_code。');
   }
   if (!input.clientId) {
-    throw new EnterpriseOAuthError('invalid_request', 'client_id is required.');
+    throw new EnterpriseOAuthError('invalid_request', 'client_id 是必填项。');
   }
   validateLoopbackRedirectUri(input.redirectUri);
   if (!input.code || !input.codeVerifier) {
-    throw new EnterpriseOAuthError('invalid_request', 'code and code_verifier are required.');
+    throw new EnterpriseOAuthError('invalid_request', 'code 和 code_verifier 是必填项。');
   }
 }
 
 function assertActiveUser(user: UserRecord) {
   if (user.accountState !== 'active') {
-    throw new EnterpriseOAuthError('access_denied', 'User account is not active.', 403);
+    throw new EnterpriseOAuthError('access_denied', '用户账号未激活。', 403);
   }
 }
 
@@ -441,12 +442,12 @@ function parseBearerToken(requestOrHeader: Request | Headers | string | null | u
   }
 
   if (!header) {
-    throw new EnterpriseOAuthError('invalid_request', 'Authorization bearer token is required.', 401);
+    throw new EnterpriseOAuthError('invalid_request', '必须提供 Authorization Bearer 令牌。', 401);
   }
 
   const parts = header.trim().split(/\s+/);
   if (parts.length !== 2 || parts[0] !== 'Bearer' || !parts[1]) {
-    throw new EnterpriseOAuthError('invalid_request', 'Authorization bearer token is malformed.', 401);
+    throw new EnterpriseOAuthError('invalid_request', 'Authorization Bearer 令牌格式无效。', 401);
   }
 
   return parts[1];

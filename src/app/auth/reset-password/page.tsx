@@ -8,9 +8,14 @@ export default async function ResetPasswordPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = searchParams ? await searchParams : {};
-  const phone = typeof params.phone === 'string' ? params.phone : '';
+  const account =
+    typeof params.login === 'string'
+      ? params.login
+      : typeof params.phone === 'string'
+        ? params.phone
+        : '';
 
-  if (!phone) {
+  if (!account) {
     redirect('/home');
   }
 
@@ -18,7 +23,7 @@ export default async function ResetPasswordPage({
     <div className="min-h-screen bg-background px-4 py-10">
       <div className="mx-auto max-w-md rounded-[28px] border border-border bg-card p-8 shadow-[0_20px_80px_rgba(15,23,42,0.08)]">
         <div className="mb-8 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-sm font-bold text-background">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-sm font-bold text-background">
             NF
           </div>
           <h1 className="mt-5 text-2xl font-bold tracking-tight text-foreground">重置正式密码</h1>
@@ -26,7 +31,7 @@ export default async function ResetPasswordPage({
             你当前使用的是客服提供的临时密码。请立即设置新的正式密码后继续使用账号。
           </p>
         </div>
-        <SetPasswordForm phone={phone} mode="reset" />
+        <SetPasswordForm account={account} mode="reset" />
       </div>
     </div>
   );

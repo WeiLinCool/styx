@@ -69,7 +69,7 @@ test('models route rejects invalid bearer token before listing models', async ()
   let listCalled = false;
   const GET = createEnterpriseModelsRouteGet({
     async resolveEnterpriseBearerToken() {
-      throw new EnterpriseOAuthError('invalid_token', 'Bearer token is invalid.', 401);
+      throw new EnterpriseOAuthError('invalid_token', 'Bearer 令牌无效。', 401);
     },
     async listEnterpriseOpenAiModels() {
       listCalled = true;
@@ -83,6 +83,6 @@ test('models route rejects invalid bearer token before listing models', async ()
   assert.equal(listCalled, false);
   assert.equal(
     response.headers.get('www-authenticate'),
-    'Bearer error="invalid_token", error_description="Bearer token is invalid."',
+    'Bearer error="invalid_token", error_description="Bearer 令牌无效。"'
   );
 });

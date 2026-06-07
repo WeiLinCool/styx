@@ -325,50 +325,74 @@ async function cacheDirectMediaArtifact(input: {
     return sanitizeDirectMediaArtifact(input.artifact);
   }
 
-  const cached = await input.cache.cacheGeneratedMedia({
-    userId: input.userId,
-    runId: input.runId,
-    artifactId: input.cacheId,
-    kind: input.directMedia.kind,
-    title: input.directMedia.title,
-    sourceUrl:
-      input.directMedia.delivery.mode === 'provider_url'
-        ? input.directMedia.delivery.url
-        : undefined,
-    dataUrl:
-      input.directMedia.delivery.mode === 'data_url'
-        ? input.directMedia.delivery.url
-        : undefined,
-    mimeType: input.directMedia.metadata.mimeType,
-    filename: input.directMedia.metadata.filename,
-    metadata: input.directMedia.metadata,
-  });
+  try {
+    const cached = await input.cache.cacheGeneratedMedia({
+      userId: input.userId,
+      runId: input.runId,
+      artifactId: input.cacheId,
+      kind: input.directMedia.kind,
+      title: input.directMedia.title,
+      sourceUrl:
+        input.directMedia.delivery.mode === 'provider_url'
+          ? input.directMedia.delivery.url
+          : undefined,
+      dataUrl:
+        input.directMedia.delivery.mode === 'data_url'
+          ? input.directMedia.delivery.url
+          : undefined,
+      mimeType: input.directMedia.metadata.mimeType,
+      filename: input.directMedia.metadata.filename,
+      metadata: input.directMedia.metadata,
+    });
 
-  return {
-    kind: input.artifact.kind,
-    title: input.artifact.title,
-    body: null,
-    url: null,
-    metadata: {
-      ...cloneRecord(input.directMedia.metadata),
-      storageStatus: 'cached',
-      cacheStatus: 'available',
-      cacheProvider: cached.storageProvider,
-      cacheBucket: cached.bucket,
-      cacheRegion: cached.region,
-      cacheObjectKey: cached.objectKey,
-      cacheExpiresAt: cached.expiresAt,
-      saveStatus: 'not_saved',
-      sourceUrl: input.directMedia.delivery.url,
-      providerExpiresAt: input.directMedia.delivery.expiresAt,
-      mimeType: cached.mimeType,
-      byteLength: cached.byteSize,
-      width: cached.width ?? input.directMedia.metadata.width,
-      height: cached.height ?? input.directMedia.metadata.height,
-      durationSeconds:
-        cached.durationSeconds ?? input.directMedia.metadata.durationSeconds,
-    },
-  };
+    return {
+      kind: input.artifact.kind,
+      title: input.artifact.title,
+      body: null,
+      url: null,
+      metadata: {
+        ...cloneRecord(input.directMedia.metadata),
+        storageStatus: 'cached',
+        cacheStatus: 'available',
+        cacheProvider: cached.storageProvider,
+        cacheBucket: cached.bucket,
+        cacheRegion: cached.region,
+        cacheObjectKey: cached.objectKey,
+        cacheExpiresAt: cached.expiresAt,
+        saveStatus: 'not_saved',
+        sourceUrl: input.directMedia.delivery.url,
+        providerExpiresAt: input.directMedia.delivery.expiresAt,
+        mimeType: cached.mimeType,
+        byteLength: cached.byteSize,
+        width: cached.width ?? input.directMedia.metadata.width,
+        height: cached.height ?? input.directMedia.metadata.height,
+        durationSeconds:
+          cached.durationSeconds ?? input.directMedia.metadata.durationSeconds,
+      },
+    };
+  } catch (error) {
+    const failureMessage = toErrorMessage(error);
+    return {
+      kind: input.artifact.kind,
+      title: input.artifact.title,
+      body: null,
+      url: null,
+      metadata: {
+        ...cloneRecord(input.directMedia.metadata),
+        storageStatus: 'provider_direct',
+        cacheStatus: 'cache_failed',
+        cacheError: failureMessage,
+        saveStatus: 'not_saved',
+        sourceUrl: input.directMedia.delivery.url,
+        providerExpiresAt: input.directMedia.delivery.expiresAt,
+        mimeType: input.directMedia.metadata.mimeType,
+        filename: input.directMedia.metadata.filename,
+        width: input.directMedia.metadata.width,
+        height: input.directMedia.metadata.height,
+        durationSeconds: input.directMedia.metadata.durationSeconds,
+      },
+    };
+  }
 }
 
 function createMediaRunScheduler(): MediaRunScheduler {

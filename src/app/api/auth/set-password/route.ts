@@ -1,30 +1,42 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { accountErrorToResponse, AccountDomainError } from '@/server/auth/account-types';
+import {
+  accountErrorToResponse,
+  AccountDomainError,
+} from '@/server/auth/account-types';
+import { findExistingUserByLogin } from '@/server/auth/account-service';
 import { hashUserPassword } from '@/server/auth/public-auth';
-import { getUserByPhone, updateUserMetadata } from '@/server/repositories/users';
+import { updateUserMetadata } from '@/server/repositories/users';
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { createJsonResponse } from '@/server/encrypted-response';
 
 const bodySchema = z.object({
-  phone: z.string().min(6).max(32),
+  login: z.string().min(1).max(128).optional(),
+  phone: z.string().min(6).max(32).optional(),
   password: z.string().min(6).max(128),
   confirmPassword: z.string().min(6).max(128),
   mode: z.enum(['initial', 'reset']).optional(),
-});
+}).refine(
+  (body) => Boolean(body.login?.trim() || body.phone?.trim()),
+  {
+    message: '账号不能为空。',
+    path: ['login'],
+  },
+);
 
 export async function POST(request: Request) {
   try {
     const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
     const body = bodySchema.parse(parsedBody);
+    const login = (body.login ?? body.phone ?? '').trim();
     if (body.password !== body.confirmPassword) {
       throw new AccountDomainError('session_required', '两次输入的密码不一致。', 400);
     }
 
-    const user = await getUserByPhone(body.phone.trim());
+    const user = await findExistingUserByLogin(login);
     if (!user) {
-      throw new AccountDomainError('account_not_found', '当前手机号未注册账号。', 404);
+      throw new AccountDomainError('account_not_found', '当前账号未注册。', 404);
     }
 
     const mode = body.mode ?? 'initial';
@@ -44,7 +56,7 @@ export async function POST(request: Request) {
         routeKind: 'sensitive-user-mutation',
         operation: 'POST /api/auth/set-password',
         actorType: 'anonymous',
-        actorId: body.phone,
+        actorId: login,
         rawBody,
         decryptedRawBody,
         parsedBody,

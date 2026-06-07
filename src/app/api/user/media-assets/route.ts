@@ -25,6 +25,24 @@ function jsonError(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
 
+function toSaveGeneratedMediaErrorResponse(error: unknown) {
+  if (error instanceof z.ZodError) {
+    return jsonError('invalid_request', error.issues[0]?.message ?? '媒体保存请求无效。', 400);
+  }
+
+  const response = accountErrorToResponse(error);
+  if (response.status !== 500) {
+    return NextResponse.json(response.body, { status: response.status });
+  }
+
+  const message = error instanceof Error ? error.message : '媒体保存失败。';
+  if (message.includes('存储空间不足，无法保存到我的媒体。')) {
+    return jsonError('storage_quota_exceeded', message, 400);
+  }
+
+  return jsonError('media_save_failed', message, 400);
+}
+
 export function createMediaAssetsRouteHandlers(dependencies: {
   requireSession: () => Promise<SessionLike>;
   saveGeneratedMedia: (input: {
@@ -53,7 +71,7 @@ export function createMediaAssetsRouteHandlers(dependencies: {
         const { rawBody, decryptedRawBody, body: parsedBody } = await readJsonBody(request);
         const body = createSavedMediaBodySchema.parse(parsedBody);
 
-        return runProtectedMutation(
+        return await runProtectedMutation(
           {
             request,
             routeKind: 'user-mutation',
@@ -78,20 +96,7 @@ export function createMediaAssetsRouteHandlers(dependencies: {
           },
         );
       } catch (error) {
-        if (error instanceof z.ZodError) {
-          return jsonError('invalid_request', error.issues[0]?.message ?? '媒体保存请求无效。', 400);
-        }
-
-        const response = accountErrorToResponse(error);
-        if (response.status !== 500) {
-          return NextResponse.json(response.body, { status: response.status });
-        }
-
-        return jsonError(
-          'media_save_failed',
-          error instanceof Error ? error.message : '媒体保存失败。',
-          400,
-        );
+        return toSaveGeneratedMediaErrorResponse(error);
       }
     },
   };

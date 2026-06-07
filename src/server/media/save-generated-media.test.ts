@@ -205,6 +205,101 @@ test('save generated media promotes cached artifact without fetching provider so
   assert.deepEqual(quota, { storageQuotaBytes: 10_000, storageUsedBytes: 4 });
 });
 
+test('save generated media falls back to provider source when cached object is missing', async () => {
+  const { runRepository, runId, artifactId } = await createRunWithCachedArtifact();
+  const mediaAssetRepository = createMemoryGeneratedMediaAssetRepository();
+  const userStorageRepository = createMemoryUserStorageRepository({
+    'user-1': { storageQuotaBytes: 10_000, storageUsedBytes: 0 },
+  });
+  let fetched = 0;
+  let uploaded = 0;
+
+  const service = createSaveGeneratedMediaService({
+    runRepository,
+    mediaAssetRepository,
+    userStorageRepository,
+    cosClient: {
+      async uploadObject(input) {
+        uploaded += 1;
+        assert.equal(input.contentType, 'image/png');
+        return {
+          bucket: 'bucket-a',
+          region: 'ap-shanghai',
+          objectKey: input.objectKey,
+        };
+      },
+      async deleteObject() {},
+    },
+    promoteCachedObject: async () => {
+      throw Object.assign(new Error('Failed to query the state of source object'), {
+        Code: 'NoSuchKey',
+      });
+    },
+    fetchSource: async () => {
+      fetched += 1;
+      return {
+        bytes: Buffer.from('png'),
+        mimeType: 'image/png',
+        byteSize: 3,
+        width: 1,
+        height: 1,
+        durationSeconds: null,
+      };
+    },
+    createObjectKey: () =>
+      `ai-generated/dev/users/user-1/conversations/11111111-1111-4111-8111-111111111111/runs/${runId}/asset-1.png`,
+  });
+
+  const result = await service.saveForUser({ userId: 'user-1', runId, artifactId });
+
+  assert.equal(result.asset.mimeType, 'image/png');
+  assert.equal(result.asset.byteSize, 3);
+  assert.equal(result.updatedArtifact.metadata.saveStatus, 'saved');
+  assert.equal(fetched, 1);
+  assert.equal(uploaded, 1);
+  const quota = await userStorageRepository.getStorageQuota('user-1');
+  assert.deepEqual(quota, { storageQuotaBytes: 10_000, storageUsedBytes: 3 });
+});
+
+test('save generated media reports cache-missing fallback failure explicitly', async () => {
+  const { runRepository, runId, artifactId } = await createRunWithCachedArtifact();
+  const service = createSaveGeneratedMediaService({
+    runRepository,
+    mediaAssetRepository: createMemoryGeneratedMediaAssetRepository(),
+    userStorageRepository: createMemoryUserStorageRepository({
+      'user-1': { storageQuotaBytes: 10_000, storageUsedBytes: 0 },
+    }),
+    cosClient: {
+      async uploadObject() {
+        throw new Error('provider upload should not be called');
+      },
+      async deleteObject() {},
+    },
+    promoteCachedObject: async () => {
+      throw Object.assign(new Error('Failed to query the state of source object'), {
+        Code: 'NoSuchKey',
+      });
+    },
+    fetchSource: async () => {
+      throw new Error('generated media source download failed.');
+    },
+    createObjectKey: () =>
+      `ai-generated/dev/users/user-1/conversations/11111111-1111-4111-8111-111111111111/runs/${runId}/asset-1.png`,
+  });
+
+  await assert.rejects(
+    () => service.saveForUser({ userId: 'user-1', runId, artifactId }),
+    /缓存对象缺失，已回退/,
+  );
+
+  const detail = await runRepository.getRunDetailForUser(runId, 'user-1');
+  assert.equal(detail?.run.artifacts[0]?.metadata.saveStatus, 'save_failed');
+  assert.equal(
+    detail?.run.artifacts[0]?.metadata.saveError,
+    'cache_missing_fallback_failed: generated media source download failed.',
+  );
+});
+
 test('save generated media marks cached artifact source_expired when cache expired without fallback', async () => {
   const { runRepository, runId, artifactId } = await createRunWithCachedArtifact({
     cacheExpiresAt: '2026-06-05T00:00:00.000Z',

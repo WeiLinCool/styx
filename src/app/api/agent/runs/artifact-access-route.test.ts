@@ -80,6 +80,43 @@ test('generated run artifact access route signs cached artifact for run owner', 
   assert.equal(payload.access.url, 'https://signed.example/cache/run-1/artifact-1.png?expires=600');
 });
 
+test('generated run artifact access route falls back to provider url when cache is unavailable', async () => {
+  const handlers = createGeneratedRunArtifactAccessRouteHandlers({
+    requireSession: async () => ({ user: { id: 'user-1' } }),
+    getRunDetail: async () => ({
+      run: {
+        ...runDetail.run,
+        artifacts: [
+          {
+            ...runDetail.run.artifacts[0]!,
+            metadata: {
+              storageStatus: 'provider_direct',
+              sourceUrl: 'https://provider.example/generated.png',
+              providerExpiresAt: '2026-06-06T00:10:00.000Z',
+              mimeType: 'image/png',
+            },
+          },
+        ],
+      },
+      events: [],
+    }),
+    createCachedAccess: async () => {
+      throw new Error('sign should not be called');
+    },
+    now: () => new Date('2026-06-06T00:00:00.000Z'),
+  });
+
+  const response = await handlers.GET(
+    new Request('https://example.com/api/agent/runs/run-1/artifacts/artifact-1/access'),
+    { params: Promise.resolve({ runId: 'run-1', artifactId: 'artifact-1' }) },
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.access.url, 'https://provider.example/generated.png');
+  assert.equal(payload.access.mimeType, 'image/png');
+});
+
 test('generated run artifact access route rejects expired cache', async () => {
   const handlers = createGeneratedRunArtifactAccessRouteHandlers({
     requireSession: async () => ({ user: { id: 'user-1' } }),

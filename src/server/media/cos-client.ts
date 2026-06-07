@@ -31,17 +31,21 @@ function readRequiredEnv(name: string) {
   return value;
 }
 
+export function buildTencentCosEndpoint(region: string, endpointOverride?: string | null) {
+  return endpointOverride ?? `https://cos.${region}.myqcloud.com`;
+}
+
 export function createTencentCosClient(): TencentCosClient {
   const region = readRequiredEnv('TENCENT_COS_REGION');
   const bucket = readRequiredEnv('TENCENT_COS_BUCKET');
   const secretId = readRequiredEnv('TENCENT_COS_SECRET_ID');
   const secretKey = readRequiredEnv('TENCENT_COS_SECRET_KEY');
-  const endpoint =
-    process.env.TENCENT_COS_ENDPOINT ?? `https://${bucket}.cos.${region}.myqcloud.com`;
+  const endpoint = buildTencentCosEndpoint(region, process.env.TENCENT_COS_ENDPOINT);
 
   const client = new S3Client({
     region,
     endpoint,
+    forcePathStyle: true,
     credentials: {
       accessKeyId: secretId,
       secretAccessKey: secretKey,

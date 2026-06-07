@@ -93,8 +93,8 @@ function getSeedDashboard(): AdminDashboardData {
     recentUsers: [
       {
         id: 'seed-user-1',
-        name: 'Styx Admin',
-        email: 'admin@styx.local',
+        name: 'Taiji Admin',
+        email: 'admin@taiji.local',
         accountState: 'active',
         createdAt: '2026-05-29T08:00:00.000Z',
       },

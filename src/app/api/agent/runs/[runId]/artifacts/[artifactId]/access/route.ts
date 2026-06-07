@@ -124,11 +124,37 @@ export function createGeneratedRunArtifactAccessRouteHandlers(dependencies: {
 
       const objectKey = readString(artifact.metadata, 'cacheObjectKey');
       if (!objectKey) {
-        return jsonError(
-          'cache_unavailable',
-          'Temporary generated media is unavailable.',
-          410,
-        );
+        const sourceUrl = readString(artifact.metadata, 'sourceUrl');
+        if (!sourceUrl) {
+          return jsonError(
+            'cache_unavailable',
+            'Temporary generated media is unavailable.',
+            410,
+          );
+        }
+
+        const providerExpiresAt = readString(artifact.metadata, 'providerExpiresAt');
+        if (
+          providerExpiresAt &&
+          new Date(providerExpiresAt).getTime() <= (dependencies.now?.() ?? new Date()).getTime()
+        ) {
+          return jsonError(
+            'cache_expired',
+            'Temporary generated media has expired.',
+            410,
+          );
+        }
+
+        return NextResponse.json({
+          access: {
+            runId,
+            artifactId,
+            disposition,
+            url: sourceUrl,
+            expiresAt: providerExpiresAt,
+            mimeType: readString(artifact.metadata, 'mimeType'),
+          },
+        });
       }
 
       const cacheExpiresAt = readString(artifact.metadata, 'cacheExpiresAt');

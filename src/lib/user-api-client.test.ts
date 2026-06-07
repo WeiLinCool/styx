@@ -7,6 +7,7 @@ import { createUserApiClient } from './user-api-client';
 test('user client dedupes identical in-flight GET requests', async () => {
   let fetchCount = 0;
   const client = createUserApiClient({
+    getRequestDeduplicationScope: () => 'user-1',
     fetch: async () => {
       fetchCount += 1;
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -23,6 +24,30 @@ test('user client dedupes identical in-flight GET requests', async () => {
   assert.notEqual(first, second);
   assert.deepEqual(await first.json(), { ok: true });
   assert.deepEqual(await second.json(), { ok: true });
+});
+
+test('user client does not dedupe identical GET requests across auth scopes', async () => {
+  let fetchCount = 0;
+  let scope = 'user-1';
+  const client = createUserApiClient({
+    getRequestDeduplicationScope: () => scope,
+    fetch: async () => {
+      fetchCount += 1;
+      const call = fetchCount;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return Response.json({ ok: true, call });
+    },
+  });
+
+  const first = client.request('/api/agent/runs?taskType=image', { cache: 'no-store' });
+  scope = 'user-2';
+  const second = client.request('/api/agent/runs?taskType=image', { cache: 'no-store' });
+
+  const [firstResponse, secondResponse] = await Promise.all([first, second]);
+
+  assert.equal(fetchCount, 2);
+  assert.deepEqual(await firstResponse.json(), { ok: true, call: 1 });
+  assert.deepEqual(await secondResponse.json(), { ok: true, call: 2 });
 });
 
 test('user client emits idempotency metadata for mutations', async () => {

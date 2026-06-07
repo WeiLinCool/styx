@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import UserAvatar from '@/components/user-avatar';
 import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
+import { StorageUpgradeDialog } from '@/features/public/storage-upgrade-dialog';
 import {
   AgentRuntimeApiError,
   createAgentRun,
@@ -20,6 +21,10 @@ import {
   listImageModels,
   parseDirectMediaArtifactPayload,
   parseStreamEventPayload,
+  formatMediaSaveActionLabel,
+  formatMediaSaveStatus,
+  isStorageQuotaExceededSaveError,
+  readMediaSaveErrorMessage,
   saveGeneratedMedia,
   type ImageModelMode,
   type ImageModelOption,
@@ -57,6 +62,7 @@ type GeneratedImageResult = {
   artifact: DirectMediaResultDto;
   prompt: string;
   createdAt: string;
+  model: string | null;
 };
 
 type SourceImageState = {
@@ -75,14 +81,6 @@ function formatHistoryTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
-}
-
-function formatSaveStatus(metadata: Record<string, unknown>) {
-  if (metadata.saveStatus === 'saved') return '已存储';
-  if (metadata.saveStatus === 'saving') return '存储中';
-  if (metadata.saveStatus === 'save_failed') return '存储失败';
-  if (metadata.saveStatus === 'source_expired') return '已过期';
-  return '未存储';
 }
 
 function readStorageStatus(value: unknown): DirectMediaResultDto['metadata']['storageStatus'] {
@@ -159,7 +157,9 @@ export default function ImageGenPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [streamRunId, setStreamRunId] = useState<string | null>(null);
   const [submittedPrompt, setSubmittedPrompt] = useState('');
+  const [showStorageUpgradeDialog, setShowStorageUpgradeDialog] = useState(false);
   const imageReceivedRunIdRef = useRef<string | null>(null);
+  const imageRunCompletedRunIdRef = useRef<string | null>(null);
   const [hdScale, setHdScale] = useState('2x');
   const [hdPrompt, setHdPrompt] = useState('高清修复，增强细节，提升画质，保留原始构图');
   const [selectedStyle, setSelectedStyle] = useState('stone-print');
@@ -396,20 +396,14 @@ export default function ImageGenPage() {
         artifact,
         prompt: submittedPrompt,
         createdAt: new Date().toISOString(),
+        model: null,
       });
       setGenerationError(null);
       setGenerationMessage('图片已生成，请及时下载。');
     });
     eventSource.addEventListener('run_completed', () => {
-      void getAgentRunDetail(streamRunId)
-        .then((detail) => {
-          setHistoryRuns((current) => [
-            detail.run,
-            ...current.filter((run) => run.id !== detail.run.id),
-          ]);
-          setSelectedHistoryRunId(detail.run.id);
-        })
-        .catch(() => null);
+      imageRunCompletedRunIdRef.current = streamRunId;
+      void loadImageRunPreview(streamRunId).catch(() => null);
       eventSource.close();
       setIsGenerating(false);
       setStreamRunId((current) => (current === streamRunId ? null : current));
@@ -431,8 +425,30 @@ export default function ImageGenPage() {
       eventSource.close();
       setIsGenerating(false);
       setStreamRunId((current) => (current === streamRunId ? null : current));
-      if (imageReceivedRunIdRef.current !== streamRunId) {
-        setGenerationError('图片生成连接中断，请重试。');
+      if (
+        imageReceivedRunIdRef.current !== streamRunId &&
+        imageRunCompletedRunIdRef.current !== streamRunId
+      ) {
+        void getAgentRunDetail(streamRunId)
+          .then((detail) => {
+            if (detail.run.status === 'succeeded') {
+              imageRunCompletedRunIdRef.current = streamRunId;
+              void loadImageRunPreview(streamRunId).catch(() => null);
+              return;
+            }
+
+            if (detail.run.status === 'failed') {
+              setGenerationError(detail.run.errorMessage ?? '图片生成请求失败');
+              return;
+            }
+
+            setGenerationMessage('连接已中断，任务仍可能在后台运行，请稍后从历史记录查看。');
+            setGenerationError(null);
+          })
+          .catch(() => {
+            setGenerationMessage('连接已中断，任务仍可能在后台运行，请稍后从历史记录查看。');
+            setGenerationError(null);
+          });
       }
     };
 
@@ -486,6 +502,7 @@ export default function ImageGenPage() {
         artifactId: artifact.id,
         prompt: detail.run.prompt,
         createdAt: detail.run.createdAt,
+        model: detail.run.capabilitySummary.model,
         artifact: {
           kind: 'image',
           title: artifact.title,
@@ -538,6 +555,7 @@ export default function ImageGenPage() {
     setGeneratedImage(null);
     setSubmittedPrompt(runPrompt);
     imageReceivedRunIdRef.current = null;
+    imageRunCompletedRunIdRef.current = null;
 
     try {
       const { run } = await createAgentRun({
@@ -615,6 +633,7 @@ export default function ImageGenPage() {
 
     try {
       setGenerationError(null);
+      setShowStorageUpgradeDialog(false);
       setGenerationMessage('正在保存到我的媒体...');
       const result = await saveGeneratedMedia({
         runId: generatedImage.runId,
@@ -639,12 +658,19 @@ export default function ImageGenPage() {
       );
       setGenerationMessage('已保存到我的媒体，可在用户中心重复引用。');
     } catch (error) {
-      setGenerationError(readRuntimeErrorMessage(error, '保存媒体失败'));
+      if (isStorageQuotaExceededSaveError(error)) {
+        setShowStorageUpgradeDialog(true);
+      }
+      setGenerationError(readMediaSaveErrorMessage(error, '保存媒体失败'));
     }
   };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <StorageUpgradeDialog
+        open={showStorageUpgradeDialog}
+        onOpenChange={setShowStorageUpgradeDialog}
+      />
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4">
@@ -736,7 +762,7 @@ export default function ImageGenPage() {
                       </div>
                       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                         <span>{formatHistoryTime(run.createdAt)}</span>
-                        <span>{artifact ? formatSaveStatus(artifact.metadata) : '等待结果'}</span>
+                        <span>{artifact ? formatMediaSaveStatus(artifact.metadata) : '等待结果'}</span>
                       </div>
                     </button>
                   );
@@ -957,7 +983,7 @@ export default function ImageGenPage() {
                     onClick={handleSaveImage}
                     className="cursor-pointer rounded-xl border border-border px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring"
                   >
-                    {generatedImage.artifact.metadata.saveStatus === 'saved' ? '已保存到我的媒体' : '保存到我的媒体'}
+                    {formatMediaSaveActionLabel(generatedImage.artifact.metadata)}
                   </button>
                   <button onClick={handleCopyPrompt} className="cursor-pointer rounded-xl border border-border px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring">
                     复制提示词
@@ -966,10 +992,28 @@ export default function ImageGenPage() {
                 <div className="w-full rounded-xl border border-warning/30 bg-warning-surface px-3 py-2 text-left text-xs leading-5 text-warning">
                   {generatedImage.artifact.metadata.saveStatus === 'saved'
                     ? '生成结果已保存到我的媒体，可在用户中心或后续多模态对话中重复引用。'
-                    : '生成结果已临时缓存，暂未进入我的媒体。需要长期使用时请点击“保存到我的媒体”。'}
+                    : generatedImage.artifact.metadata.saveStatus === 'saving'
+                      ? '生成结果正在保存到我的媒体，请稍候。'
+                      : generatedImage.artifact.metadata.saveStatus === 'save_failed' &&
+                          typeof generatedImage.artifact.metadata.saveError === 'string' &&
+                          generatedImage.artifact.metadata.saveError.startsWith(
+                            'cache_missing_fallback_failed:',
+                          )
+                        ? '缓存对象已失效，已自动改用源文件重试，但保存仍失败。你可以重新点击“重试保存”。'
+                        : generatedImage.artifact.metadata.saveStatus === 'save_failed'
+                          ? '生成结果保存失败。'
+                      : generatedImage.artifact.metadata.saveStatus === 'source_expired'
+                        ? '生成结果已过期，无法保存。'
+                        : '结果已临时缓存。'}
                 </div>
+                {generationError ? (
+                  <div className="w-full rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-xs leading-5 text-destructive">
+                    {generationError}
+                  </div>
+                ) : null}
                 {generationMessage ? <p className="text-xs text-muted-foreground">{generationMessage}</p> : null}
-                {selectedModel ? <p className="text-xs text-muted-foreground">模型：{selectedModel.name}</p> : null}
+                <p className="text-xs text-muted-foreground">存储状态：{formatMediaSaveStatus(generatedImage.artifact.metadata)}</p>
+                {generatedImage.model ? <p className="text-xs text-muted-foreground">模型：{generatedImage.model}</p> : null}
               </div>
             ) : isGenerating ? (
               <div className="flex flex-col items-center">
