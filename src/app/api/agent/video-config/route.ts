@@ -16,6 +16,11 @@ import {
   type VideoPlanConfig,
   type VideoStylePreset,
 } from '@/server/repositories/video-generation-config';
+import {
+  readWorkflowVideoMvpCapabilityConfig,
+  resolveDefaultAgentCapabilityBundle,
+} from '@/server/repositories/agent-capabilities';
+import type { AgentCapabilitySnapshot } from '@/server/agent/types';
 import { resolveVideoGenerationPolicy } from '@/server/video/video-generation-policy';
 
 type SessionLike = {
@@ -72,7 +77,23 @@ function compareMembershipEntitlements(
 function toVideoConfigDto(
   policy: ReturnType<typeof resolveVideoGenerationPolicy>,
   models: PublicVideoModelDto[],
+  workflowCapabilitySnapshot: AgentCapabilitySnapshot | null,
 ) {
+  const workflowVideoConfig = workflowCapabilitySnapshot
+    ? readWorkflowVideoMvpCapabilityConfig(workflowCapabilitySnapshot)
+    : null;
+  const workflowSceneBackgrounds =
+    policy.enabled && workflowVideoConfig
+      ? workflowVideoConfig.sceneBackgrounds
+          .filter((background) => background.enabled)
+          .map((background) => ({
+            id: background.id,
+            name: background.name,
+            styleName: background.styleName,
+            publicUrl: background.publicUrl,
+          }))
+      : [];
+
   return {
     enabled: policy.enabled,
     upgradeRequired: policy.upgradeRequired,
@@ -95,6 +116,7 @@ function toVideoConfigDto(
           resolution: null,
         },
     models: policy.enabled ? models : [],
+    workflowSceneBackgrounds,
   };
 }
 
@@ -107,6 +129,7 @@ export function createAgentVideoConfigRouteHandlers(dependencies: {
   getVideoPlanConfigByVersionId: (versionId: string) => Promise<VideoPlanConfig | null>;
   listStyles: () => Promise<VideoStylePreset[]>;
   listVideoModels: (userId: string) => Promise<PublicVideoModelDto[]>;
+  resolveWorkflowCapabilityBundle: () => Promise<AgentCapabilitySnapshot | null>;
 }) {
   async function resolvePlanConfig(
     entitlement: MembershipEntitlement | null,
@@ -149,9 +172,14 @@ export function createAgentVideoConfigRouteHandlers(dependencies: {
           planConfig,
           styles,
         });
-        const models = policy.enabled ? await dependencies.listVideoModels(session.user.id) : [];
+        const [models, workflowCapabilitySnapshot] = policy.enabled
+          ? await Promise.all([
+              dependencies.listVideoModels(session.user.id),
+              dependencies.resolveWorkflowCapabilityBundle(),
+            ])
+          : [[], null];
 
-        return NextResponse.json(toVideoConfigDto(policy, models));
+        return NextResponse.json(toVideoConfigDto(policy, models, workflowCapabilitySnapshot));
       } catch (error) {
         const response = accountErrorToResponse(error);
         return NextResponse.json(response.body, { status: response.status });
@@ -170,6 +198,7 @@ const handlers = createAgentVideoConfigRouteHandlers({
   getVideoPlanConfigByVersionId,
   listStyles: listEnabledVideoStylePresets,
   listVideoModels: listAvailableVideoModelsForUser,
+  resolveWorkflowCapabilityBundle: () => resolveDefaultAgentCapabilityBundle('workflow'),
 });
 
 export const GET = handlers.GET;

@@ -64,6 +64,7 @@ const emptyVideoConfig: VideoGenerationConfigDto = {
     resolution: null,
   },
   models: [],
+  workflowSceneBackgrounds: [],
 };
 
 function reconcileSelectedValue<T extends string | number>(

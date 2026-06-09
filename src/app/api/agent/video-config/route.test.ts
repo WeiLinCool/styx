@@ -4,6 +4,7 @@ import test from 'node:test';
 import { AccountDomainError } from '@/server/auth/account-types';
 import type { ActiveUserEntitlement } from '@/server/ai/model-entitlements';
 import type { VideoModelOption } from '@/features/public/agent-runtime-client';
+import type { AgentCapabilitySnapshot } from '@/server/agent/types';
 import type { VideoPlanConfig, VideoStylePreset } from '@/server/video/video-generation-policy';
 import { createAgentVideoConfigRouteHandlers } from './route';
 
@@ -55,6 +56,43 @@ const videoModels: VideoModelOption[] = [
   },
 ];
 
+const workflowCapabilitySnapshot: AgentCapabilitySnapshot = {
+  bundleId: 'bundle-workflow',
+  bundleCode: 'workflow-default',
+  provider: 'doubao',
+  model: 'doubao-seedance-2-0',
+  capabilities: [
+    {
+      id: 'cap-workflow-video',
+      kind: 'skill',
+      code: 'workflow-video-mvp',
+      name: 'Workflow Video',
+      config: {
+        description: 'Workflow video generation',
+        promptTemplate: 'Generate video from {{source_image_url}}',
+        sceneBackgrounds: [
+          {
+            id: 'minimal-white-workbench-1',
+            name: '启用背景',
+            styleName: '官网背景',
+            publicUrl: '/workflow-backgrounds/enabled.png',
+            enabled: true,
+            sortOrder: 20,
+          },
+          {
+            id: 'minimal-white-workbench-2',
+            name: '禁用背景',
+            styleName: '官网背景',
+            publicUrl: '/workflow-backgrounds/disabled.png',
+            enabled: false,
+            sortOrder: 10,
+          },
+        ],
+      },
+    },
+  ],
+};
+
 function createHandlers(overrides: Partial<Parameters<typeof createAgentVideoConfigRouteHandlers>[0]> = {}) {
   return createAgentVideoConfigRouteHandlers({
     requireSession: async () => ({ user: { id: 'user-1' } }),
@@ -63,6 +101,7 @@ function createHandlers(overrides: Partial<Parameters<typeof createAgentVideoCon
     getVideoPlanConfigByVersionId: async () => null,
     listStyles: async () => styles,
     listVideoModels: async () => videoModels,
+    resolveWorkflowCapabilityBundle: async () => null,
     ...overrides,
   });
 }
@@ -80,6 +119,7 @@ test('GET /api/agent/video-config returns disabled upgrade response for free use
   assert.deepEqual(payload.durations, []);
   assert.deepEqual(payload.resolutions, []);
   assert.deepEqual(payload.models, []);
+  assert.deepEqual(payload.workflowSceneBackgrounds, []);
   assert.deepEqual(payload.defaults, {
     styleCode: null,
     durationSeconds: null,
@@ -92,6 +132,7 @@ test('GET /api/agent/video-config returns resolved member config and video model
     listEntitlements: async () => [memberEntitlement],
     getVideoPlanConfigByVersionId: async (versionId) =>
       versionId === 'version-1' ? planConfig : null,
+    resolveWorkflowCapabilityBundle: async () => workflowCapabilitySnapshot,
   });
 
   const response = await handlers.GET();
@@ -115,6 +156,18 @@ test('GET /api/agent/video-config returns resolved member config and video model
     resolution: '720p',
   });
   assert.deepEqual(payload.models, videoModels);
+  assert.deepEqual(payload.workflowSceneBackgrounds[0], {
+    id: 'minimal-white-workbench-1',
+    name: '启用背景',
+    styleName: '极简白色工作台风',
+    publicUrl: '/workflow-backgrounds/1极简白色工作台风/1 (1).png',
+  });
+  assert.equal(
+    payload.workflowSceneBackgrounds.some(
+      (background: { id: string }) => background.id === 'minimal-white-workbench-2',
+    ),
+    false,
+  );
 });
 
 test('GET /api/agent/video-config deterministically selects versioned membership entitlements only', async () => {
@@ -184,6 +237,7 @@ test('GET /api/agent/video-config disables member access when video plan config 
   assert.deepEqual(payload.durations, []);
   assert.deepEqual(payload.resolutions, []);
   assert.deepEqual(payload.models, []);
+  assert.deepEqual(payload.workflowSceneBackgrounds, []);
 });
 
 test('GET /api/agent/video-config maps unexpected plan version resolver errors as server errors', async () => {

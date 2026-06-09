@@ -42,6 +42,13 @@ export type VideoResolutionOption = {
   label: string;
 };
 
+export type WorkflowSceneBackgroundOption = {
+  id: string;
+  name: string;
+  styleName: string;
+  publicUrl: string;
+};
+
 export type VideoGenerationConfigDto = {
   enabled: boolean;
   upgradeRequired: boolean;
@@ -55,6 +62,7 @@ export type VideoGenerationConfigDto = {
     resolution: string | null;
   };
   models: VideoModelOption[];
+  workflowSceneBackgrounds: WorkflowSceneBackgroundOption[];
 };
 
 export type AgentRuntimeApiErrorCode =
@@ -339,6 +347,33 @@ function parseVideoConfigDefaults(value: unknown): VideoGenerationConfigDto['def
   };
 }
 
+function parseWorkflowSceneBackground(value: unknown): WorkflowSceneBackgroundOption | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const background = value as Record<string, unknown>;
+  if (
+    typeof background.id !== 'string' ||
+    typeof background.name !== 'string' ||
+    typeof background.styleName !== 'string' ||
+    typeof background.publicUrl !== 'string' ||
+    background.id.trim().length === 0 ||
+    background.name.trim().length === 0 ||
+    background.styleName.trim().length === 0 ||
+    !background.publicUrl.startsWith('/workflow-backgrounds/')
+  ) {
+    return null;
+  }
+
+  return {
+    id: background.id,
+    name: background.name,
+    styleName: background.styleName,
+    publicUrl: background.publicUrl,
+  };
+}
+
 export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfigDto {
   const payload = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   const enabled = payload.enabled === true;
@@ -359,6 +394,7 @@ export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfi
         resolution: null,
       },
       models: [],
+      workflowSceneBackgrounds: [],
     };
   }
 
@@ -366,6 +402,9 @@ export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfi
   const rawDurations = Array.isArray(payload.durations) ? payload.durations : [];
   const rawResolutions = Array.isArray(payload.resolutions) ? payload.resolutions : [];
   const rawModels = Array.isArray(payload.models) ? payload.models : [];
+  const rawWorkflowSceneBackgrounds = Array.isArray(payload.workflowSceneBackgrounds)
+    ? payload.workflowSceneBackgrounds
+    : [];
 
   return {
     enabled,
@@ -383,6 +422,9 @@ export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfi
       .filter((resolution): resolution is VideoResolutionOption => resolution !== null),
     defaults: parseVideoConfigDefaults(payload.defaults),
     models: rawModels.map(parseVideoModel).filter((model): model is VideoModelOption => model !== null),
+    workflowSceneBackgrounds: rawWorkflowSceneBackgrounds
+      .map(parseWorkflowSceneBackground)
+      .filter((background): background is WorkflowSceneBackgroundOption => background !== null),
   };
 }
 

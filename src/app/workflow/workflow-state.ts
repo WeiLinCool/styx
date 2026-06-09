@@ -96,20 +96,6 @@ export function resetWorkflowForSceneChange(snapshot: WorkflowStateSnapshot) {
   };
 }
 
-export function applyGeneratedReferenceScene(
-  snapshot: WorkflowStateSnapshot,
-  customSceneUrl: string,
-) {
-  return {
-    step: snapshot.step >= 3 ? 2 : snapshot.step,
-    selectedScene: null,
-    customSceneUrl,
-    aiSceneGenerated: false,
-    aiSceneGenerating: false,
-    dreaming: false,
-  };
-}
-
 export function applyGeneratedWorkflowImage(
   snapshot: WorkflowStateSnapshot,
   imageUrl: string,
@@ -136,8 +122,7 @@ export function resolveWorkflowVideoMaterialReadiness(input: {
   hasSourceImageFile: boolean;
   hasStoryboardAsset: boolean;
   hasStoryboardRunArtifact: boolean;
-  hasSceneBackgroundAsset: boolean;
-  hasCustomSceneFile: boolean;
+  hasSelectedConfiguredBackground: boolean;
 }) {
   if (!input.hasSourceImageAsset && !input.hasSourceImageFile) {
     return {
@@ -153,10 +138,10 @@ export function resolveWorkflowVideoMaterialReadiness(input: {
     };
   }
 
-  if (!input.hasSceneBackgroundAsset && !input.hasCustomSceneFile) {
+  if (!input.hasSelectedConfiguredBackground) {
     return {
       ready: false,
-      message: '请上传自定义场景底图后再生成视频。',
+      message: '请先选择官网背景图后再生成视频。',
     };
   }
 

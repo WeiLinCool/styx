@@ -100,6 +100,7 @@ function makeVideoConfig(overrides: Partial<VideoGenerationConfigDto> = {}): Vid
         pricingSummary: '3 credits minimum',
       },
     ],
+    workflowSceneBackgrounds: [],
     ...overrides,
   };
 }

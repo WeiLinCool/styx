@@ -19,6 +19,7 @@ import {
   type VideoGenerationConfigDto,
   type ImageModelMode,
   type ImageModelOption,
+  type WorkflowSceneBackgroundOption,
   type VideoModelOption,
 } from '@/features/public/agent-runtime-client';
 import {
@@ -27,7 +28,6 @@ import {
   nextReloadKey,
 } from '@/features/public/model-availability';
 import {
-  applyGeneratedReferenceScene,
   applyGeneratedWorkflowImage,
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
@@ -35,11 +35,9 @@ import {
   resolveWorkflowVideoModelAvailability,
   type WorkflowStateSnapshot,
 } from './workflow-state';
-import { createReferenceImageDialogState } from './workflow-quick-actions';
 import {
   ImageGenerationDialog,
   PromptOptimizationDialog,
-  ReferenceImageDialog,
   waitForTerminalRun,
 } from './workflow-quick-action-dialogs';
 import {
@@ -49,7 +47,6 @@ import {
   ChevronRight,
   Check,
   Film,
-  RotateCcw,
   User,
   Menu,
   X,
@@ -61,20 +58,11 @@ import {
   Mountain,
   Loader2,
   XCircle,
+  RotateCcw,
 } from 'lucide-react';
 
 // 默认提示词
 const DEFAULT_PROMPT = '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板';
-
-// 预设场景
-const PRESET_SCENES = [
-  { id: 'workshop', name: '石印工坊', desc: '暗色工坊内，石板台上微光', icon: '🔨' },
-  { id: 'mountain', name: '山间溪流', desc: '溪水冲刷石面，自然光影', icon: '🏔️' },
-  { id: 'temple', name: '古寺石壁', desc: '千年古寺石壁上的印记', icon: '⛩️' },
-  { id: 'garden', name: '枯山水庭', desc: '日式庭园中的砂石纹理', icon: '🪨' },
-  { id: 'cave', name: '溶洞奇观', desc: '钟乳石洞中的光影变幻', icon: '🕳️' },
-  { id: 'night', name: '月光石径', desc: '月光下石板路的静谧', icon: '🌙' },
-];
 
 type WorkflowModelCard = {
   id: string;
@@ -104,6 +92,7 @@ const emptyVideoConfig: VideoGenerationConfigDto = {
     resolution: null,
   },
   models: [],
+  workflowSceneBackgrounds: [],
 };
 
 function buildWorkflowStateSnapshot(input: WorkflowStateSnapshot): WorkflowStateSnapshot {
@@ -477,177 +466,82 @@ function StoryboardSingleImage({ generating, generated, imageUrl, modelName, onC
 }
 
 // 场景选择
-function SceneSelector({ selectedScene, customSceneUrl, aiSceneGenerating, aiSceneGenerated, onSelectPreset, onCustomUpload, onAIGenerate, onAiSceneCancel, onAiSceneRegenerate, onStartDream }: {
-  selectedScene: string | null;
-  customSceneUrl: string | null;
-  aiSceneGenerating: boolean;
-  aiSceneGenerated: boolean;
-  onSelectPreset: (id: string) => void;
-  onCustomUpload: (url: string, file: File) => void;
-  onAIGenerate: () => void;
-  onAiSceneCancel: () => void;
-  onAiSceneRegenerate: () => void;
+function SceneSelector({
+  backgrounds,
+  selectedBackgroundId,
+  loading,
+  unavailableMessage,
+  onSelectBackground,
+  onStartDream,
+}: {
+  backgrounds: WorkflowSceneBackgroundOption[];
+  selectedBackgroundId: string | null;
+  loading: boolean;
+  unavailableMessage: string | null;
+  onSelectBackground: (id: string) => void;
   onStartDream: () => void;
 }) {
-  const [sceneMode, setSceneMode] = useState<'preset' | 'custom' | 'ai'>('preset');
-  const [aiProgress, setAiProgress] = useState(0);
-
-  useEffect(() => {
-    if (aiSceneGenerating) {
-      setAiProgress(0);
-      const interval = setInterval(() => {
-        setAiProgress((prev) => { if (prev >= 100) { clearInterval(interval); return 100; } return prev + 2; });
-      }, 80);
-      return () => clearInterval(interval);
-    }
-  }, [aiSceneGenerating]);
-
-  const handleCustomFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { const result = ev.target?.result; if (typeof result === 'string') onCustomUpload(result, file); };
-    reader.readAsDataURL(file);
-  }, [onCustomUpload]);
-
-  const isSceneReady = selectedScene !== null || customSceneUrl !== null || aiSceneGenerated;
+  const selectedBackground = backgrounds.find((background) => background.id === selectedBackgroundId) ?? null;
 
   return (
     <div className="space-y-4">
-      {/* 场景模式切换 */}
-      <div className="flex gap-2">
-        {[
-          { key: 'preset' as const, label: '预设场景', icon: Mountain },
-          { key: 'custom' as const, label: '自定义场景', icon: Upload },
-          { key: 'ai' as const, label: 'AI生成场景', icon: Sparkles },
-        ].map((mode) => (
-          <button
-            key={mode.key}
-            onClick={() => setSceneMode(mode.key)}
-            className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-all ${
-              sceneMode === mode.key
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border bg-card text-muted-foreground hover:border-ring'
-            }`}
-          >
-            <mode.icon size={12} />
-            {mode.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 预设场景 */}
-      {sceneMode === 'preset' && (
-        <div className="grid grid-cols-3 gap-2">
-          {PRESET_SCENES.map((scene) => (
-            <button
-              key={scene.id}
-              onClick={() => onSelectPreset(scene.id)}
-              className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-all ${
-                selectedScene === scene.id
-                  ? 'border-border bg-secondary shadow-sm'
-                  : 'border-border bg-card hover:border-ring'
-              }`}
-            >
-              <span className="text-xl">{scene.icon}</span>
-              <span className="text-xs font-medium text-foreground">{scene.name}</span>
-              <span className="text-[10px] text-muted-foreground">{scene.desc}</span>
-            </button>
-          ))}
+      {loading ? (
+        <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-border bg-card text-sm text-muted-foreground">
+          <Loader2 size={22} className="mb-3 animate-spin" />
+          官网背景加载中...
         </div>
-      )}
-
-      {/* 自定义上传 */}
-      {sceneMode === 'custom' && (
-        <div className="space-y-3">
-          {customSceneUrl ? (
-            <div className="relative overflow-hidden rounded-xl border border-border bg-card p-2">
-              <img src={customSceneUrl} alt="自定义场景" className="mx-auto max-h-56 object-contain" />
-              <div className="absolute top-2 right-2">
-                <span className="flex items-center gap-1 rounded-full border border-border bg-background/90 px-2.5 py-1 text-xs text-muted-foreground">
-                  <Check size={10} />
-                  已选择
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div
-              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-card p-8 transition-all hover:border-ring"
-              onClick={() => document.getElementById('scene-custom-upload')?.click()}
-            >
-              <input id="scene-custom-upload" type="file" accept="image/*" className="hidden" onChange={handleCustomFile} />
-              <Upload size={24} className="mb-2 text-muted-foreground" />
-              <p className="text-sm text-foreground">上传自定义场景图</p>
-              <p className="mt-1 text-xs text-muted-foreground">JPG、PNG 格式</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* AI生成场景 */}
-      {sceneMode === 'ai' && (
-        <div className="space-y-3">
-          {aiSceneGenerating ? (
-            <div className="space-y-3">
-              <div className="flex aspect-[16/10] flex-col items-center justify-center rounded-xl border border-border bg-secondary/80 backdrop-blur-md">
-                <Loader2 size={32} className="mb-3 animate-spin text-foreground" />
-                <p className="text-sm font-medium text-foreground">AI正在生成场景...</p>
-                <p className="mt-1 text-xs text-muted-foreground">{aiProgress}%</p>
-                <div className="mt-2 h-1.5 w-32 overflow-hidden rounded-full bg-secondary">
-                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${aiProgress}%` }} />
+      ) : backgrounds.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {backgrounds.map((background) => {
+            const selected = background.id === selectedBackgroundId;
+            return (
+              <button
+                key={background.id}
+                type="button"
+                onClick={() => onSelectBackground(background.id)}
+                className={`group overflow-hidden rounded-xl border bg-card text-left transition-all hover:border-ring ${
+                  selected ? 'border-primary shadow-sm ring-2 ring-primary/20' : 'border-border'
+                }`}
+              >
+                <div className="relative aspect-[4/3] overflow-hidden bg-secondary">
+                  <img
+                    src={background.publicUrl}
+                    alt={background.name}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                  />
+                  {selected ? (
+                    <span className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground shadow-sm">
+                      <Check size={11} />
+                      已选择
+                    </span>
+                  ) : null}
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={onAiSceneCancel} className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-2 text-xs text-muted-foreground hover:border-ring">
-                  <XCircle size={12} /> 取消
-                </button>
-                <button onClick={onAiSceneRegenerate} className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-2 text-xs text-muted-foreground hover:border-ring">
-                  <RefreshCw size={12} /> 重新生成
-                </button>
-              </div>
-            </div>
-          ) : aiSceneGenerated ? (
-            <div className="space-y-3">
-              <div className="relative overflow-hidden rounded-xl border border-border bg-secondary p-2 shadow-sm">
-                <div className="flex aspect-[16/10] items-center justify-center">
-                  <div className="text-center">
-                    <Mountain size={32} className="mx-auto mb-2 text-muted-foreground/60" />
-                    <p className="text-sm text-muted-foreground">AI生成的场景图</p>
-                  </div>
+                <div className="space-y-1 p-3">
+                  <div className="line-clamp-1 text-sm font-medium text-foreground">{background.name}</div>
+                  <div className="line-clamp-1 text-xs text-muted-foreground">{background.styleName}</div>
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={onAiSceneRegenerate} className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-2 text-xs text-muted-foreground hover:border-ring">
-                  <RefreshCw size={12} /> 重新生成
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={onAIGenerate} className="flex w-full cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-card p-8 transition-all hover:border-ring hover:bg-secondary/60">
-              <Sparkles size={28} className="text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">点击生成AI场景</p>
-              <p className="text-xs text-muted-foreground">根据上传的图案自动生成匹配的场景</p>
-            </button>
-          )}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-border bg-card px-6 text-center">
+          <Mountain size={28} className="mb-3 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">暂无可用官网背景</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {unavailableMessage ?? '请联系管理员在工作流视频能力中启用官网背景图。'}
+          </p>
         </div>
       )}
 
-      {/* 操作按钮 */}
-      {isSceneReady && (
+      {selectedBackground ? (
         <div className="flex gap-3 pt-2">
-          <button onClick={onAiSceneCancel} className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm text-muted-foreground transition-all hover:border-ring hover:text-foreground">
-            取消
-          </button>
-          <button onClick={onAiSceneRegenerate} className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm text-muted-foreground transition-all hover:border-ring hover:text-foreground">
-            <RefreshCw size={14} />
-            重新生成
-          </button>
           <button onClick={onStartDream} className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/85">
             开始造梦
             <Sparkles size={14} />
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -710,12 +604,7 @@ export default function WorkflowPage() {
   const [storyboardRunId, setStoryboardRunId] = useState<string | null>(null);
   const [storyboardArtifactId, setStoryboardArtifactId] = useState<string | null>(null);
   const [storyboardAssetId, setStoryboardAssetId] = useState<string | null>(null);
-  const [selectedScene, setSelectedScene] = useState<string | null>(null);
-  const [customSceneUrl, setCustomSceneUrl] = useState<string | null>(null);
-  const [customSceneFile, setCustomSceneFile] = useState<File | null>(null);
-  const [sceneBackgroundAssetId, setSceneBackgroundAssetId] = useState<string | null>(null);
-  const [aiSceneGenerating, setAiSceneGenerating] = useState(false);
-  const [aiSceneGenerated, setAiSceneGenerated] = useState(false);
+  const [selectedSceneBackgroundId, setSelectedSceneBackgroundId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [dreaming, setDreaming] = useState(false);
   const [dreamRunId, setDreamRunId] = useState<string | null>(null);
@@ -727,9 +616,7 @@ export default function WorkflowPage() {
   const [pendingGeneratedImage, setPendingGeneratedImage] = useState<string | null>(null);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [imageGenerationDialogOpen, setImageGenerationDialogOpen] = useState(false);
-  const [referenceImageDialogOpen, setReferenceImageDialogOpen] = useState(false);
   const storyboardOperationRef = useRef(0);
-  const sceneOperationRef = useRef(0);
   const dreamOperationRef = useRef(0);
   const selectedImageModelRef = useRef<string | null>(null);
   const selectedVideoModelRef = useRef<string | null>(null);
@@ -738,7 +625,6 @@ export default function WorkflowPage() {
   const currentImageModel = decoratedImageModels.find((model) => model.id === selectedImageModel) ?? null;
   const decoratedVideoModels = videoModels.map(decorateVideoModel);
   const currentVideoModel = decoratedVideoModels.find((model) => model.id === selectedVideoModel) ?? null;
-  const referenceImageDialogState = createReferenceImageDialogState(step);
   const imageModelLoading = imageModelAvailability.status === 'loading';
   const imageModelUnavailableMessage =
     imageModelAvailability.status === 'maintenance'
@@ -751,6 +637,10 @@ export default function WorkflowPage() {
     videoModelAvailability.status === 'unauthenticated'
       ? videoModelAvailability.message
       : videoModelUnavailableMessage;
+  const workflowSceneBackgrounds = videoConfig.workflowSceneBackgrounds;
+  const selectedWorkflowSceneBackground = workflowSceneBackgrounds.find(
+    (background) => background.id === selectedSceneBackgroundId,
+  ) ?? null;
 
   useEffect(() => {
     selectedVideoModelRef.current = selectedVideoModel;
@@ -874,18 +764,15 @@ export default function WorkflowPage() {
         step,
         storyboardGenerated,
         storyboardGenerating,
-        selectedScene,
-        customSceneUrl,
-        aiSceneGenerated,
-        aiSceneGenerating,
+        selectedScene: selectedSceneBackgroundId,
+        customSceneUrl: null,
+        aiSceneGenerated: false,
+        aiSceneGenerating: false,
         dreaming,
       }),
     [
-      aiSceneGenerated,
-      aiSceneGenerating,
-      customSceneUrl,
       dreaming,
-      selectedScene,
+      selectedSceneBackgroundId,
       step,
       storyboardGenerated,
       storyboardGenerating,
@@ -902,7 +789,6 @@ export default function WorkflowPage() {
     setStoryboardRunId(null);
     setStoryboardArtifactId(null);
     setStoryboardAssetId(null);
-    setSceneBackgroundAssetId(null);
     setDreamRunId(null);
     setDreamVideoUrl(null);
     setDreamVideoArtifactId(null);
@@ -919,10 +805,7 @@ export default function WorkflowPage() {
     setStoryboardGenerated(resetState.storyboardGenerated);
     setStoryboardGenerating(resetState.storyboardGenerating);
     setStoryboardImageUrl(null);
-    setSelectedScene(resetState.selectedScene);
-    setCustomSceneUrl(resetState.customSceneUrl);
-    setAiSceneGenerated(resetState.aiSceneGenerated);
-    setAiSceneGenerating(resetState.aiSceneGenerating);
+    setSelectedSceneBackgroundId(null);
     setDreaming(resetState.dreaming);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot]);
@@ -939,10 +822,7 @@ export default function WorkflowPage() {
     setStoryboardGenerated(resetState.storyboardGenerated);
     setStoryboardGenerating(resetState.storyboardGenerating);
     setStoryboardImageUrl(null);
-    setSelectedScene(resetState.selectedScene);
-    setCustomSceneUrl(resetState.customSceneUrl);
-    setAiSceneGenerated(resetState.aiSceneGenerated);
-    setAiSceneGenerating(resetState.aiSceneGenerating);
+    setSelectedSceneBackgroundId(null);
     setDreaming(resetState.dreaming);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot, selectedImageModel]);
@@ -1204,140 +1084,16 @@ export default function WorkflowPage() {
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback]);
 
-  const handleSelectPresetScene = useCallback((id: string) => {
+  const handleSelectWorkflowSceneBackground = useCallback((id: string) => {
     const resetState = resetWorkflowForSceneChange(currentSnapshot());
     setStep(resetState.step);
     setDreaming(resetState.dreaming);
-    setSelectedScene(id);
-    setCustomSceneUrl(null);
-    setCustomSceneFile(null);
-    setSceneBackgroundAssetId(null);
+    setSelectedSceneBackgroundId(id);
     setDreamRunId(null);
     setDreamVideoUrl(null);
     setDreamVideoArtifactId(null);
-    setAiSceneGenerated(false);
-    setAiSceneGenerating(false);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, currentSnapshot]);
-
-  const handleCustomSceneUpload = useCallback((url: string, file: File) => {
-    const resetState = resetWorkflowForSceneChange(currentSnapshot());
-    setStep(resetState.step);
-    setDreaming(resetState.dreaming);
-    setCustomSceneUrl(url);
-    setCustomSceneFile(file);
-    setSceneBackgroundAssetId(null);
-    setDreamRunId(null);
-    setDreamVideoUrl(null);
-    setDreamVideoArtifactId(null);
-    setSelectedScene(null);
-    setAiSceneGenerated(false);
-    setAiSceneGenerating(false);
-    clearRuntimeFeedback();
-  }, [clearRuntimeFeedback, currentSnapshot]);
-
-  const handleAIGenerateScene = useCallback(async () => {
-    if (!isLoggedIn) { openLoginModal(); return; }
-    if (activationRequired) return;
-    if (aiSceneGenerating) return;
-    if (!selectedImageModel) {
-      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
-      return;
-    }
-    const operationId = sceneOperationRef.current + 1;
-    sceneOperationRef.current = operationId;
-    setAiSceneGenerating(true);
-    setAiSceneGenerated(false);
-    setSceneBackgroundAssetId(null);
-    setDreamRunId(null);
-    setDreamVideoUrl(null);
-    setDreamVideoArtifactId(null);
-    setRuntimeStatus(null);
-    setRuntimeError(null);
-    try {
-      const message = await runWorkflowAgent(prompt, {
-        stage: 'scene',
-        selectedImageModel,
-        selectedScene,
-        hasCustomScene: Boolean(customSceneUrl),
-      }, 'AI 场景任务已完成，但没有返回可展示的结果说明。');
-      if (sceneOperationRef.current !== operationId) return;
-      setRuntimeStatus(message);
-      setAiSceneGenerating(false);
-      setAiSceneGenerated(true);
-    } catch (error) {
-      if (sceneOperationRef.current !== operationId) return;
-      setAiSceneGenerating(false);
-      setAiSceneGenerated(false);
-      setRuntimeError(error instanceof Error ? error.message : 'AI 场景生成请求失败');
-    }
-  }, [
-    activationRequired,
-    imageModelUnavailableMessage,
-    aiSceneGenerating,
-    customSceneUrl,
-    isLoggedIn,
-    openLoginModal,
-    prompt,
-    runWorkflowAgent,
-    selectedImageModel,
-    selectedScene,
-  ]);
-
-  const handleAiSceneCancel = useCallback(() => {
-    sceneOperationRef.current += 1;
-    setAiSceneGenerating(false);
-    setAiSceneGenerated(false);
-    clearRuntimeFeedback();
-  }, [clearRuntimeFeedback]);
-
-  const handleAiSceneRegenerate = useCallback(async () => {
-    if (!isLoggedIn) { openLoginModal(); return; }
-    if (activationRequired) return;
-    if (aiSceneGenerating) return;
-    if (!selectedImageModel) {
-      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
-      return;
-    }
-    const operationId = sceneOperationRef.current + 1;
-    sceneOperationRef.current = operationId;
-    setAiSceneGenerating(true);
-    setAiSceneGenerated(false);
-    setSceneBackgroundAssetId(null);
-    setDreamRunId(null);
-    setDreamVideoUrl(null);
-    setDreamVideoArtifactId(null);
-    setRuntimeStatus(null);
-    setRuntimeError(null);
-    try {
-      const message = await runWorkflowAgent(prompt, {
-        stage: 'scene-regenerate',
-        selectedImageModel,
-        selectedScene,
-        hasCustomScene: Boolean(customSceneUrl),
-      }, 'AI 场景重新生成已完成，但没有返回可展示的结果说明。');
-      if (sceneOperationRef.current !== operationId) return;
-      setRuntimeStatus(message);
-      setAiSceneGenerating(false);
-      setAiSceneGenerated(true);
-    } catch (error) {
-      if (sceneOperationRef.current !== operationId) return;
-      setAiSceneGenerating(false);
-      setAiSceneGenerated(false);
-      setRuntimeError(error instanceof Error ? error.message : 'AI 场景重新生成请求失败');
-    }
-  }, [
-    activationRequired,
-    imageModelUnavailableMessage,
-    aiSceneGenerating,
-    customSceneUrl,
-    isLoggedIn,
-    openLoginModal,
-    prompt,
-    runWorkflowAgent,
-    selectedImageModel,
-    selectedScene,
-  ]);
 
   const handleStartDream = useCallback(async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
@@ -1356,8 +1112,7 @@ export default function WorkflowPage() {
       hasSourceImageFile: Boolean(uploadedImageFile),
       hasStoryboardAsset: Boolean(storyboardAssetId),
       hasStoryboardRunArtifact: Boolean(storyboardRunId && storyboardArtifactId),
-      hasSceneBackgroundAsset: Boolean(sceneBackgroundAssetId),
-      hasCustomSceneFile: Boolean(customSceneFile),
+      hasSelectedConfiguredBackground: Boolean(selectedWorkflowSceneBackground),
     });
     if (!materialReadiness.ready) {
       setRuntimeError(materialReadiness.message ?? '请补齐工作流视频材料。');
@@ -1373,7 +1128,7 @@ export default function WorkflowPage() {
     setDreamVideoUrl(null);
     setDreamVideoArtifactId(null);
     try {
-      setRuntimeStatus('正在上传原图、保存分镜图和上传场景底图...');
+      setRuntimeStatus('正在上传原图并保存分镜图...');
       const sourceAssetId =
         sourceImageAssetId ??
         (await uploadUserMedia({
@@ -1392,15 +1147,6 @@ export default function WorkflowPage() {
       if (dreamOperationRef.current !== operationId) return;
       setStoryboardAssetId(storyboardSavedAssetId);
 
-      const sceneAssetId =
-        sceneBackgroundAssetId ??
-        (await uploadUserMedia({
-          file: customSceneFile as File,
-          title: '工作流场景底图',
-        })).id;
-      if (dreamOperationRef.current !== operationId) return;
-      setSceneBackgroundAssetId(sceneAssetId);
-
       setRuntimeStatus('视频任务已提交，正在等待模型处理...');
       const { run } = await createAgentRun({
         taskType: 'workflow',
@@ -1410,13 +1156,15 @@ export default function WorkflowPage() {
           modelId: selectedVideoModel,
           sourceImageAssetId: sourceAssetId,
           storyboardArtifactId: storyboardSavedAssetId,
-          sceneBackgroundAssetId: sceneAssetId,
+          sceneBackgroundId: selectedWorkflowSceneBackground?.id,
+          origin: window.location.origin,
           storyboardPromptMap: {
             storyboardRunId,
             storyboardArtifactId,
             workflowPrompt: prompt,
             sourceImageOrigin: uploadedImageOrigin ?? 'manual',
-            sceneMode: customSceneUrl ? 'custom' : selectedScene ? 'preset' : aiSceneGenerated ? 'ai' : 'unknown',
+            sceneBackgroundId: selectedWorkflowSceneBackground?.id,
+            sceneBackgroundName: selectedWorkflowSceneBackground?.name,
           },
           durationSeconds: videoConfig.defaults.durationSeconds ?? 5,
           resolution: videoConfig.defaults.resolution ?? '720p',
@@ -1462,16 +1210,12 @@ export default function WorkflowPage() {
     }
   }, [
     activationRequired,
-    aiSceneGenerated,
-    customSceneFile,
-    customSceneUrl,
     dreaming,
     isLoggedIn,
     openLoginModal,
     prompt,
-    selectedScene,
     selectedVideoModel,
-    sceneBackgroundAssetId,
+    selectedWorkflowSceneBackground,
     sourceImageAssetId,
     storyboardArtifactId,
     storyboardAssetId,
@@ -1507,10 +1251,7 @@ export default function WorkflowPage() {
     setStoryboardGenerated(nextState.resetState.storyboardGenerated);
     setStoryboardGenerating(nextState.resetState.storyboardGenerating);
     setStoryboardImageUrl(null);
-    setSelectedScene(nextState.resetState.selectedScene);
-    setCustomSceneUrl(nextState.resetState.customSceneUrl);
-    setAiSceneGenerated(nextState.resetState.aiSceneGenerated);
-    setAiSceneGenerating(nextState.resetState.aiSceneGenerating);
+    setSelectedSceneBackgroundId(null);
     setDreaming(nextState.resetState.dreaming);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot, uploadedImage, uploadedImageOrigin]);
@@ -1530,10 +1271,7 @@ export default function WorkflowPage() {
     setStoryboardGenerated(resetState.storyboardGenerated);
     setStoryboardGenerating(resetState.storyboardGenerating);
     setStoryboardImageUrl(null);
-    setSelectedScene(resetState.selectedScene);
-    setCustomSceneUrl(resetState.customSceneUrl);
-    setAiSceneGenerated(resetState.aiSceneGenerated);
-    setAiSceneGenerating(resetState.aiSceneGenerating);
+    setSelectedSceneBackgroundId(null);
     setDreaming(resetState.dreaming);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot, pendingGeneratedImage]);
@@ -1541,22 +1279,6 @@ export default function WorkflowPage() {
   const handleRejectPendingGeneratedImage = useCallback(() => {
     setPendingGeneratedImage(null);
   }, []);
-
-  const handleApplyReferenceScene = useCallback((sceneUrl: string) => {
-    const nextState = applyGeneratedReferenceScene(currentSnapshot(), sceneUrl);
-    setStep(nextState.step);
-    setSelectedScene(nextState.selectedScene);
-    setCustomSceneUrl(nextState.customSceneUrl);
-    setCustomSceneFile(null);
-    setSceneBackgroundAssetId(null);
-    setDreamRunId(null);
-    setDreamVideoUrl(null);
-    setDreamVideoArtifactId(null);
-    setAiSceneGenerated(nextState.aiSceneGenerated);
-    setAiSceneGenerating(nextState.aiSceneGenerating);
-    setDreaming(nextState.dreaming);
-    clearRuntimeFeedback();
-  }, [clearRuntimeFeedback, currentSnapshot]);
 
   const steps = [
     { label: '上传图案', icon: Upload },
@@ -1585,16 +1307,6 @@ export default function WorkflowPage() {
         activationRequired={activationRequired}
         openLoginModal={openLoginModal}
         onApply={handleApplyGeneratedImage}
-      />
-      <ReferenceImageDialog
-        open={referenceImageDialogOpen}
-        onOpenChange={setReferenceImageDialogOpen}
-        prompt={prompt}
-        selectedImageModelId={selectedImageModel}
-        isLoggedIn={isLoggedIn}
-        activationRequired={activationRequired}
-        openLoginModal={openLoginModal}
-        onApply={handleApplyReferenceScene}
       />
       <WorkflowNav />
 
@@ -1756,15 +1468,11 @@ export default function WorkflowPage() {
                   </button>
                 </div>
                 <SceneSelector
-                  selectedScene={selectedScene}
-                  customSceneUrl={customSceneUrl}
-                  aiSceneGenerating={aiSceneGenerating}
-                  aiSceneGenerated={aiSceneGenerated}
-                  onSelectPreset={handleSelectPresetScene}
-                  onCustomUpload={handleCustomSceneUpload}
-                  onAIGenerate={handleAIGenerateScene}
-                  onAiSceneCancel={handleAiSceneCancel}
-                  onAiSceneRegenerate={handleAiSceneRegenerate}
+                  backgrounds={workflowSceneBackgrounds}
+                  selectedBackgroundId={selectedSceneBackgroundId}
+                  loading={videoModelLoading}
+                  unavailableMessage={videoModelPlaceholderMessage}
+                  onSelectBackground={handleSelectWorkflowSceneBackground}
                   onStartDream={handleStartDream}
                 />
               </div>
@@ -1922,23 +1630,6 @@ export default function WorkflowPage() {
                   className="flex w-full items-center gap-2 rounded-lg border border-border bg-card p-2.5 text-left text-xs text-muted-foreground transition-all hover:border-ring hover:text-foreground"
                 >
                   <Wand2 size={12} /> AI对话优化提示词
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!referenceImageDialogState.disabled) {
-                      setReferenceImageDialogOpen(true);
-                    }
-                  }}
-                  disabled={referenceImageDialogState.disabled}
-                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card p-2.5 text-left text-xs text-muted-foreground transition-all hover:border-ring hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className="flex items-center gap-2">
-                    <Mountain size={12} /> 生成参考图
-                  </span>
-                  {referenceImageDialogState.message ? (
-                    <span className="text-[10px] text-muted-foreground">{referenceImageDialogState.message}</span>
-                  ) : null}
                 </button>
               </div>
             </div>

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  applyGeneratedReferenceScene,
   applyGeneratedWorkflowImage,
   createWorkflowVideoModelState,
   resetWorkflowForImageSourceChange,
@@ -158,20 +157,6 @@ test('resetWorkflowForSceneChange clears dream state and sends step-three users 
   );
 });
 
-test('applyGeneratedReferenceScene writes custom scene, clears alternate scene state, and reopens scene step', () => {
-  assert.deepEqual(
-    applyGeneratedReferenceScene(makeSnapshot({ aiSceneGenerated: true }), 'data:image/png;base64,abc'),
-    {
-      step: 2,
-      selectedScene: null,
-      customSceneUrl: 'data:image/png;base64,abc',
-      aiSceneGenerated: false,
-      aiSceneGenerating: false,
-      dreaming: false,
-    },
-  );
-});
-
 test('applyGeneratedWorkflowImage returns the image URL and preserves whether a manual upload exists', () => {
   assert.deepEqual(
     applyGeneratedWorkflowImage(makeSnapshot({ step: 0 }), 'data:image/png;base64,xyz', true),
@@ -199,8 +184,7 @@ test('resolveWorkflowVideoMaterialReadiness requires real source, storyboard, an
       hasSourceImageFile: false,
       hasStoryboardAsset: true,
       hasStoryboardRunArtifact: true,
-      hasSceneBackgroundAsset: true,
-      hasCustomSceneFile: true,
+      hasSelectedConfiguredBackground: true,
     }),
     {
       ready: false,
@@ -214,8 +198,7 @@ test('resolveWorkflowVideoMaterialReadiness requires real source, storyboard, an
       hasSourceImageFile: false,
       hasStoryboardAsset: false,
       hasStoryboardRunArtifact: false,
-      hasSceneBackgroundAsset: true,
-      hasCustomSceneFile: false,
+      hasSelectedConfiguredBackground: true,
     }),
     {
       ready: false,
@@ -229,12 +212,11 @@ test('resolveWorkflowVideoMaterialReadiness requires real source, storyboard, an
       hasSourceImageFile: false,
       hasStoryboardAsset: true,
       hasStoryboardRunArtifact: false,
-      hasSceneBackgroundAsset: false,
-      hasCustomSceneFile: false,
+      hasSelectedConfiguredBackground: false,
     }),
     {
       ready: false,
-      message: '请上传自定义场景底图后再生成视频。',
+      message: '请先选择官网背景图后再生成视频。',
     },
   );
 
@@ -244,8 +226,7 @@ test('resolveWorkflowVideoMaterialReadiness requires real source, storyboard, an
       hasSourceImageFile: true,
       hasStoryboardAsset: false,
       hasStoryboardRunArtifact: true,
-      hasSceneBackgroundAsset: false,
-      hasCustomSceneFile: true,
+      hasSelectedConfiguredBackground: true,
     }),
     {
       ready: true,
