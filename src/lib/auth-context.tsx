@@ -555,10 +555,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateUser = useCallback(async (updates: Partial<AuthUserInfo>) => {
-    const previousUser = user; // 保存之前的状态
+    // 使用变量在functional update中捕获真实的前状态
+    let previousUserSnapshot: AuthUserInfo | null = null;
     
-    // 乐观更新
+    // 乐观更新：在functional update中捕获当前状态
     setUser(prev => {
+      previousUserSnapshot = prev; // 捕获实际的前状态
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
       saveUserToCookie(updated);
@@ -576,10 +578,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        // 回滚到之前的状态
-        if (previousUser) {
-          setUser(previousUser);
-          saveUserToCookie(previousUser);
+        // 回滚到之前的状态（使用functional update中捕获的snapshot）
+        if (previousUserSnapshot) {
+          setUser(previousUserSnapshot);
+          saveUserToCookie(previousUserSnapshot);
         }
         console.error('Failed to update profile:', await response.text());
         toast.error('更新失败，已恢复原始状态');
@@ -601,15 +603,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         toast.success('个人资料已更新');
       }
     } catch (error) {
-      // 网络异常等情况，回滚状态
-      if (previousUser) {
-        setUser(previousUser);
-        saveUserToCookie(previousUser);
+      // 网络异常等情况，回滚状态（使用functional update中捕获的snapshot）
+      if (previousUserSnapshot) {
+        setUser(previousUserSnapshot);
+        saveUserToCookie(previousUserSnapshot);
       }
       console.error('Failed to persist profile update:', error);
       toast.error('网络错误，更新已撤销');
     }
-  }, [user]);  
+  }, []);  
 
   const openLoginModal = useCallback(() => setShowLoginModal(true), []);
   const closeLoginModal = useCallback(() => setShowLoginModal(false), []);
