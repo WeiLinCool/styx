@@ -184,6 +184,69 @@ function storyboardCapabilitySnapshot(): AgentCapabilitySnapshot {
   };
 }
 
+function workflowVideoCapabilitySnapshot(): AgentCapabilitySnapshot {
+  return {
+    bundleId: 'workflow-bundle-1',
+    bundleCode: 'workflow-default',
+    provider: 'pi',
+    model: 'pi-default',
+    capabilities: [
+      {
+        id: '66666666-6666-4666-8666-666666666666',
+        kind: 'skill',
+        code: 'workflow-video-mvp',
+        name: '工作流视频生成',
+        config: {
+          description: '工作流视频',
+          inputSchema: {
+            requiredMaterials: ['source_image', 'storyboard_image', 'scene_background'],
+            requiredSnapshots: ['storyboard_prompt_map'],
+          },
+          promptTemplate: [
+            '生成工作流视频：{{workflow_prompt}}',
+            '原图={{source_image_url}}',
+            '分镜={{storyboard_image_url}}',
+            '场景={{scene_background_url}}',
+            '地图={{storyboard_prompt_map}}',
+            '规格={{duration_seconds}}/{{resolution}}',
+          ].join('\n'),
+          modelBinding: {
+            providerCode: 'doubao',
+            model: 'doubao-seedance-2-0',
+            executionProtocol: 'video_task_polling',
+          },
+          defaults: { durationSeconds: 5, resolution: '720p' },
+          updatedAt: '2026-06-09T10:00:00.000Z',
+          updatedByUserId: 'admin-1',
+        },
+      },
+    ],
+  };
+}
+
+async function createImageAsset(
+  repository: ReturnType<typeof createMemoryGeneratedMediaAssetRepository>,
+  input: { userId?: string; objectKey: string; title?: string },
+) {
+  return repository.createSavedAsset({
+    userId: input.userId ?? 'user-1',
+    runId: null,
+    conversationId: null,
+    artifactId: null,
+    kind: 'image',
+    title: input.title ?? 'image',
+    sourceType: 'user_uploaded',
+    sourceProvider: null,
+    sourceModel: null,
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket',
+    region: 'ap-shanghai',
+    objectKey: input.objectKey,
+    mimeType: 'image/png',
+    byteSize: 10,
+  });
+}
+
 function testGeneratedMediaCache() {
   return {
     async cacheGeneratedMedia(input: {
@@ -940,6 +1003,98 @@ test('video run maps default material signer configuration failure before creati
       }
     }
   }
+});
+
+test('workflow video fails before provider task when scene background is missing', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () => workflowVideoCapabilitySnapshot(),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'workflow',
+        prompt: '生成工作流视频',
+        input: {
+          stage: 'workflow_video',
+          sourceImageAssetId: '11111111-1111-4111-8111-111111111111',
+          storyboardArtifactId: '22222222-2222-4222-8222-222222222222',
+          storyboardPromptMap: { shot1: '开场' },
+        },
+      }),
+    /sceneBackgroundAssetId/,
+  );
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('workflow video creates doubao seedance video task with ordered materials', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
+  const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  const scene = await createImageAsset(assetRepository, { objectKey: 'workflow/scene.png' });
+  const providerRequests: VideoProviderCreateRequest[] = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () => workflowVideoCapabilitySnapshot(),
+    resolveVideoModelForUser: async () =>
+      resolvedVideoModel({ id: 'model-video', model: 'doubao-seedance-2-0' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask(request) {
+        providerRequests.push(request);
+        return { providerTaskId: 'task-workflow-video', rawMetadata: { id: 'task-workflow-video' } };
+      },
+      async getVideoTask() {
+        return {
+          providerTaskId: 'task-workflow-video',
+          status: 'succeeded',
+          outputUrl: 'https://provider.example/video.mp4',
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-video', balanceAfter: 90 }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'workflow',
+    prompt: '生成工作流视频',
+    input: {
+      stage: 'workflow_video',
+      modelId: 'model-video',
+      sourceImageAssetId: source.id,
+      storyboardArtifactId: storyboard.id,
+      sceneBackgroundAssetId: scene.id,
+      storyboardPromptMap: { shot1: '开场' },
+      durationSeconds: 5,
+      resolution: '720p',
+    },
+  });
+
+  const detail = await repository.getRunDetailForUser(result.run.id, 'user-1');
+  const providerRequest = providerRequests[0];
+
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(providerRequest?.imageUrls, [
+    'https://signed.example/workflow/source.png',
+    'https://signed.example/workflow/storyboard.png',
+    'https://signed.example/workflow/scene.png',
+  ]);
+  assert.match(providerRequest?.prompt ?? '', /生成工作流视频/);
+  assert.match(providerRequest?.prompt ?? '', /"shot1":"开场"/);
+  assert.equal(detail?.internal?.input?.stage, 'workflow_video');
+  assert.equal(detail?.internal?.input?.providerTaskId, 'task-workflow-video');
 });
 
 test('createAndRunAgentRun returns transient image artifact from provider URL output', async () => {

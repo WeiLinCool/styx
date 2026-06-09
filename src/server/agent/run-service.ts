@@ -37,6 +37,7 @@ import {
 } from '@/server/repositories/generated-media-assets';
 import {
   readStoryboardCapabilityConfig,
+  readWorkflowVideoMvpCapabilityConfig,
   resolveDefaultAgentCapabilityBundle,
 } from '@/server/repositories/agent-capabilities';
 import type { AgentArtifactInput, AgentRunRepository } from '@/server/repositories/agent-runs';
@@ -74,6 +75,11 @@ import {
   resolveWorkflowStoryboardExecutionSize,
   sanitizeWorkflowStoryboardRunInput,
 } from './workflow-storyboard';
+import {
+  parseWorkflowVideoMvpInput,
+  renderWorkflowVideoMvpPrompt,
+  WorkflowVideoMvpValidationError,
+} from './workflow-video-mvp';
 import type {
   AgentCapabilitySnapshot,
   AgentRunDto,
@@ -625,6 +631,10 @@ function isWorkflowStoryboardStage(value: unknown) {
   return value === 'storyboard' || value === 'storyboard-regenerate';
 }
 
+function isWorkflowVideoMvpStage(value: unknown) {
+  return value === 'workflow_video';
+}
+
 const MAX_SOURCE_IMAGE_DATA_URL_BYTES = 10 * 1024 * 1024;
 const SOURCE_IMAGE_DATA_URL_PATTERN = /^data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 
@@ -894,6 +904,36 @@ async function resolveVideoMaterialUrls(input: {
   return output;
 }
 
+async function resolveWorkflowVideoImageMaterialUrl(input: {
+  userId: string;
+  assetId: string;
+  label: string;
+  repository?: GeneratedMediaAssetRepository;
+  signVideoMaterialUrl: VideoMaterialSigner;
+}) {
+  const repository = input.repository ?? createDatabaseGeneratedMediaAssetRepository();
+  const asset = await repository.findAssetForUser({
+    userId: input.userId,
+    assetId: input.assetId,
+  });
+
+  if (!asset) {
+    throw new AgentRunVideoMaterialError({
+      code: 'forbidden',
+      message: `${input.label} was not found.`,
+    });
+  }
+
+  if (asset.kind !== 'image') {
+    throw new AgentRunVideoMaterialError({
+      code: 'invalid_request',
+      message: `${input.label} must be an image asset.`,
+    });
+  }
+
+  return input.signVideoMaterialUrl(asset);
+}
+
 function selectMembershipEntitlement(entitlements: ActiveUserEntitlement[]) {
   const membershipEntitlements = entitlements.filter(
     (entitlement) =>
@@ -1154,6 +1194,20 @@ export function createAgentRunService({
             resolveGeneratedMediaCache,
             resolveWorkflowCapabilityBundle,
             readStoryboardTemplateDataUrl,
+          });
+        }
+
+        if (isWorkflowVideoMvpStage(input.input.stage)) {
+          return createAndRunWorkflowVideoMvpAgentRun({
+            input,
+            repository,
+            resolveWorkflowCapabilityBundle,
+            resolveVideoModelForUser,
+            assertCanAffordMinimum,
+            createVideoProviderAdapter,
+            resolveVideoGenerationPolicyForUser,
+            mediaAssetRepository,
+            signVideoMaterialUrl,
           });
         }
 
@@ -1502,6 +1556,241 @@ async function createAndRunWorkflowStoryboardImageAgentRun(input: {
   });
 
   return runResult(running);
+}
+
+async function createAndRunWorkflowVideoMvpAgentRun(input: {
+  input: CreateAndRunAgentRunInput;
+  repository: AgentRunRepository;
+  resolveWorkflowCapabilityBundle: WorkflowCapabilityBundleResolver;
+  resolveVideoModelForUser: (userId: string, modelId: string) => Promise<ResolvedVideoModel>;
+  assertCanAffordMinimum: (
+    userId: string,
+    pricing: ResolvedVideoModel['pricing'],
+  ) => Promise<void>;
+  createVideoProviderAdapter: (model: ResolvedVideoModel) => MediaProviderAdapter;
+  resolveVideoGenerationPolicyForUser: (userId: string) => Promise<VideoGenerationPolicy>;
+  mediaAssetRepository?: GeneratedMediaAssetRepository;
+  signVideoMaterialUrl: VideoMaterialSigner;
+}): Promise<CreateAgentRunResult> {
+  const request = input.input;
+  const workflowVideoInput = parseWorkflowVideoMvpInput(request.input);
+  const workflowCapabilitySnapshot = await input.resolveWorkflowCapabilityBundle(request.taskType);
+  if (!workflowCapabilitySnapshot) {
+    throw new ProviderConfigurationError(
+      '工作流视频能力未配置，请先在管理端 Agent 能力中配置工作流视频生成。',
+    );
+  }
+
+  const workflowVideoConfig = readWorkflowVideoMvpCapabilityConfig(workflowCapabilitySnapshot);
+  if (!workflowVideoConfig || workflowVideoConfig.promptTemplate.trim().length === 0) {
+    throw new ProviderConfigurationError(
+      '工作流视频能力未配置，请先在管理端 Agent 能力中配置工作流视频提示词。',
+    );
+  }
+
+  const durationSeconds =
+    workflowVideoInput.durationSeconds ?? workflowVideoConfig.defaults.durationSeconds;
+  const resolution = workflowVideoInput.resolution ?? workflowVideoConfig.defaults.resolution;
+  const policy = await input.resolveVideoGenerationPolicyForUser(request.userId);
+  const selectedStyleCode = readStringInput(request.input, 'styleCode') ?? policy.defaults.styleCode;
+  if (!selectedStyleCode) {
+    throw new AgentRunVideoSelectionError({
+      code: 'invalid_request',
+      message: 'The selected video style is not available.',
+    });
+  }
+
+  const selection = validateVideoGenerationSelection({
+    policy,
+    selection: {
+      styleCode: selectedStyleCode,
+      durationSeconds,
+      resolution,
+    },
+  });
+  if (!selection.ok) {
+    throw new AgentRunVideoSelectionError({
+      code: selection.code === 'policy_disabled' ? 'forbidden' : 'invalid_request',
+      message: selection.message,
+    });
+  }
+
+  const modelId = readStringInput(request.input, 'modelId') ?? workflowVideoConfig.modelBinding.model;
+  const model = await input.resolveVideoModelForUser(request.userId, modelId);
+  if (
+    model.providerCode !== workflowVideoConfig.modelBinding.providerCode ||
+    model.model !== workflowVideoConfig.modelBinding.model ||
+    model.executionProtocol !== workflowVideoConfig.modelBinding.executionProtocol
+  ) {
+    throw new ProviderConfigurationError(
+      '工作流视频模型绑定无效，请在管理端确认 doubao-seedance-2-0 视频模型已启用。',
+    );
+  }
+
+  await input.assertCanAffordMinimum(request.userId, model.pricing);
+
+  const [sourceImageUrl, storyboardImageUrl, sceneBackgroundUrl] = await Promise.all([
+    resolveWorkflowVideoImageMaterialUrl({
+      userId: request.userId,
+      assetId: workflowVideoInput.sourceImageAssetId,
+      label: 'Workflow source image',
+      repository: input.mediaAssetRepository,
+      signVideoMaterialUrl: input.signVideoMaterialUrl,
+    }),
+    resolveWorkflowVideoImageMaterialUrl({
+      userId: request.userId,
+      assetId: workflowVideoInput.storyboardArtifactId,
+      label: 'Workflow storyboard image',
+      repository: input.mediaAssetRepository,
+      signVideoMaterialUrl: input.signVideoMaterialUrl,
+    }),
+    resolveWorkflowVideoImageMaterialUrl({
+      userId: request.userId,
+      assetId: workflowVideoInput.sceneBackgroundAssetId,
+      label: 'Workflow scene background',
+      repository: input.mediaAssetRepository,
+      signVideoMaterialUrl: input.signVideoMaterialUrl,
+    }),
+  ]);
+
+  const storyboardPromptMap = JSON.stringify(workflowVideoInput.storyboardPromptMap);
+  const renderedPrompt = renderWorkflowVideoMvpPrompt({
+    template: workflowVideoConfig.promptTemplate,
+    values: {
+      workflow_prompt: request.prompt,
+      source_image_url: sourceImageUrl,
+      storyboard_image_url: storyboardImageUrl,
+      scene_background_url: sceneBackgroundUrl,
+      storyboard_prompt_map: storyboardPromptMap,
+      duration_seconds: String(durationSeconds),
+      resolution,
+    },
+  });
+
+  const capabilitySnapshot = {
+    ...toVideoCapabilitySnapshot(model),
+    workflowCapabilitySnapshot: {
+      bundleId: workflowCapabilitySnapshot.bundleId,
+      bundleCode: workflowCapabilitySnapshot.bundleCode,
+      capabilityCode: workflowVideoConfig.code,
+      description: workflowVideoConfig.description,
+      inputSchema: workflowVideoConfig.inputSchema,
+      promptTemplate: workflowVideoConfig.promptTemplate,
+      modelBinding: workflowVideoConfig.modelBinding,
+      defaults: workflowVideoConfig.defaults,
+      updatedAt: workflowVideoConfig.updatedAt,
+    },
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+
+  const runInput = {
+    stage: 'workflow_video',
+    sourceImageAssetId: workflowVideoInput.sourceImageAssetId,
+    storyboardArtifactId: workflowVideoInput.storyboardArtifactId,
+    sceneBackgroundAssetId: workflowVideoInput.sceneBackgroundAssetId,
+    storyboardPromptMap: workflowVideoInput.storyboardPromptMap,
+    styleCode: selectedStyleCode,
+    durationSeconds,
+    resolution,
+    modelId: model.id,
+    selectedModel: toSelectedModelSnapshot(model),
+    resolvedModel: toResolvedModelSnapshot(model),
+  };
+
+  const created = await input.repository.createRun({
+    userId: request.userId,
+    conversationId: request.conversationId,
+    taskType: request.taskType,
+    prompt: renderedPrompt,
+    provider: capabilitySnapshot.provider,
+    model: capabilitySnapshot.model,
+    capabilitySnapshot,
+    input: runInput,
+  });
+
+  await recordEventIfSupported(input.repository, created.id, 'queued', 'Agent run queued', {
+    taskType: request.taskType,
+    workflowStage: 'workflow_video',
+    modelId: model.id,
+  });
+
+  const running = requireUpdatedRun(await input.repository.markRunRunning(created.id), 'mark run running');
+  await recordEventIfSupported(input.repository, running.id, 'running', 'Workflow video provider started', {
+    provider: model.providerCode,
+    model: model.model,
+    workflowStage: 'workflow_video',
+  });
+
+  const adapter = input.createVideoProviderAdapter(model);
+  if (!adapter.createVideoTask) {
+    throw new Error('Video provider adapter does not support task creation.');
+  }
+
+  let createdTask: Awaited<ReturnType<NonNullable<typeof adapter.createVideoTask>>>;
+  try {
+    createdTask = await adapter.createVideoTask({
+      runId: running.id,
+      userId: request.userId,
+      model,
+      prompt: renderedPrompt,
+      duration: durationSeconds,
+      resolution,
+      imageUrls: [sourceImageUrl, storyboardImageUrl, sceneBackgroundUrl],
+      ratio: readStringInput(request.input, 'ratio') ?? undefined,
+      seed: readNumberInput(request.input, 'seed') ?? undefined,
+      watermark: readBooleanInput(request.input, 'watermark') ?? undefined,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '视频任务创建失败，请稍后重试。';
+    const failedSnapshot = toFailedVideoSnapshot({
+      capabilitySnapshot,
+      errorMessage,
+    });
+    await input.repository.failRun(running.id, {
+      errorMessage,
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...runInput,
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+    await appendRunEventIfSupported(input.repository, running.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: errorMessage,
+        failedAt: new Date().toISOString(),
+      },
+    });
+    throw error;
+  }
+
+  const nextCapabilitySnapshot = {
+    ...capabilitySnapshot,
+    providerTaskId: createdTask.providerTaskId,
+    providerTaskStatus: 'running',
+    rawMetadata: createdTask.rawMetadata,
+  } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
+
+  const updated = requireUpdatedRun(
+    await input.repository.patchRun(running.id, {
+      capabilitySnapshot: nextCapabilitySnapshot,
+      input: {
+        ...runInput,
+        providerTaskId: createdTask.providerTaskId,
+      },
+    }),
+    'persist workflow video task metadata',
+  );
+  await appendRunEventIfSupported(input.repository, updated.id, {
+    eventType: 'artifact_started',
+    payload: {
+      taskType: request.taskType,
+      workflowStage: 'workflow_video',
+      providerTaskId: createdTask.providerTaskId,
+      startedAt: new Date().toISOString(),
+    },
+  });
+
+  return runResult(updated);
 }
 
 async function runWorkflowStoryboardOrchestration(input: {
