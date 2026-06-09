@@ -13,6 +13,7 @@ import { UserMediaModule } from '@/features/public/user-media-module';
 import { userApiRequest } from '@/lib/user-api-client';
 import { formatCredits } from '@/lib/credits';
 import { formatStorageUsage } from '@/lib/storage';
+import { toast } from 'sonner';
 import {
   shouldRefreshUserCenterOnEntry,
   shouldRefreshUserCenterOnResume,
@@ -261,10 +262,28 @@ export default function UserCenterPage() {
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    // 验证文件类型
+    if (!file.type.startsWith('image/')) {
+      toast.error('请选择图片文件');
+      return;
+    }
+    
+    // 验证文件大小（例如最大 5MB）
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      toast.error('图片大小不能超过 5MB');
+      return;
+    }
+    
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const dataUrl = ev.target?.result as string;
-      updateUser({ avatar: dataUrl });
+      // 调用updateUser，会同时更新本地状态和持久化到服务器
+      await updateUser({ avatar: dataUrl });
+    };
+    reader.onerror = () => {
+      toast.error('读取图片失败');
     };
     reader.readAsDataURL(file);
   };
