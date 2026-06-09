@@ -279,7 +279,7 @@ export function createListAgentRunsRouteHandlers(dependencies: {
   requireSession: () => Promise<{ user: { id: string } }>;
   listRuns: (
     userId: string,
-    options?: { taskType?: AgentRunTaskTypeFilter },
+    options?: { taskType?: AgentRunTaskTypeFilter; taskTypes?: AgentTaskType[] },
   ) => Promise<AgentRunDto[]>;
 }) {
   return {
@@ -289,7 +289,15 @@ export function createListAgentRunsRouteHandlers(dependencies: {
           new URL(request.url).searchParams.get('taskType'),
         );
         const session = await dependencies.requireSession();
-        const runs = await dependencies.listRuns(session.user.id, { taskType });
+        const runs = await dependencies.listRuns(session.user.id, {
+          taskType: taskType === 'video' || taskType === 'image' ? undefined : taskType,
+          taskTypes:
+            taskType === 'video'
+              ? ['video', 'workflow']
+              : taskType === 'image'
+                ? ['image', 'workflow']
+                : undefined,
+        });
 
         return NextResponse.json({ runs });
       } catch (error) {

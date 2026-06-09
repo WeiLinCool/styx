@@ -145,12 +145,27 @@ function createDefaultWorkflowVideoMvpConfig(): Omit<
 export function validateWorkflowVideoMvpCapabilityDraft(input: {
   description: string;
   promptTemplate: string;
+  modelBinding?: {
+    providerCode?: string;
+    model?: string;
+    executionProtocol?: string;
+  };
   defaults: { durationSeconds: number; resolution: string };
   sceneBackgrounds?: unknown;
 }) {
   const description = input.description.trim();
   const promptTemplate = input.promptTemplate.trim();
   const resolution = input.defaults.resolution.trim();
+  const defaultModelBinding = createDefaultWorkflowVideoMvpConfig().modelBinding;
+  const providerCode: 'doubao' =
+    input.modelBinding?.providerCode === 'doubao'
+      ? input.modelBinding.providerCode
+      : defaultModelBinding.providerCode;
+  const modelBindingModel = input.modelBinding?.model?.trim() ?? defaultModelBinding.model;
+  const executionProtocol: 'video_task_polling' =
+    input.modelBinding?.executionProtocol === 'video_task_polling'
+      ? input.modelBinding.executionProtocol
+      : defaultModelBinding.executionProtocol;
 
   if (!promptTemplate) {
     throw new StoryboardCapabilityValidationError('工作流视频提示词不能为空。');
@@ -164,9 +179,26 @@ export function validateWorkflowVideoMvpCapabilityDraft(input: {
     throw new StoryboardCapabilityValidationError('工作流视频默认分辨率不能为空。');
   }
 
+  if (providerCode !== 'doubao') {
+    throw new StoryboardCapabilityValidationError('工作流视频模型供应商必须为 doubao。');
+  }
+
+  if (!modelBindingModel) {
+    throw new StoryboardCapabilityValidationError('工作流视频模型不能为空。');
+  }
+
+  if (executionProtocol !== 'video_task_polling') {
+    throw new StoryboardCapabilityValidationError('工作流视频执行协议必须为 video_task_polling。');
+  }
+
   return {
     description: description || createDefaultWorkflowVideoMvpConfig().description,
     promptTemplate,
+    modelBinding: {
+      providerCode,
+      model: modelBindingModel,
+      executionProtocol,
+    },
     defaults: { durationSeconds: input.defaults.durationSeconds, resolution },
     sceneBackgrounds: normalizeWorkflowSceneBackgrounds(input.sceneBackgrounds),
   };
@@ -545,6 +577,19 @@ function normalizeWorkflowVideoMvpCapabilityConfigRecord(
     typeof rawDefaults.resolution === 'string' && rawDefaults.resolution.trim().length > 0
       ? rawDefaults.resolution.trim()
       : defaults.defaults.resolution;
+  const rawModelBinding = isRecord(config.modelBinding) ? config.modelBinding : {};
+  const providerCode =
+    rawModelBinding.providerCode === 'doubao'
+      ? rawModelBinding.providerCode
+      : defaults.modelBinding.providerCode;
+  const model =
+    typeof rawModelBinding.model === 'string' && rawModelBinding.model.trim().length > 0
+      ? rawModelBinding.model.trim()
+      : defaults.modelBinding.model;
+  const executionProtocol =
+    rawModelBinding.executionProtocol === 'video_task_polling'
+      ? rawModelBinding.executionProtocol
+      : defaults.modelBinding.executionProtocol;
 
   return {
     description:
@@ -556,7 +601,11 @@ function normalizeWorkflowVideoMvpCapabilityConfigRecord(
       typeof config.promptTemplate === 'string' && config.promptTemplate.trim().length > 0
         ? config.promptTemplate
         : defaults.promptTemplate,
-    modelBinding: defaults.modelBinding,
+    modelBinding: {
+      providerCode,
+      model,
+      executionProtocol,
+    },
     defaults: {
       durationSeconds,
       resolution,
@@ -587,7 +636,7 @@ function summarizeCapabilityConfig(config: Record<string, unknown>, code?: strin
 
     return [
       `提示词: ${video.promptTemplate.trim().length > 0 ? '已配置' : '缺失'}`,
-      '模型: doubao-seedance-2-0',
+      `模型: ${video.modelBinding.model}`,
       `素材: ${WORKFLOW_VIDEO_MVP_REQUIRED_MATERIALS.join('+')}`,
       `背景: ${video.sceneBackgrounds.filter((background) => background.enabled).length}/${video.sceneBackgrounds.length}`,
       `默认: ${video.defaults.durationSeconds}s/${video.defaults.resolution}`,
@@ -1003,6 +1052,11 @@ export async function saveWorkflowVideoMvpCapabilityConfig(input: {
   adminUserId: string;
   description: string;
   promptTemplate: string;
+  modelBinding?: {
+    providerCode?: string;
+    model?: string;
+    executionProtocol?: string;
+  };
   defaults: { durationSeconds: number; resolution: string };
   sceneBackgrounds?: unknown;
 }): Promise<AdminWorkflowVideoCapabilityConfigRecord> {
@@ -1020,7 +1074,7 @@ export async function saveWorkflowVideoMvpCapabilityConfig(input: {
     description: draft.description,
     inputSchema: defaults.inputSchema,
     promptTemplate: draft.promptTemplate,
-    modelBinding: defaults.modelBinding,
+    modelBinding: draft.modelBinding,
     defaults: draft.defaults,
     sceneBackgrounds: draft.sceneBackgrounds,
     updatedAt: new Date().toISOString(),

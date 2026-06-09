@@ -60,12 +60,16 @@ test('parseAgentRunTaskTypeFilter accepts multimodal filters only', () => {
   assert.throws(() => parseAgentRunTaskTypeFilter('bad'), /Invalid taskType/);
 });
 
-test('GET /api/agent/runs passes optional taskType filter to repository list', async () => {
-  const calls: Array<{ userId: string; taskType: string | undefined }> = [];
+test('GET /api/agent/runs passes generated image history filters to repository list', async () => {
+  const calls: Array<{
+    userId: string;
+    taskType: string | undefined;
+    taskTypes: string[] | undefined;
+  }> = [];
   const handlers = createListAgentRunsRouteHandlers({
     requireSession: async () => ({ user: { id: 'user-1' } }),
     listRuns: async (userId, options) => {
-      calls.push({ userId, taskType: options?.taskType });
+      calls.push({ userId, taskType: options?.taskType, taskTypes: options?.taskTypes });
       return [
         {
           id: 'run-image',
@@ -92,7 +96,39 @@ test('GET /api/agent/runs passes optional taskType filter to repository list', a
 
   assert.equal(response.status, 200);
   assert.equal(payload.runs[0].id, 'run-image');
-  assert.deepEqual(calls, [{ userId: 'user-1', taskType: 'image' }]);
+  assert.deepEqual(calls, [{ userId: 'user-1', taskType: undefined, taskTypes: ['image', 'workflow'] }]);
+});
+
+test('GET /api/agent/runs maps video history filter to generated video task types', async () => {
+  const calls: Array<{ userId: string; taskTypes: string[] | undefined }> = [];
+  const handlers = createListAgentRunsRouteHandlers({
+    requireSession: async () => ({ user: { id: 'user-1' } }),
+    listRuns: async (userId, options) => {
+      calls.push({ userId, taskTypes: options?.taskTypes });
+      return [];
+    },
+  });
+
+  const response = await handlers.GET(new Request('https://example.com/api/agent/runs?taskType=video'));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ userId: 'user-1', taskTypes: ['video', 'workflow'] }]);
+});
+
+test('GET /api/agent/runs maps image history filter to generated image task types', async () => {
+  const calls: Array<{ userId: string; taskTypes: string[] | undefined }> = [];
+  const handlers = createListAgentRunsRouteHandlers({
+    requireSession: async () => ({ user: { id: 'user-1' } }),
+    listRuns: async (userId, options) => {
+      calls.push({ userId, taskTypes: options?.taskTypes });
+      return [];
+    },
+  });
+
+  const response = await handlers.GET(new Request('https://example.com/api/agent/runs?taskType=image'));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ userId: 'user-1', taskTypes: ['image', 'workflow'] }]);
 });
 
 test('GET /api/agent/runs rejects invalid taskType filter', async () => {

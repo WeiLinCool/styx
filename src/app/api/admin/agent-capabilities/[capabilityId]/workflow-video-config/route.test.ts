@@ -103,6 +103,7 @@ test('GET workflow-video-config returns skill-like config', async () => {
 test('PUT workflow-video-config saves parsed config', async () => {
   let savedPrompt = '';
   let savedBackgrounds: unknown = null;
+  let savedModel = '';
   const handlers = createWorkflowVideoConfigRouteHandlers({
     requireAdminSession: async () => ({ user: { id: 'admin-1' } }),
     getConfig: async () => {
@@ -111,6 +112,7 @@ test('PUT workflow-video-config saves parsed config', async () => {
     saveConfig: async (input) => {
       savedPrompt = input.promptTemplate;
       savedBackgrounds = input.sceneBackgrounds;
+      savedModel = input.modelBinding?.model ?? '';
       return {
         capabilityId,
         capabilityCode: 'workflow-video-mvp',
@@ -125,7 +127,7 @@ test('PUT workflow-video-config saves parsed config', async () => {
         promptTemplate: input.promptTemplate,
         modelBinding: {
           providerCode: 'doubao',
-          model: 'doubao-seedance-2-0',
+          model: input.modelBinding?.model ?? '',
           executionProtocol: 'video_task_polling',
         },
         defaults: input.defaults,
@@ -146,6 +148,11 @@ test('PUT workflow-video-config saves parsed config', async () => {
       body: JSON.stringify({
         description: ' 视频能力 ',
         promptTemplate: ' 生成 {{workflow_prompt}} ',
+        modelBinding: {
+          providerCode: 'doubao',
+          model: ' doubao-seedance-2-0-fast-260128 ',
+          executionProtocol: 'video_task_polling',
+        },
         defaults: { durationSeconds: 5, resolution: '720p' },
         sceneBackgrounds: [
           {
@@ -163,6 +170,8 @@ test('PUT workflow-video-config saves parsed config', async () => {
 
   assert.equal(response.status, 200);
   assert.equal(savedPrompt, '生成 {{workflow_prompt}}');
+  assert.equal(savedModel, 'doubao-seedance-2-0-fast-260128');
+  assert.equal(body.config.modelBinding.model, 'doubao-seedance-2-0-fast-260128');
   assert.deepEqual(savedBackgrounds, [
     {
       id: 'wood-table-handmade-1',
@@ -178,4 +187,85 @@ test('PUT workflow-video-config saves parsed config', async () => {
     ).enabled,
     false,
   );
+});
+
+test('PUT workflow-video-config reads decrypted JSON body before validation', async () => {
+  let savedPrompt = '';
+  const rawEnvelope = JSON.stringify({
+    encrypted: true,
+    v: 1,
+    iv: 'iv',
+    ciphertext: 'ciphertext',
+  });
+  const handlers = createWorkflowVideoConfigRouteHandlers({
+    requireAdminSession: async () => ({ user: { id: 'admin-1' } }),
+    getConfig: async () => {
+      throw new Error('unexpected get');
+    },
+    readJsonBody: async () => ({
+      rawBody: rawEnvelope,
+      decryptedRawBody: JSON.stringify({
+        description: '视频能力',
+        promptTemplate: '生成 {{workflow_prompt}}',
+        modelBinding: {
+          providerCode: 'doubao',
+          model: 'doubao-seedance-2-0-fast-260128',
+          executionProtocol: 'video_task_polling',
+        },
+        defaults: { durationSeconds: 5, resolution: '720p' },
+        sceneBackgrounds: [],
+      }),
+      body: {
+        description: '视频能力',
+        promptTemplate: '生成 {{workflow_prompt}}',
+        modelBinding: {
+          providerCode: 'doubao',
+          model: 'doubao-seedance-2-0-fast-260128',
+          executionProtocol: 'video_task_polling',
+        },
+        defaults: { durationSeconds: 5, resolution: '720p' },
+        sceneBackgrounds: [],
+      },
+    }),
+    saveConfig: async (input) => {
+      savedPrompt = input.promptTemplate;
+      return {
+        capabilityId,
+        capabilityCode: 'workflow-video-mvp',
+        capabilityName: '工作流视频生成',
+        capabilityStatus: 'enabled',
+        code: 'workflow-video-mvp',
+        description: input.description,
+        inputSchema: {
+          requiredMaterials: ['source_image', 'storyboard_image', 'scene_background'],
+          requiredSnapshots: ['storyboard_prompt_map'],
+        },
+        promptTemplate: input.promptTemplate,
+        modelBinding: input.modelBinding ?? {
+          providerCode: 'doubao',
+          model: 'doubao-seedance-2-0',
+          executionProtocol: 'video_task_polling',
+        },
+        defaults: input.defaults,
+        sceneBackgrounds: normalizeWorkflowSceneBackgrounds(input.sceneBackgrounds),
+        updatedAt: '2026-06-09T10:00:00.000Z',
+        updatedByUserId: input.adminUserId,
+      };
+    },
+  });
+
+  const response = await handlers.PUT(
+    new Request(`https://example.com/api/admin/agent-capabilities/${capabilityId}/workflow-video-config`, {
+      method: 'PUT',
+      headers: {
+        ...Object.fromEntries(createMutationHeaders()),
+        'content-type': 'application/json',
+      },
+      body: rawEnvelope,
+    }),
+    { params: Promise.resolve({ capabilityId }) },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(savedPrompt, '生成 {{workflow_prompt}}');
 });

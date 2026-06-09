@@ -99,6 +99,7 @@ test('doubao video create body includes prompt text and image url entry', async 
       },
       {
         type: 'image_url',
+        role: 'reference_image',
         image_url: { url: 'https://cdn.example/input.png' },
       },
     ],
@@ -152,6 +153,7 @@ test('doubao video create body includes prompt text plus image and audio entries
       },
       {
         type: 'image_url',
+        role: 'reference_image',
         image_url: { url: 'https://cdn.example/input.png' },
       },
       {
@@ -187,14 +189,17 @@ test('doubao video create body includes ordered image url entries before audio',
       },
       {
         type: 'image_url',
+        role: 'reference_image',
         image_url: { url: 'https://cdn.example/source.png' },
       },
       {
         type: 'image_url',
+        role: 'reference_image',
         image_url: { url: 'https://cdn.example/storyboard.png' },
       },
       {
         type: 'image_url',
+        role: 'reference_image',
         image_url: { url: 'https://cdn.example/scene.png' },
       },
       {

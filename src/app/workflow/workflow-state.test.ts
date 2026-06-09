@@ -4,12 +4,19 @@ import test from 'node:test';
 import {
   applyGeneratedWorkflowImage,
   createWorkflowVideoModelState,
+  createWorkflowVideoRestoreSnapshot,
+  isWorkflowVideoHistoryRun,
+  parseWorkflowDraftSnapshot,
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
   resolveWorkflowVideoMaterialReadiness,
   resolveWorkflowVideoModelAvailability,
+  resolveWorkflowSceneStepDreamAction,
+  resolveWorkflowUploadStepNextAction,
+  shouldContinueWorkflowVideoSync,
   type WorkflowStateSnapshot,
 } from './workflow-state';
+import type { AgentRunDetailDto, AgentRunDto } from '@/server/agent/types';
 
 function makeSnapshot(overrides: Partial<WorkflowStateSnapshot> = {}): WorkflowStateSnapshot {
   return {
@@ -21,6 +28,23 @@ function makeSnapshot(overrides: Partial<WorkflowStateSnapshot> = {}): WorkflowS
     aiSceneGenerated: false,
     aiSceneGenerating: false,
     dreaming: true,
+    ...overrides,
+  };
+}
+
+function makeRun(overrides: Partial<AgentRunDto> = {}): AgentRunDto {
+  return {
+    id: 'run-1',
+    conversationId: 'run-1',
+    taskType: 'workflow',
+    status: 'running',
+    prompt: 'workflow prompt',
+    finalMessage: null,
+    errorMessage: null,
+    capabilitySummary: { provider: 'fangzhou', model: 'seedance', capabilities: [] },
+    artifacts: [],
+    createdAt: '2026-06-09T00:00:00.000Z',
+    updatedAt: '2026-06-09T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -232,5 +256,208 @@ test('resolveWorkflowVideoMaterialReadiness requires real source, storyboard, an
       ready: true,
       message: null,
     },
+  );
+});
+
+test('resolveWorkflowUploadStepNextAction only generates storyboard when no storyboard exists', () => {
+  assert.equal(
+    resolveWorkflowUploadStepNextAction({
+      storyboardAssetId: null,
+      storyboardRunId: null,
+      storyboardArtifactId: null,
+    }),
+    'generate_storyboard',
+  );
+  assert.equal(
+    resolveWorkflowUploadStepNextAction({
+      storyboardAssetId: 'saved-storyboard',
+      storyboardRunId: null,
+      storyboardArtifactId: null,
+    }),
+    'view_storyboard',
+  );
+  assert.equal(
+    resolveWorkflowUploadStepNextAction({
+      storyboardAssetId: null,
+      storyboardRunId: 'storyboard-run',
+      storyboardArtifactId: 'storyboard-artifact',
+    }),
+    'view_storyboard',
+  );
+});
+
+test('resolveWorkflowSceneStepDreamAction labels historical runs and exposes video viewing', () => {
+  assert.deepEqual(resolveWorkflowSceneStepDreamAction({ dreamRunId: null, hasDreamVideo: false }), {
+    label: '开始造梦',
+    description: null,
+    viewHistoryVideoLabel: null,
+  });
+  assert.deepEqual(resolveWorkflowSceneStepDreamAction({ dreamRunId: 'dream-run', hasDreamVideo: false }), {
+    label: '重新生成视频',
+    description: '将基于当前图案、分镜、场景和提示词新建一个视频任务，原历史记录不会被覆盖。',
+    viewHistoryVideoLabel: null,
+  });
+  assert.deepEqual(resolveWorkflowSceneStepDreamAction({ dreamRunId: 'dream-run', hasDreamVideo: true }), {
+    label: '重新生成视频',
+    description: '将基于当前图案、分镜、场景和提示词新建一个视频任务，原历史记录不会被覆盖。',
+    viewHistoryVideoLabel: '下一步：查看历史视频',
+  });
+});
+
+test('shouldContinueWorkflowVideoSync keeps non-terminal workflow video runs polling', () => {
+  assert.equal(shouldContinueWorkflowVideoSync('queued'), true);
+  assert.equal(shouldContinueWorkflowVideoSync('running'), true);
+  assert.equal(shouldContinueWorkflowVideoSync('succeeded'), false);
+  assert.equal(shouldContinueWorkflowVideoSync('failed'), false);
+});
+
+test('isWorkflowVideoHistoryRun accepts only workflow video stage runs', () => {
+  assert.equal(isWorkflowVideoHistoryRun({ taskType: 'workflow', input: { stage: 'workflow_video' } }), true);
+  assert.equal(isWorkflowVideoHistoryRun({ taskType: 'workflow', input: { stage: 'storyboard' } }), false);
+  assert.equal(isWorkflowVideoHistoryRun({ taskType: 'video', input: { stage: 'workflow_video' } }), false);
+});
+
+test('createWorkflowVideoRestoreSnapshot restores submitted workflow material references', () => {
+  const detail: AgentRunDetailDto = {
+    run: makeRun({
+      id: 'dream-run',
+      status: 'succeeded',
+      prompt: 'rendered workflow prompt',
+      selectedModel: {
+        id: 'video-model',
+        code: 'video',
+        name: 'Video Model',
+        providerName: 'Provider',
+        entitlementLabel: 'Free',
+      },
+      artifacts: [
+        {
+          id: 'video-artifact',
+          kind: 'video',
+          title: 'Generated video',
+          status: 'ready',
+          body: null,
+          url: null,
+          metadata: {},
+          createdAt: '2026-06-09T00:00:00.000Z',
+        },
+      ],
+    }),
+    events: [],
+    internal: {
+      capabilitySnapshot: {},
+      input: {
+        stage: 'workflow_video',
+        sourceImageAssetId: 'source-asset',
+        storyboardArtifactId: 'storyboard-asset',
+        sceneBackgroundId: 'scene-bg',
+        modelId: 'video-model',
+        storyboardPromptMap: {
+          workflowPrompt: 'original workflow prompt',
+          storyboardRunId: 'storyboard-run',
+          storyboardArtifactId: 'storyboard-artifact',
+          sourceImageOrigin: 'generated',
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(createWorkflowVideoRestoreSnapshot(detail), {
+    sourceImageAssetId: 'source-asset',
+    uploadedImageOrigin: 'generated',
+    storyboardRunId: 'storyboard-run',
+    storyboardArtifactId: 'storyboard-artifact',
+    storyboardAssetId: 'storyboard-asset',
+    selectedSceneBackgroundId: 'scene-bg',
+    selectedVideoModel: 'video-model',
+    prompt: 'original workflow prompt',
+    dreamRunId: 'dream-run',
+    dreamVideoArtifactId: 'video-artifact',
+    step: 3,
+  });
+});
+
+test('parseWorkflowDraftSnapshot restores completed workflow material references', () => {
+  assert.deepEqual(
+    parseWorkflowDraftSnapshot({
+      version: 1,
+      step: 3,
+      uploadedImage: 'blob-preview',
+      uploadedImageOrigin: 'manual',
+      sourceImageAssetId: 'source-asset',
+      selectedImageModel: 'image-model',
+      storyboardGenerated: true,
+      storyboardImageUrl: 'storyboard-preview',
+      storyboardRunId: 'storyboard-run',
+      storyboardArtifactId: 'storyboard-artifact',
+      storyboardAssetId: 'storyboard-asset',
+      selectedSceneBackgroundId: 'official-bg',
+      prompt: 'prompt',
+      selectedVideoModel: 'video-model',
+      dreamRunId: 'dream-run',
+      dreamVideoUrl: 'video-preview',
+      dreamVideoArtifactId: 'video-artifact',
+      updatedAt: '2026-06-09T00:00:00.000Z',
+    }),
+    {
+      version: 1,
+      step: 3,
+      uploadedImage: 'blob-preview',
+      uploadedImageOrigin: 'manual',
+      sourceImageAssetId: 'source-asset',
+      selectedImageModel: 'image-model',
+      storyboardGenerated: true,
+      storyboardImageUrl: 'storyboard-preview',
+      storyboardRunId: 'storyboard-run',
+      storyboardArtifactId: 'storyboard-artifact',
+      storyboardAssetId: 'storyboard-asset',
+      selectedSceneBackgroundId: 'official-bg',
+      prompt: 'prompt',
+      selectedVideoModel: 'video-model',
+      dreamRunId: 'dream-run',
+      dreamVideoUrl: 'video-preview',
+      dreamVideoArtifactId: 'video-artifact',
+      updatedAt: '2026-06-09T00:00:00.000Z',
+    },
+  );
+});
+
+test('parseWorkflowDraftSnapshot falls back to the earliest restorable step', () => {
+  assert.equal(
+    parseWorkflowDraftSnapshot({
+      version: 1,
+      step: 3,
+      uploadedImage: null,
+      sourceImageAssetId: null,
+      storyboardGenerated: true,
+      storyboardImageUrl: 'storyboard-preview',
+      storyboardRunId: 'storyboard-run',
+      storyboardArtifactId: 'storyboard-artifact',
+    })?.step,
+    0,
+  );
+
+  const withoutStoryboard = parseWorkflowDraftSnapshot({
+    version: 1,
+    step: 3,
+    sourceImageAssetId: 'source-asset',
+    storyboardGenerated: false,
+    selectedSceneBackgroundId: 'official-bg',
+  });
+  assert.equal(withoutStoryboard?.step, 1);
+  assert.equal(withoutStoryboard?.storyboardGenerated, false);
+
+  assert.equal(
+    parseWorkflowDraftSnapshot({
+      version: 1,
+      step: 3,
+      sourceImageAssetId: 'source-asset',
+      storyboardGenerated: true,
+      storyboardImageUrl: 'storyboard-preview',
+      storyboardRunId: 'storyboard-run',
+      storyboardArtifactId: 'storyboard-artifact',
+      selectedSceneBackgroundId: null,
+    })?.step,
+    2,
   );
 });

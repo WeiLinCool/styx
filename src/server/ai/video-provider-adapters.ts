@@ -20,6 +20,7 @@ type VideoTaskContentEntry =
     }
   | {
       type: 'image_url';
+      role: 'reference_image';
       image_url: { url: string };
     }
   | {
@@ -192,6 +193,7 @@ function createVideoTaskBody(request: VideoProviderCreateRequest): Record<string
   for (const imageUrl of imageUrls) {
     content.push({
       type: 'image_url',
+      role: 'reference_image',
       image_url: { url: imageUrl },
     });
   }

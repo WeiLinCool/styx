@@ -23,11 +23,20 @@ export function createOAuthErrorJsonResponse(error: EnterpriseOAuthError) {
 }
 
 export function parseBearerAuthorizationHeader(error: EnterpriseOAuthError) {
-  return `Bearer error="${escapeAuthHeaderValue(error.code)}", error_description="${escapeAuthHeaderValue(error.message)}"`;
+  return `Bearer error="${escapeAuthHeaderValue(error.code)}", error_description="${escapeAuthHeaderValue(toAsciiHeaderDescription(error))}"`;
 }
 
 function escapeAuthHeaderValue(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function toAsciiHeaderDescription(error: EnterpriseOAuthError) {
+  const fallback = `Bearer ${error.code}`;
+  const normalized = error.message
+    .normalize('NFKD')
+    .replace(/[^\x20-\x7E]/g, '')
+    .trim();
+  return normalized.length > 'Bearer'.length ? normalized : fallback;
 }
 
 export function enterpriseRouteErrorToJsonResponse(error: unknown) {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 
 import type {
   AgentArtifactDto,
@@ -48,6 +48,7 @@ export type AgentRunStreamEventInput = {
 
 export type ListAgentRunsForUserOptions = {
   taskType?: AgentTaskType;
+  taskTypes?: AgentTaskType[];
 };
 
 type StoredAgentRun = AgentRunDto & {
@@ -58,6 +59,8 @@ type StoredAgentRun = AgentRunDto & {
   input: Record<string, unknown>;
   deletedAt?: string | null;
 };
+
+type RunHistoryMatchInput = Pick<StoredAgentRun, 'taskType' | 'input'>;
 
 export type AgentRunFailureInput = {
   errorMessage: string;
@@ -193,6 +196,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown) {
   return typeof value === 'string' ? value : null;
+}
+
+function isWorkflowVideoHistoryRun(run: RunHistoryMatchInput) {
+  return run.taskType === 'workflow' && readString(run.input.stage) === 'workflow_video';
+}
+
+function isWorkflowImageHistoryRun(run: RunHistoryMatchInput) {
+  return run.taskType === 'workflow' && isWorkflowStoryboardStage(readString(run.input.stage));
+}
+
+function isWorkflowStoryboardStage(stage: string | null) {
+  return stage === 'storyboard' || stage === 'storyboard-regenerate';
+}
+
+function matchesRunHistoryOptions(run: RunHistoryMatchInput, options?: ListAgentRunsForUserOptions) {
+  if (options?.taskTypes?.length) {
+    return (
+      options.taskTypes.includes(run.taskType) ||
+      (options.taskTypes.includes('video') && isWorkflowVideoHistoryRun(run)) ||
+      (options.taskTypes.includes('image') && isWorkflowImageHistoryRun(run))
+    );
+  }
+
+  if (options?.taskType) {
+    return (
+      run.taskType === options.taskType ||
+      (options.taskType === 'video' && isWorkflowVideoHistoryRun(run)) ||
+      (options.taskType === 'image' && isWorkflowImageHistoryRun(run))
+    );
+  }
+
+  return true;
 }
 
 function readNumber(value: unknown) {
@@ -475,7 +510,9 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
         eq(schema.agentRuns.userId, userId),
         isNull(schema.agentRuns.deletedAt),
       ];
-      if (options?.taskType) {
+      if (options?.taskTypes?.length) {
+        conditions.push(inArray(schema.agentRuns.taskType, options.taskTypes));
+      } else if (options?.taskType) {
         conditions.push(eq(schema.agentRuns.taskType, options.taskType));
       }
 
@@ -486,7 +523,16 @@ export function createDatabaseAgentRunRepository(): AgentRunRepository {
         .orderBy(desc(schema.agentRuns.createdAt))
         .limit(100);
 
-      const dtos = await Promise.all(runs.map((run) => getDatabaseRunDto(database, run.id)));
+      const filteredRuns = runs.filter((run) =>
+        matchesRunHistoryOptions(
+          {
+            taskType: run.taskType,
+            input: cloneRecord(run.input as Record<string, unknown>),
+          },
+          options,
+        ),
+      );
+      const dtos = await Promise.all(filteredRuns.map((run) => getDatabaseRunDto(database, run.id)));
       return dtos.filter((run): run is AgentRunDto => Boolean(run));
     },
     async softDeleteRunForUser(id, userId) {
@@ -765,7 +811,7 @@ export function createMemoryAgentRunRepository(): AgentRunRepository {
           (run) =>
             run.userId === userId &&
             !run.deletedAt &&
-            (!options?.taskType || run.taskType === options.taskType),
+            matchesRunHistoryOptions(run, options),
         )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map(toAgentRunDto);

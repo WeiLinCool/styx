@@ -83,6 +83,10 @@ test('models route rejects invalid bearer token before listing models', async ()
   assert.equal(listCalled, false);
   assert.equal(
     response.headers.get('www-authenticate'),
-    'Bearer error="invalid_token", error_description="Bearer 令牌无效。"'
+    'Bearer error="invalid_token", error_description="Bearer invalid_token"'
   );
+  assert.deepEqual(await response.json(), {
+    error: 'invalid_token',
+    error_description: 'Bearer 令牌无效。',
+  });
 });

@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { AccountDomainError } from '@/server/auth/account-types';
 import type { ActiveUserEntitlement } from '@/server/ai/model-entitlements';
-import type { VideoModelOption } from '@/features/public/agent-runtime-client';
+import type { PublicVideoModelDto } from '@/server/repositories/ai-models';
 import type { AgentCapabilitySnapshot } from '@/server/agent/types';
 import type { VideoPlanConfig, VideoStylePreset } from '@/server/video/video-generation-policy';
 import { createAgentVideoConfigRouteHandlers } from './route';
@@ -44,11 +44,12 @@ const planConfig: VideoPlanConfig = {
   defaultResolution: '720p',
 };
 
-const videoModels: VideoModelOption[] = [
+const videoModels: PublicVideoModelDto[] = [
   {
     id: 'model-video',
     code: 'doubao-seedance',
     name: 'Doubao Seedance',
+    model: 'doubao-seedance-2-0',
     providerName: 'Doubao',
     isDefault: true,
     entitlementLabel: 'Pro',

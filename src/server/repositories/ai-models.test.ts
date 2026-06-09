@@ -11,6 +11,7 @@ import {
   getSeedChatModelsForUser,
   getSeedImageModelsForUser,
   getSeedVideoModelsForUser,
+  isDatabaseUuid,
   listDatabaseChatModelsForUserFromRows,
   listDatabaseImageModelsForUserFromRows,
   listDatabaseVideoModelsForUserFromRows,
@@ -39,6 +40,11 @@ const activeProEntitlement: ActiveUserEntitlement = {
   startsAt: '2026-01-01T00:00:00.000Z',
   expiresAt: null,
 };
+
+test('isDatabaseUuid distinguishes table ids from upstream model names', () => {
+  assert.equal(isDatabaseUuid('550e8400-e29b-41d4-a716-446655440000'), true);
+  assert.equal(isDatabaseUuid('doubao-seedance-2-0'), false);
+});
 
 function buildDatabaseImageModelRow(input: {
   id: string;
@@ -143,6 +149,7 @@ function buildDatabaseChatModelRow(input: {
 function buildDatabaseVideoModelRow(input: {
   id: string;
   code: string;
+  model?: string;
   status?: 'enabled' | 'disabled' | 'archived';
   providerStatus?: 'enabled' | 'disabled' | 'archived';
   providerMetadata?: Record<string, unknown>;
@@ -157,7 +164,7 @@ function buildDatabaseVideoModelRow(input: {
       providerId: `provider-${input.id}`,
       code: input.code,
       name: input.code,
-      model: input.code,
+      model: input.model ?? input.code,
       status: input.status ?? 'enabled',
       supportsChat: false,
       supportsImageGeneration: false,
@@ -430,6 +437,26 @@ test('resolveDatabaseVideoModelForUserFromRows allows entitled premium video mod
 
   assert.equal(model.code, 'db-pro-video');
   assert.equal(model.entitlement.basis, 'membership_plan');
+});
+
+test('resolveDatabaseVideoModelForUserFromRows accepts upstream model binding', () => {
+  const rows: DatabaseVideoModelRow[] = [
+    buildDatabaseVideoModelRow({
+      id: 'seedance-model-id',
+      model: 'doubao-seedance-2-0',
+      code: 'seedance',
+      supportsVideoGeneration: true,
+    }),
+  ];
+
+  const model = resolveDatabaseVideoModelForUserFromRows(
+    rows,
+    'doubao-seedance-2-0',
+    [],
+  );
+
+  assert.equal(model.id, 'seedance-model-id');
+  assert.equal(model.model, 'doubao-seedance-2-0');
 });
 
 test('listDatabaseImageModelsForUserFromRows filters provider status, model status, mode support and entitlement', () => {

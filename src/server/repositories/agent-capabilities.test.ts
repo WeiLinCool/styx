@@ -81,6 +81,28 @@ test('readWorkflowVideoMvpCapabilityConfig returns skill-like workflow video con
   assert.equal(config?.defaults.resolution, '720p');
 });
 
+test('readWorkflowVideoMvpCapabilityConfig preserves configured workflow video model binding', () => {
+  const snapshot = getDefaultAgentCapabilityBundle('workflow');
+  assert.ok(snapshot);
+
+  const capability = snapshot!.capabilities.find((item) => item.code === 'workflow-video-mvp');
+  assert.ok(capability);
+  capability.config = {
+    ...(capability.config as Record<string, unknown>),
+    modelBinding: {
+      providerCode: 'doubao',
+      model: 'doubao-seedance-2-0-fast-260128',
+      executionProtocol: 'video_task_polling',
+    },
+  };
+
+  const config = readWorkflowVideoMvpCapabilityConfig(snapshot!);
+
+  assert.equal(config?.modelBinding.providerCode, 'doubao');
+  assert.equal(config?.modelBinding.model, 'doubao-seedance-2-0-fast-260128');
+  assert.equal(config?.modelBinding.executionProtocol, 'video_task_polling');
+});
+
 test('readWorkflowVideoMvpCapabilityConfig includes enabled official scene backgrounds', () => {
   const snapshot = getDefaultAgentCapabilityBundle('workflow');
   const config = readWorkflowVideoMvpCapabilityConfig(snapshot!);

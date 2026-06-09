@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, or } from 'drizzle-orm';
 
 import { createChatProviderAdapter } from '@/server/ai/provider-adapters';
 import { supportsStoryboardTemplateProvider } from '@/server/ai/image-model-capabilities';
@@ -27,6 +27,12 @@ import {
   type ProviderBillingRuleConfig,
 } from '@/server/billing/provider-rules';
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isDatabaseUuid(value: string) {
+  return uuidPattern.test(value);
+}
+
 export type AiModelPricing = {
   unit: 'token';
   promptCreditsPer1k: number;
@@ -38,6 +44,7 @@ export type PublicChatModelDto = {
   id: string;
   code: string;
   name: string;
+  model: string;
   providerName: string;
   isDefault: boolean;
   entitlementLabel: string;
@@ -771,7 +778,7 @@ export function resolveDatabaseVideoModelForUserFromRows(
   entitlements: ActiveUserEntitlement[],
 ): ResolvedVideoModel {
   const models = groupResolvedDatabaseVideoRows(rows, entitlements, modelId);
-  const model = models.find((item) => item.id === modelId);
+  const model = models.find((item) => item.id === modelId || item.model === modelId);
   if (!model) {
     throw new ModelNotAvailableError();
   }
@@ -1687,6 +1694,7 @@ function toPublicModel(model: ResolvedChatModel): PublicChatModelDto {
     id: model.id,
     code: model.code,
     name: model.name,
+    model: model.model,
     providerName: model.providerName,
     isDefault: model.isDefault,
     entitlementLabel: model.entitlement.label,
@@ -1958,7 +1966,7 @@ function groupResolvedDatabaseVideoRows(
 ): ResolvedVideoModel[] {
   const availableRows = rows.filter(
     (row) =>
-      (!modelId || row.model.id === modelId) &&
+      (!modelId || row.model.id === modelId || row.model.model === modelId) &&
       row.model.status === 'enabled' &&
       row.provider.status === 'enabled' &&
       isVideoExecutionProtocol(row.model.executionProtocol) &&
@@ -1973,9 +1981,15 @@ async function loadDatabaseChatModelRows(modelId?: string): Promise<ChatModelRow
     return [];
   }
 
-  const where = modelId
+  const modelFilter = modelId
+    ? isDatabaseUuid(modelId)
+      ? eq(schema.aiModels.id, modelId)
+      : or(eq(schema.aiModels.model, modelId), eq(schema.aiModels.code, modelId))
+    : undefined;
+
+  const where = modelFilter
     ? and(
-        eq(schema.aiModels.id, modelId),
+        modelFilter,
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsChat, true),
         eq(schema.aiModels.executionProtocol, 'chat_openai_compatible'),
@@ -2064,7 +2078,9 @@ async function loadDatabaseVideoModelRows(modelId?: string): Promise<VideoModelR
 
   const where = modelId
     ? and(
-        eq(schema.aiModels.id, modelId),
+        isDatabaseUuid(modelId)
+          ? or(eq(schema.aiModels.id, modelId), eq(schema.aiModels.model, modelId))
+          : eq(schema.aiModels.model, modelId),
         eq(schema.aiModels.status, 'enabled'),
         eq(schema.aiModels.supportsVideoGeneration, true),
         eq(schema.aiModels.executionProtocol, 'video_task_polling'),

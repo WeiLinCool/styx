@@ -10,6 +10,8 @@ import {
   filterStoryboardTemplateImageModels,
   getAgentRunDetail,
   getGeneratedRunArtifactAccess,
+  getSavedMediaAssetAccess,
+  listAgentRuns,
   listImageModels,
   saveGeneratedMedia,
   syncAgentRun,
@@ -29,12 +31,22 @@ import {
 } from '@/features/public/model-availability';
 import {
   applyGeneratedWorkflowImage,
+  createWorkflowVideoRestoreSnapshot,
+  isWorkflowVideoHistoryRun,
+  parseWorkflowDraftSnapshot,
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
   resolveWorkflowVideoMaterialReadiness,
   resolveWorkflowVideoModelAvailability,
+  resolveWorkflowSceneStepDreamAction,
+  resolveWorkflowUploadStepNextAction,
+  shouldContinueWorkflowVideoSync,
   type WorkflowStateSnapshot,
 } from './workflow-state';
+import type {
+  AgentArtifactDto,
+  AgentRunDto,
+} from '@/server/agent/types';
 import {
   ImageGenerationDialog,
   PromptOptimizationDialog,
@@ -63,6 +75,9 @@ import {
 
 // 默认提示词
 const DEFAULT_PROMPT = '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板';
+const WORKFLOW_DRAFT_STORAGE_KEY = 'lingwei.workflow-video-mvp.draft.v1';
+const WORKFLOW_VIDEO_SYNC_INTERVAL_MS = 3000;
+const WORKFLOW_VIDEO_SYNC_MAX_ATTEMPTS = 120;
 
 type WorkflowModelCard = {
   id: string;
@@ -94,6 +109,23 @@ const emptyVideoConfig: VideoGenerationConfigDto = {
   models: [],
   workflowSceneBackgrounds: [],
 };
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function formatHistoryTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function firstMediaArtifact(run: AgentRunDto, kind: 'image' | 'video'): AgentArtifactDto | null {
+  return run.artifacts.find((artifact) => artifact.kind === kind && artifact.status === 'ready') ?? null;
+}
 
 function buildWorkflowStateSnapshot(input: WorkflowStateSnapshot): WorkflowStateSnapshot {
   return input;
@@ -471,15 +503,19 @@ function SceneSelector({
   selectedBackgroundId,
   loading,
   unavailableMessage,
+  dreamAction,
   onSelectBackground,
   onStartDream,
+  onViewHistoryVideo,
 }: {
   backgrounds: WorkflowSceneBackgroundOption[];
   selectedBackgroundId: string | null;
   loading: boolean;
   unavailableMessage: string | null;
+  dreamAction: { label: string; description: string | null; viewHistoryVideoLabel: string | null };
   onSelectBackground: (id: string) => void;
   onStartDream: () => void;
+  onViewHistoryVideo: () => void;
 }) {
   const selectedBackground = backgrounds.find((background) => background.id === selectedBackgroundId) ?? null;
 
@@ -535,11 +571,28 @@ function SceneSelector({
       )}
 
       {selectedBackground ? (
-        <div className="flex gap-3 pt-2">
-          <button onClick={onStartDream} className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/85">
-            开始造梦
-            <Sparkles size={14} />
-          </button>
+        <div className="space-y-2 pt-2">
+          {dreamAction.description ? (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+              {dreamAction.description}
+            </div>
+          ) : null}
+          <div className="flex gap-3">
+            {dreamAction.viewHistoryVideoLabel ? (
+              <button
+                type="button"
+                onClick={onViewHistoryVideo}
+                className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-medium text-foreground transition-all hover:border-ring"
+              >
+                {dreamAction.viewHistoryVideoLabel}
+                <ChevronRight size={14} />
+              </button>
+            ) : null}
+            <button onClick={onStartDream} className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/85">
+              {dreamAction.label}
+              <Sparkles size={14} />
+            </button>
+          </div>
         </div>
       ) : null}
     </div>
@@ -612,14 +665,21 @@ export default function WorkflowPage() {
   const [dreamVideoArtifactId, setDreamVideoArtifactId] = useState<string | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [workflowHistoryRuns, setWorkflowHistoryRuns] = useState<AgentRunDto[]>([]);
+  const [selectedWorkflowHistoryRunId, setSelectedWorkflowHistoryRunId] = useState<string | null>(null);
+  const [workflowHistoryLoading, setWorkflowHistoryLoading] = useState(false);
+  const [workflowHistoryError, setWorkflowHistoryError] = useState<string | null>(null);
   const [uploadedImageOrigin, setUploadedImageOrigin] = useState<'manual' | 'generated' | null>(null);
   const [pendingGeneratedImage, setPendingGeneratedImage] = useState<string | null>(null);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [imageGenerationDialogOpen, setImageGenerationDialogOpen] = useState(false);
+  const [draftPersistenceReady, setDraftPersistenceReady] = useState(false);
   const storyboardOperationRef = useRef(0);
   const dreamOperationRef = useRef(0);
   const selectedImageModelRef = useRef<string | null>(null);
   const selectedVideoModelRef = useRef<string | null>(null);
+  const draftHydratedRef = useRef(false);
+  const sourceUploadOperationRef = useRef(0);
   const activationRequired = isLoggedIn && user ? requiresActivation(user) : false;
   const decoratedImageModels = imageModels.map(decorateImageModel);
   const currentImageModel = decoratedImageModels.find((model) => model.id === selectedImageModel) ?? null;
@@ -649,6 +709,128 @@ export default function WorkflowPage() {
   useEffect(() => {
     selectedImageModelRef.current = selectedImageModel;
   }, [selectedImageModel]);
+
+  useEffect(() => {
+    if (draftHydratedRef.current || typeof window === 'undefined') {
+      return;
+    }
+    draftHydratedRef.current = true;
+
+    let rawDraft: string | null = null;
+    try {
+      rawDraft = window.localStorage.getItem(WORKFLOW_DRAFT_STORAGE_KEY);
+    } catch {
+      setDraftPersistenceReady(true);
+      return;
+    }
+    if (!rawDraft) {
+      setDraftPersistenceReady(true);
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawDraft);
+    } catch {
+      try {
+        window.localStorage.removeItem(WORKFLOW_DRAFT_STORAGE_KEY);
+      } catch {
+        // Ignore storage cleanup failures; the workflow can continue without drafts.
+      }
+      setDraftPersistenceReady(true);
+      return;
+    }
+
+    const draft = parseWorkflowDraftSnapshot(parsed);
+    if (!draft) {
+      try {
+        window.localStorage.removeItem(WORKFLOW_DRAFT_STORAGE_KEY);
+      } catch {
+        // Ignore storage cleanup failures; the workflow can continue without drafts.
+      }
+      setDraftPersistenceReady(true);
+      return;
+    }
+
+    setStep(draft.step);
+    setUploadedImage(draft.uploadedImage);
+    setUploadedImageOrigin(draft.uploadedImageOrigin);
+    setUploadedImageFile(null);
+    setSourceImageAssetId(draft.sourceImageAssetId);
+    setSelectedImageModel(draft.selectedImageModel);
+    setStoryboardGenerated(draft.storyboardGenerated);
+    setStoryboardGenerating(false);
+    setStoryboardImageUrl(draft.storyboardImageUrl);
+    setStoryboardRunId(draft.storyboardRunId);
+    setStoryboardArtifactId(draft.storyboardArtifactId);
+    setStoryboardAssetId(draft.storyboardAssetId);
+    setSelectedSceneBackgroundId(draft.selectedSceneBackgroundId);
+    setPrompt(draft.prompt || DEFAULT_PROMPT);
+    setSelectedVideoModel(draft.selectedVideoModel);
+    setDreaming(false);
+    setDreamRunId(draft.dreamRunId);
+    setDreamVideoUrl(draft.dreamVideoUrl);
+    setDreamVideoArtifactId(draft.dreamVideoArtifactId);
+
+    if (!draft.uploadedImage && draft.sourceImageAssetId) {
+      void getSavedMediaAssetAccess(draft.sourceImageAssetId, 'preview')
+        .then((access) => setUploadedImage(access.url))
+        .catch(() => setRuntimeError('已恢复工作流草稿，但原图预览暂时不可用。'));
+    }
+    setDraftPersistenceReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!draftPersistenceReady || typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        WORKFLOW_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          version: 1,
+          step,
+          uploadedImage: uploadedImageOrigin === 'manual' ? null : uploadedImage,
+          uploadedImageOrigin,
+          sourceImageAssetId,
+          selectedImageModel,
+          storyboardGenerated,
+          storyboardImageUrl,
+          storyboardRunId,
+          storyboardArtifactId,
+          storyboardAssetId,
+          selectedSceneBackgroundId,
+          prompt,
+          selectedVideoModel,
+          dreamRunId,
+          dreamVideoUrl,
+          dreamVideoArtifactId,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      // Draft persistence is best-effort and should not block generation.
+    }
+  }, [
+    draftPersistenceReady,
+    dreamRunId,
+    dreamVideoArtifactId,
+    dreamVideoUrl,
+    prompt,
+    selectedImageModel,
+    selectedSceneBackgroundId,
+    selectedVideoModel,
+    sourceImageAssetId,
+    step,
+    storyboardArtifactId,
+    storyboardAssetId,
+    storyboardGenerated,
+    storyboardImageUrl,
+    storyboardRunId,
+    uploadedImage,
+    uploadedImageOrigin,
+  ]);
 
   useEffect(() => {
     if (!isLoggedIn || activationRequired) {
@@ -758,6 +940,67 @@ export default function WorkflowPage() {
     };
   }, [activationRequired, isLoggedIn, videoModelAvailability.reloadKey]);
 
+  useEffect(() => {
+    if (!isLoggedIn || activationRequired) {
+      setWorkflowHistoryRuns([]);
+      setSelectedWorkflowHistoryRunId(null);
+      setWorkflowHistoryLoading(false);
+      setWorkflowHistoryError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadWorkflowHistory() {
+      setWorkflowHistoryLoading(true);
+      setWorkflowHistoryError(null);
+      try {
+        const runs = await listAgentRuns({ taskType: 'video' });
+        const details = await Promise.all(
+          runs.map((run) =>
+            getAgentRunDetail(run.id).catch(() => null),
+          ),
+        );
+        if (cancelled) {
+          return;
+        }
+        const workflowRunIds = new Set(
+          details
+            .filter((detail) =>
+              detail
+                ? isWorkflowVideoHistoryRun({
+                    taskType: detail.run.taskType,
+                    input: detail.internal?.input,
+                  })
+                : false,
+            )
+            .map((detail) => detail?.run.id)
+            .filter((id): id is string => Boolean(id)),
+        );
+        const workflowRuns = runs.filter((run) => workflowRunIds.has(run.id));
+        setWorkflowHistoryRuns(workflowRuns);
+        setSelectedWorkflowHistoryRunId((current) => current ?? workflowRuns[0]?.id ?? null);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setWorkflowHistoryRuns([]);
+        setSelectedWorkflowHistoryRunId(null);
+        setWorkflowHistoryError(error instanceof Error ? error.message : '工作流视频历史加载失败');
+      } finally {
+        if (!cancelled) {
+          setWorkflowHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadWorkflowHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activationRequired, isLoggedIn]);
+
   const currentSnapshot = useCallback(
     () =>
       buildWorkflowStateSnapshot({
@@ -795,6 +1038,8 @@ export default function WorkflowPage() {
   }, []);
 
   const handlePatternUpload = useCallback((nextImage: string, file: File | null) => {
+    sourceUploadOperationRef.current += 1;
+    const operationId = sourceUploadOperationRef.current;
     setUploadedImage(nextImage || null);
     setUploadedImageOrigin(nextImage ? 'manual' : null);
     setUploadedImageFile(nextImage ? file : null);
@@ -808,6 +1053,25 @@ export default function WorkflowPage() {
     setSelectedSceneBackgroundId(null);
     setDreaming(resetState.dreaming);
     clearRuntimeFeedback();
+    if (nextImage && file) {
+      void uploadUserMedia({
+        file,
+        title: '工作流原图',
+      })
+        .then((asset) => {
+          if (sourceUploadOperationRef.current !== operationId) {
+            return;
+          }
+          setSourceImageAssetId(asset.id);
+          setRuntimeStatus('原图已上传并暂存。');
+        })
+        .catch((error) => {
+          if (sourceUploadOperationRef.current !== operationId) {
+            return;
+          }
+          setRuntimeError(error instanceof Error ? error.message : '原图暂存失败，请稍后重试。');
+        });
+    }
   }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot]);
 
   const handleSelectImageModel = useCallback((modelId: string) => {
@@ -1079,8 +1343,35 @@ export default function WorkflowPage() {
     setStep(2);
   }, []);
 
+  const handleUploadStepNext = useCallback(() => {
+    const action = resolveWorkflowUploadStepNextAction({
+      storyboardAssetId,
+      storyboardRunId,
+      storyboardArtifactId,
+    });
+
+    if (action === 'view_storyboard') {
+      setStep(1);
+      clearRuntimeFeedback();
+      return;
+    }
+
+    void handleSubmitStoryboard();
+  }, [
+    clearRuntimeFeedback,
+    handleSubmitStoryboard,
+    storyboardArtifactId,
+    storyboardAssetId,
+    storyboardRunId,
+  ]);
+
   const handleGoToPreviousStep = useCallback(() => {
     setStep((current) => Math.max(current - 1, 0));
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback]);
+
+  const handleViewHistoryVideo = useCallback(() => {
+    setStep(3);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback]);
 
@@ -1094,6 +1385,76 @@ export default function WorkflowPage() {
     setDreamVideoArtifactId(null);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, currentSnapshot]);
+
+  const loadWorkflowVideoRunPreview = useCallback(async (runId: string) => {
+    setSelectedWorkflowHistoryRunId(runId);
+    setRuntimeError(null);
+    setRuntimeStatus('正在加载工作流视频记录...');
+
+    try {
+      const syncedRun = await syncAgentRun(runId).catch(() => null);
+      const detail = await getAgentRunDetail(runId);
+      const restore = createWorkflowVideoRestoreSnapshot(detail);
+      if (!restore) {
+        throw new Error('该记录不是工作流视频任务。');
+      }
+
+      setWorkflowHistoryRuns((current) => [
+        syncedRun ?? detail.run,
+        ...current.filter((run) => run.id !== runId),
+      ]);
+      setStep(restore.step);
+      setSourceImageAssetId(restore.sourceImageAssetId);
+      setUploadedImageOrigin(restore.uploadedImageOrigin);
+      setUploadedImageFile(null);
+      setStoryboardRunId(restore.storyboardRunId);
+      setStoryboardArtifactId(restore.storyboardArtifactId);
+      setStoryboardAssetId(restore.storyboardAssetId);
+      setSelectedSceneBackgroundId(restore.selectedSceneBackgroundId);
+      setSelectedVideoModel(restore.selectedVideoModel);
+      setPrompt(restore.prompt || DEFAULT_PROMPT);
+      setDreamRunId(restore.dreamRunId);
+      setDreamVideoArtifactId(restore.dreamVideoArtifactId);
+      setDreaming(shouldContinueWorkflowVideoSync(detail.run.status));
+
+      if (restore.sourceImageAssetId) {
+        void getSavedMediaAssetAccess(restore.sourceImageAssetId, 'preview')
+          .then((access) => setUploadedImage(access.url))
+          .catch(() => null);
+      }
+
+      if (restore.storyboardRunId && restore.storyboardArtifactId) {
+        void getGeneratedRunArtifactAccess(restore.storyboardRunId, restore.storyboardArtifactId, 'preview')
+          .then((access) => {
+            setStoryboardImageUrl(access.url);
+            setStoryboardGenerated(true);
+          })
+          .catch(() => null);
+      }
+
+      const videoArtifact = firstMediaArtifact(detail.run, 'video');
+      if (detail.run.status === 'failed') {
+        setDreamVideoUrl(null);
+        setRuntimeStatus(null);
+        setRuntimeError(detail.run.errorMessage ?? '工作流视频生成失败');
+        setDreaming(false);
+        return;
+      }
+      if (!videoArtifact) {
+        setDreamVideoUrl(null);
+        setRuntimeStatus('工作流视频任务仍在处理中。');
+        return;
+      }
+
+      const videoAccess = await getGeneratedRunArtifactAccess(detail.run.id, videoArtifact.id, 'preview');
+      setDreamVideoUrl(videoAccess.url);
+      setRuntimeStatus('已加载工作流视频记录。');
+      setDreaming(false);
+    } catch (error) {
+      setRuntimeStatus(null);
+      setRuntimeError(error instanceof Error ? error.message : '工作流视频记录加载失败');
+    }
+  }, []);
 
   const handleStartDream = useCallback(async () => {
     if (!isLoggedIn) { openLoginModal(); return; }
@@ -1177,32 +1538,24 @@ export default function WorkflowPage() {
       if (dreamOperationRef.current !== operationId) return;
 
       setDreamRunId(run.id);
-      const syncedRun = await syncAgentRun(run.id).catch(() => run);
-      if (dreamOperationRef.current !== operationId) return;
-      if (syncedRun.status === 'failed') {
-        throw new Error(syncedRun.errorMessage ?? '视频生成请求失败');
-      }
-      if (syncedRun.status !== 'succeeded') {
-        setRuntimeStatus('视频任务已提交，稍后可通过任务同步获取结果。');
-        setDreaming(false);
-        return;
-      }
-
-      const detail = await getAgentRunDetail(run.id);
-      const artifact = detail.run.artifacts.find(
-        (item) => item.kind === 'video' && item.status === 'ready',
-      );
-      if (!artifact) {
-        setRuntimeStatus('视频任务已完成，但暂未找到可预览的视频结果。');
-        setDreaming(false);
-        return;
-      }
-      const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
-      if (dreamOperationRef.current !== operationId) return;
-      setDreamVideoUrl(access.url);
-      setDreamVideoArtifactId(artifact.id);
-      setRuntimeStatus('工作流视频已生成。');
+      setSelectedWorkflowHistoryRunId(run.id);
+      setWorkflowHistoryRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setRuntimeStatus(`视频任务已提交，任务 ID：${run.id}。你可以继续调整工作流并发起新的视频。`);
       setDreaming(false);
+      void (async () => {
+        let latestRun = run;
+        for (let attempt = 0; attempt < WORKFLOW_VIDEO_SYNC_MAX_ATTEMPTS; attempt += 1) {
+          latestRun = await syncAgentRun(run.id);
+          setWorkflowHistoryRuns((current) => [
+            latestRun,
+            ...current.filter((item) => item.id !== latestRun.id),
+          ]);
+          if (!shouldContinueWorkflowVideoSync(latestRun.status)) {
+            break;
+          }
+          await wait(WORKFLOW_VIDEO_SYNC_INTERVAL_MS);
+        }
+      })().catch(() => null);
     } catch (error) {
       if (dreamOperationRef.current !== operationId) return;
       setDreaming(false);
@@ -1357,6 +1710,46 @@ export default function WorkflowPage() {
                   <PatternUploadZone uploadedImage={uploadedImage} onUpload={handlePatternUpload} />
                 </div>
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold text-foreground">12宫格提示词</h2>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        这段提示词会随上传图案一起传递给 12 宫格分镜。
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrompt(DEFAULT_PROMPT);
+                          clearRuntimeFeedback();
+                        }}
+                        className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
+                      >
+                        <RotateCcw size={12} />
+                        恢复默认
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPromptDialogOpen(true)}
+                        className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/85"
+                      >
+                        <Wand2 size={12} />
+                        AI优化
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    value={prompt}
+                    onChange={(event) => {
+                      setPrompt(event.target.value);
+                      clearRuntimeFeedback();
+                    }}
+                    rows={5}
+                    className="w-full resize-none rounded-xl border border-input bg-card p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                  />
+                </div>
+                <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
                   {imageModelAvailability.status === 'ready' && decoratedImageModels.length > 0 ? (
                     <ModelSelector
                       models={decoratedImageModels}
@@ -1387,15 +1780,24 @@ export default function WorkflowPage() {
                   )}
                 </div>
                 <button
-                  onClick={handleSubmitStoryboard}
+                  onClick={handleUploadStepNext}
                   disabled={!uploadedImage || imageModelLoading || !selectedImageModel || Boolean(imageModelUnavailableMessage)}
-                  className={`w-full cursor-pointer rounded-xl py-3.5 text-sm font-medium transition-all ${
+                  className={`flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-medium transition-all ${
                     uploadedImage && !activationRequired && !imageModelLoading && selectedImageModel && !imageModelUnavailableMessage
                       ? 'bg-primary text-primary-foreground hover:bg-primary/85'
                       : 'cursor-not-allowed bg-secondary text-muted-foreground'
                   }`}
                 >
-                  {activationRequired ? '请先激活账号' : '提交生成分镜'}
+                  {activationRequired
+                    ? '请先激活账号'
+                    : resolveWorkflowUploadStepNextAction({
+                        storyboardAssetId,
+                        storyboardRunId,
+                        storyboardArtifactId,
+                      }) === 'view_storyboard'
+                      ? '下一步：查看12宫格'
+                      : '下一步：生成分镜'}
+                  {!activationRequired ? <ChevronRight size={14} /> : null}
                 </button>
               </div>
             )}
@@ -1472,8 +1874,13 @@ export default function WorkflowPage() {
                   selectedBackgroundId={selectedSceneBackgroundId}
                   loading={videoModelLoading}
                   unavailableMessage={videoModelPlaceholderMessage}
+                  dreamAction={resolveWorkflowSceneStepDreamAction({
+                    dreamRunId,
+                    hasDreamVideo: Boolean(dreamVideoUrl),
+                  })}
                   onSelectBackground={handleSelectWorkflowSceneBackground}
                   onStartDream={handleStartDream}
+                  onViewHistoryVideo={handleViewHistoryVideo}
                 />
               </div>
             )}
@@ -1486,8 +1893,7 @@ export default function WorkflowPage() {
                   <button
                     type="button"
                     onClick={handleGoToPreviousStep}
-                    disabled={dreaming}
-                    className="rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
                   >
                     上一步
                   </button>
@@ -1506,7 +1912,7 @@ export default function WorkflowPage() {
                 ) : (
                   <div className="rounded-xl border border-border bg-secondary/40 px-4 py-6 text-sm text-muted-foreground">
                     {dreamRunId
-                      ? `造梦任务已提交，任务 ID：${dreamRunId}。你可以稍后同步任务结果。`
+                      ? `造梦任务已提交，任务 ID：${dreamRunId}。你可以返回上一步调整材料并生成新的视频。`
                       : '造梦任务已结束。你可以返回上一步继续调整场景、提示词或视频模型后重新开始。'}
                   </div>
                 )}
@@ -1516,6 +1922,65 @@ export default function WorkflowPage() {
 
           {/* 右侧面板 */}
           <div className="lg:col-span-2 space-y-4">
+            <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-foreground">造梦记录</p>
+                <span className="text-[11px] text-muted-foreground">
+                  {workflowHistoryRuns.length > 0 ? `${workflowHistoryRuns.length} 条` : ''}
+                </span>
+              </div>
+              {workflowHistoryError ? (
+                <div className="mb-2 rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-500">
+                  {workflowHistoryError}
+                </div>
+              ) : null}
+              <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                {workflowHistoryLoading ? (
+                  <div className="rounded-xl border border-border bg-background px-3 py-4 text-center text-xs text-muted-foreground">
+                    正在加载记录...
+                  </div>
+                ) : workflowHistoryRuns.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border bg-background px-3 py-4 text-center text-xs text-muted-foreground">
+                    暂无造梦记录
+                  </div>
+                ) : (
+                  workflowHistoryRuns.map((run) => {
+                    const artifact = firstMediaArtifact(run, 'video');
+                    const isSelected = selectedWorkflowHistoryRunId === run.id;
+                    return (
+                      <button
+                        key={run.id}
+                        type="button"
+                        onClick={() => void loadWorkflowVideoRunPreview(run.id)}
+                        className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+                          isSelected
+                            ? 'border-ring bg-secondary text-foreground'
+                            : 'border-border bg-background hover:border-ring'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate text-xs font-medium">
+                            {run.prompt}
+                          </span>
+                          <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+                            {run.status === 'succeeded'
+                              ? '完成'
+                              : run.status === 'failed'
+                                ? '失败'
+                                : '运行中'}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                          <span>{formatHistoryTime(run.createdAt)}</span>
+                          <span>{artifact ? '可预览' : '等待结果'}</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
             {/* 当前图片模型 */}
             {(step === 0 || step === 1) && (
               <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-5">

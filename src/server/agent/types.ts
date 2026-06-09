@@ -93,7 +93,7 @@ export type WorkflowVideoMvpCapabilityConfig = {
   promptTemplate: string;
   modelBinding: {
     providerCode: 'doubao';
-    model: 'doubao-seedance-2-0';
+    model: string;
     executionProtocol: 'video_task_polling';
   };
   defaults: {

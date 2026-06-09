@@ -20,6 +20,7 @@ function publicModel(id = 'gpt-4o-mini'): PublicChatModelDto {
     id,
     code: id,
     name: id,
+    model: id,
     providerName: 'Enterprise',
     isDefault: id === 'gpt-4o-mini',
     entitlementLabel: 'Enterprise',
@@ -69,6 +70,23 @@ test('toOpenAiModelList maps public chat models to OpenAI-compatible model objec
       { id: 'claude-3-5', object: 'model', owned_by: 'enterprise' },
     ],
   });
+});
+
+test('toOpenAiModelList exposes configured provider model names instead of database ids', () => {
+  assert.deepEqual(
+    toOpenAiModelList([
+      {
+        ...publicModel('32c48f64-0e05-4328-b80e-78cfbcc55beb'),
+        code: 'deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        model: 'deepseek-v4-pro',
+      },
+    ]),
+    {
+      object: 'list',
+      data: [{ id: 'deepseek-v4-pro', object: 'model', owned_by: 'enterprise' }],
+    },
+  );
 });
 
 test('requireEnterpriseModelProxy rejects missing models proxy before model/provider calls', async () => {

@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+
 import {
   calculateChatCreditCost,
   calculateImageCreditCost,
@@ -197,6 +200,14 @@ type GeneratedMediaCache = {
   cacheGeneratedMedia(input: CacheGeneratedMediaInput): Promise<CachedGeneratedMedia>;
 };
 type GeneratedMediaCacheResolver = () => GeneratedMediaCache | null;
+type WorkflowSceneBackgroundCacheInput = {
+  userId: string;
+  runId: string;
+  sceneBackgroundId: string;
+  publicUrl: string;
+  cache: GeneratedMediaCache | null;
+  signVideoMaterialUrl: VideoMaterialSigner;
+};
 
 export type CreateAgentRunServiceInput = {
   repository: AgentRunRepository;
@@ -954,6 +965,111 @@ function resolvePublicWorkflowBackgroundUrl(
   return new URL(publicUrl, baseUrl).toString();
 }
 
+async function resolveWorkflowSceneBackgroundMaterialUrl(
+  input: WorkflowSceneBackgroundCacheInput,
+) {
+  if (!input.cache) {
+    throw new AgentRunVideoMaterialError({
+      code: 'invalid_request',
+      message: 'workflow video scene background cache is not configured.',
+    });
+  }
+
+  const dataUrl = await readWorkflowPublicImageDataUrl(input.publicUrl);
+  const cached = await input.cache.cacheGeneratedMedia({
+    userId: input.userId,
+    runId: input.runId,
+    artifactId: `workflow-scene-background-${input.sceneBackgroundId}`,
+    kind: 'image',
+    title: `Workflow scene background ${input.sceneBackgroundId}`,
+    dataUrl,
+    mimeType: 'image/png',
+    filename: path.posix.basename(input.publicUrl),
+    metadata: {
+      source: 'workflow_scene_background',
+      sceneBackgroundId: input.sceneBackgroundId,
+      publicUrl: input.publicUrl,
+      mimeType: 'image/png',
+    },
+  });
+
+  return input.signVideoMaterialUrl(cachedGeneratedMediaToAsset({
+    userId: input.userId,
+    runId: input.runId,
+    cached,
+    title: `Workflow scene background ${input.sceneBackgroundId}`,
+  }));
+}
+
+async function readWorkflowPublicImageDataUrl(publicUrl: string) {
+  if (!publicUrl.startsWith('/workflow-backgrounds/')) {
+    throw new AgentRunVideoMaterialError({
+      code: 'invalid_request',
+      message: 'workflow video scene background URL is not allowed.',
+    });
+  }
+
+  const decodedPath = decodeURIComponent(publicUrl);
+  const normalizedRelativePath = path.posix.normalize(decodedPath).replace(/^\/+/, '');
+  if (
+    normalizedRelativePath.startsWith('..') ||
+    !normalizedRelativePath.startsWith('workflow-backgrounds/')
+  ) {
+    throw new AgentRunVideoMaterialError({
+      code: 'invalid_request',
+      message: 'workflow video scene background URL is invalid.',
+    });
+  }
+
+  const filePath = path.join(process.cwd(), 'public', normalizedRelativePath);
+  const bytes = await readFile(filePath);
+  return `data:image/png;base64,${bytes.toString('base64')}`;
+}
+
+function cachedGeneratedMediaToAsset(input: {
+  userId: string;
+  runId: string;
+  title: string;
+  cached: CachedGeneratedMedia;
+}): GeneratedMediaAssetDto {
+  const timestamp = new Date().toISOString();
+  return {
+    id: `workflow-scene-background-${input.runId}`,
+    userId: input.userId,
+    runId: input.runId,
+    conversationId: null,
+    artifactId: null,
+    kind: 'image',
+    title: input.title,
+    sourceType: 'ai_generated',
+    sourceProvider: null,
+    sourceModel: null,
+    sourceUrl: null,
+    sourceExpiresAt: input.cached.expiresAt,
+    originalFilename: null,
+    sha256: null,
+    shareId: null,
+    shareStatus: 'disabled',
+    sharedAt: null,
+    storageProvider: input.cached.storageProvider,
+    bucket: input.cached.bucket,
+    region: input.cached.region,
+    objectKey: input.cached.objectKey,
+    mimeType: input.cached.mimeType,
+    byteSize: input.cached.byteSize,
+    width: input.cached.width,
+    height: input.cached.height,
+    durationSeconds: input.cached.durationSeconds,
+    status: 'ready',
+    metadata: input.cached.metadata,
+    saveRequestedAt: timestamp,
+    savedAt: timestamp,
+    deletedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 function selectMembershipEntitlement(entitlements: ActiveUserEntitlement[]) {
   const membershipEntitlements = entitlements.filter(
     (entitlement) =>
@@ -1228,6 +1344,7 @@ export function createAgentRunService({
             resolveVideoGenerationPolicyForUser,
             mediaAssetRepository,
             signVideoMaterialUrl,
+            resolveGeneratedMediaCache,
           });
         }
 
@@ -1591,6 +1708,7 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
   resolveVideoGenerationPolicyForUser: (userId: string) => Promise<VideoGenerationPolicy>;
   mediaAssetRepository?: GeneratedMediaAssetRepository;
   signVideoMaterialUrl: VideoMaterialSigner;
+  resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
 }): Promise<CreateAgentRunResult> {
   const request = input.input;
   const workflowVideoInput = parseWorkflowVideoMvpInput(request.input);
@@ -1646,15 +1764,14 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
     });
   }
 
-  const modelId = readStringInput(request.input, 'modelId') ?? workflowVideoConfig.modelBinding.model;
+  const modelId = workflowVideoConfig.modelBinding.model;
   const model = await input.resolveVideoModelForUser(request.userId, modelId);
   if (
-    model.providerCode !== workflowVideoConfig.modelBinding.providerCode ||
     model.model !== workflowVideoConfig.modelBinding.model ||
     model.executionProtocol !== workflowVideoConfig.modelBinding.executionProtocol
   ) {
     throw new ProviderConfigurationError(
-      '工作流视频模型绑定无效，请在管理端确认 doubao-seedance-2-0 视频模型已启用。',
+      `工作流视频模型绑定无效，请在管理端确认 ${workflowVideoConfig.modelBinding.model} 视频模型已启用。`,
     );
   }
 
@@ -1676,7 +1793,7 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
       signVideoMaterialUrl: input.signVideoMaterialUrl,
     }),
   ]);
-  const sceneBackgroundUrl = resolvePublicWorkflowBackgroundUrl(
+  const sceneBackgroundPublicUrl = resolvePublicWorkflowBackgroundUrl(
     sceneBackground.publicUrl,
     request.input,
   );
@@ -1688,7 +1805,7 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
       workflow_prompt: request.prompt,
       source_image_url: sourceImageUrl,
       storyboard_image_url: storyboardImageUrl,
-      scene_background_url: sceneBackgroundUrl,
+      scene_background_url: sceneBackgroundPublicUrl,
       storyboard_prompt_map: storyboardPromptMap,
       duration_seconds: String(durationSeconds),
       resolution,
@@ -1761,6 +1878,14 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
 
   let createdTask: Awaited<ReturnType<NonNullable<typeof adapter.createVideoTask>>>;
   try {
+    const sceneBackgroundUrl = await resolveWorkflowSceneBackgroundMaterialUrl({
+      userId: request.userId,
+      runId: running.id,
+      sceneBackgroundId: sceneBackground.id,
+      publicUrl: sceneBackground.publicUrl,
+      cache: input.resolveGeneratedMediaCache(),
+      signVideoMaterialUrl: input.signVideoMaterialUrl,
+    });
     createdTask = await adapter.createVideoTask({
       runId: running.id,
       userId: request.userId,

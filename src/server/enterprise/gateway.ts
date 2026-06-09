@@ -16,9 +16,13 @@ import {
 } from '@/server/enterprise/entitlements';
 import {
   listAvailableChatModelsForUser,
+  listAvailableImageModelsForUser,
+  listAvailableVideoModelsForUser,
   ModelEntitlementRequiredError,
   ModelNotAvailableError,
   resolveChatModelForUser,
+  type PublicImageModelDto,
+  type PublicVideoModelDto,
   type PublicChatModelDto,
   type ResolvedChatModel,
 } from '@/server/repositories/ai-models';
@@ -49,6 +53,11 @@ type OpenAiUsage = {
 export type EnterpriseGatewayDeps = {
   resolveEnterpriseEntitlements?: (userId: string) => Promise<EnterpriseEntitlementsResponse>;
   listAvailableChatModelsForUser?: (userId: string) => Promise<PublicChatModelDto[]>;
+  listAvailableImageModelsForUser?: (
+    userId: string,
+    mode: 'generate' | 'edit' | 'upscale',
+  ) => Promise<PublicImageModelDto[]>;
+  listAvailableVideoModelsForUser?: (userId: string) => Promise<PublicVideoModelDto[]>;
   resolveChatModelForUser?: (userId: string, modelId: string) => Promise<ResolvedChatModel>;
   createChatProviderAdapter?: (model: ResolvedChatModel) => ChatProviderAdapter;
   now?: () => Date;
@@ -58,6 +67,8 @@ export type EnterpriseGatewayDeps = {
 const defaultDeps = {
   resolveEnterpriseEntitlements,
   listAvailableChatModelsForUser,
+  listAvailableImageModelsForUser,
+  listAvailableVideoModelsForUser,
   resolveChatModelForUser,
   createChatProviderAdapter,
   now: () => new Date(),
@@ -65,14 +76,23 @@ const defaultDeps = {
 };
 
 export function toOpenAiModelList(models: PublicChatModelDto[]) {
+  const uniqueModels = new Map<string, PublicChatModelDto>();
+  for (const model of models) {
+    uniqueModels.set(openAiModelId(model), model);
+  }
+
   return {
     object: 'list',
-    data: models.map((model) => ({
-      id: model.id,
+    data: Array.from(uniqueModels.values()).map((model) => ({
+      id: openAiModelId(model),
       object: 'model',
       owned_by: 'enterprise',
     })),
   };
+}
+
+function openAiModelId(model: PublicChatModelDto) {
+  return model.model?.trim() || model.code || model.id;
 }
 
 export function parseOpenAiChatCompletionBody(body: unknown): OpenAiChatCompletionRequest {
@@ -145,7 +165,22 @@ export async function listEnterpriseOpenAiModels(
 ) {
   const resolvedDeps = resolveDeps(deps);
   await requireEnterpriseModelProxy(userId, resolvedDeps);
-  return toOpenAiModelList(await resolvedDeps.listAvailableChatModelsForUser(userId));
+  const [chatModels, imageGenerateModels, imageEditModels, imageUpscaleModels, videoModels] =
+    await Promise.all([
+      resolvedDeps.listAvailableChatModelsForUser(userId),
+      resolvedDeps.listAvailableImageModelsForUser(userId, 'generate'),
+      resolvedDeps.listAvailableImageModelsForUser(userId, 'edit'),
+      resolvedDeps.listAvailableImageModelsForUser(userId, 'upscale'),
+      resolvedDeps.listAvailableVideoModelsForUser(userId),
+    ]);
+
+  return toOpenAiModelList([
+    ...chatModels,
+    ...imageGenerateModels,
+    ...imageEditModels,
+    ...imageUpscaleModels,
+    ...videoModels,
+  ]);
 }
 
 export async function createEnterpriseChatCompletion(
@@ -357,6 +392,10 @@ function resolveDeps(deps: EnterpriseGatewayDeps): Required<EnterpriseGatewayDep
       deps.resolveEnterpriseEntitlements ?? defaultDeps.resolveEnterpriseEntitlements,
     listAvailableChatModelsForUser:
       deps.listAvailableChatModelsForUser ?? defaultDeps.listAvailableChatModelsForUser,
+    listAvailableImageModelsForUser:
+      deps.listAvailableImageModelsForUser ?? defaultDeps.listAvailableImageModelsForUser,
+    listAvailableVideoModelsForUser:
+      deps.listAvailableVideoModelsForUser ?? defaultDeps.listAvailableVideoModelsForUser,
     resolveChatModelForUser: deps.resolveChatModelForUser ?? defaultDeps.resolveChatModelForUser,
     createChatProviderAdapter:
       deps.createChatProviderAdapter ?? defaultDeps.createChatProviderAdapter,

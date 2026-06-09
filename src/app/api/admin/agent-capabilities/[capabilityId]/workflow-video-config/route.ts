@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { accountErrorToResponse } from '@/server/auth/account-types';
 import { requireAdmin } from '@/server/auth/guards';
-import { runProtectedMutation } from '@/server/api-request-guard';
+import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import {
   getWorkflowVideoMvpCapabilityConfig,
   saveWorkflowVideoMvpCapabilityConfig,
@@ -32,6 +32,13 @@ const bodySchema = z.object({
     durationSeconds: z.number().int().positive(),
     resolution: z.string().transform((value) => value.trim()).pipe(z.string().min(1)),
   }),
+  modelBinding: z
+    .object({
+      providerCode: z.literal('doubao'),
+      model: z.string().transform((value) => value.trim()).pipe(z.string().min(1)),
+      executionProtocol: z.literal('video_task_polling'),
+    })
+    .optional(),
   sceneBackgrounds: z
     .array(
       z.object({
@@ -59,11 +66,17 @@ function validationResponse(message: string) {
 export function createWorkflowVideoConfigRouteHandlers(dependencies: {
   requireAdminSession: () => Promise<AdminSessionLike>;
   getConfig: (capabilityId: string) => Promise<AdminWorkflowVideoCapabilityConfigRecord>;
+  readJsonBody?: typeof readJsonBody;
   saveConfig: (input: {
     capabilityId: string;
     adminUserId: string;
     description: string;
     promptTemplate: string;
+    modelBinding?: {
+      providerCode: 'doubao';
+      model: string;
+      executionProtocol: 'video_task_polling';
+    };
     defaults: { durationSeconds: number; resolution: string };
     sceneBackgrounds?: unknown;
   }) => Promise<AdminWorkflowVideoCapabilityConfigRecord>;
@@ -98,7 +111,12 @@ export function createWorkflowVideoConfigRouteHandlers(dependencies: {
       try {
         const session = await dependencies.requireAdminSession();
         const params = paramsSchema.parse(await context.params);
-        const body = parseWorkflowVideoConfigBody(await request.json());
+        const {
+          rawBody,
+          decryptedRawBody,
+          body: parsedBody,
+        } = await (dependencies.readJsonBody ?? readJsonBody)(request);
+        const body = parseWorkflowVideoConfigBody(parsedBody);
 
         return runProtectedMutation(
           {
@@ -108,7 +126,8 @@ export function createWorkflowVideoConfigRouteHandlers(dependencies: {
               'PUT /api/admin/agent-capabilities/[capabilityId]/workflow-video-config',
             actorType: 'admin',
             actorId: session.user.id,
-            rawBody: JSON.stringify(body),
+            rawBody,
+            decryptedRawBody,
             parsedBody: body,
           },
           async () => {

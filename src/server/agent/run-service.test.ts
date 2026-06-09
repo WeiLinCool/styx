@@ -184,7 +184,13 @@ function storyboardCapabilitySnapshot(): AgentCapabilitySnapshot {
   };
 }
 
-function workflowVideoCapabilitySnapshot(): AgentCapabilitySnapshot {
+function workflowVideoCapabilitySnapshot(options?: {
+  modelBinding?: {
+    providerCode: 'doubao';
+    model: string;
+    executionProtocol: 'video_task_polling';
+  };
+}): AgentCapabilitySnapshot {
   return {
     bundleId: 'workflow-bundle-1',
     bundleCode: 'workflow-default',
@@ -214,6 +220,7 @@ function workflowVideoCapabilitySnapshot(): AgentCapabilitySnapshot {
             providerCode: 'doubao',
             model: 'doubao-seedance-2-0',
             executionProtocol: 'video_task_polling',
+            ...options?.modelBinding,
           },
           defaults: { durationSeconds: 5, resolution: '720p' },
           sceneBackgrounds: [
@@ -266,7 +273,18 @@ async function createImageAsset(
 }
 
 function testGeneratedMediaCache() {
+  const calls: Array<{
+    userId: string;
+    runId: string;
+    artifactId: string;
+    kind: 'image' | 'video';
+    sourceUrl?: string;
+    dataUrl?: string;
+    mimeType?: string;
+    metadata?: Record<string, unknown>;
+  }> = [];
   return {
+    calls,
     async cacheGeneratedMedia(input: {
       userId: string;
       runId: string;
@@ -277,6 +295,7 @@ function testGeneratedMediaCache() {
       mimeType?: string;
       metadata?: Record<string, unknown>;
     }) {
+      calls.push(input);
       assert.equal(input.userId, 'user-1');
       assert.ok(input.sourceUrl || input.dataUrl);
       const mimeType =
@@ -838,6 +857,7 @@ test('video run stores canonical input and passes signed material URLs to adapte
     resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
     mediaAssetRepository: assetRepository,
     signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    generatedMediaCache: testGeneratedMediaCache(),
     assertCanAffordMinimum: async () => {},
     createVideoProviderAdapter: () => ({
       protocol: 'video_task_polling',
@@ -1054,6 +1074,7 @@ test('workflow video creates doubao seedance video task with ordered materials',
   const assetRepository = createMemoryGeneratedMediaAssetRepository();
   const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
   const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  const cache = testGeneratedMediaCache();
   const providerRequests: VideoProviderCreateRequest[] = [];
   const service = createAgentRunService({
     repository,
@@ -1064,6 +1085,7 @@ test('workflow video creates doubao seedance video task with ordered materials',
     resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
     mediaAssetRepository: assetRepository,
     signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    generatedMediaCache: cache,
     assertCanAffordMinimum: async () => {},
     createVideoProviderAdapter: () => ({
       protocol: 'video_task_polling',
@@ -1107,12 +1129,275 @@ test('workflow video creates doubao seedance video task with ordered materials',
   assert.deepEqual(providerRequest?.imageUrls, [
     'https://signed.example/workflow/source.png',
     'https://signed.example/workflow/storyboard.png',
-    'https://app.example/workflow-backgrounds/1%E5%8E%9F%E6%9C%A8%E6%A1%8C%E6%89%8B%E4%BD%9C%E9%A3%8E/1.png',
+    `https://signed.example/cache/${result.run.id}/workflow-scene-background-wood-table-handmade-1`,
   ]);
+  assert.equal(cache.calls[0]?.artifactId, 'workflow-scene-background-wood-table-handmade-1');
+  assert.match(cache.calls[0]?.dataUrl ?? '', /^data:image\/png;base64,/);
   assert.match(providerRequest?.prompt ?? '', /生成工作流视频/);
   assert.match(providerRequest?.prompt ?? '', /"shot1":"开场"/);
   assert.equal(detail?.internal?.input?.stage, 'workflow_video');
   assert.equal(detail?.internal?.input?.providerTaskId, 'task-workflow-video');
+});
+
+test('workflow video uses configured capability-bound seedance model when request model differs', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
+  const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  const configuredModel = 'doubao-seedance-2-0-fast-260128';
+  const requestedModelIds: string[] = [];
+  const providerRequests: VideoProviderCreateRequest[] = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () =>
+      workflowVideoCapabilitySnapshot({
+        modelBinding: {
+          providerCode: 'doubao',
+          model: configuredModel,
+          executionProtocol: 'video_task_polling',
+        },
+      }),
+    resolveVideoModelForUser: async (_userId, modelId) => {
+      requestedModelIds.push(modelId);
+      if (modelId === configuredModel) {
+        return resolvedVideoModel({ id: 'seedance-model-id', model: configuredModel });
+      }
+      return resolvedVideoModel({ id: modelId, model: 'development-free-video' });
+    },
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    generatedMediaCache: testGeneratedMediaCache(),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask(request) {
+        providerRequests.push(request);
+        return { providerTaskId: 'task-workflow-video', rawMetadata: { id: 'task-workflow-video' } };
+      },
+      async getVideoTask() {
+        throw new Error('not used');
+      },
+    }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'workflow',
+    prompt: '生成工作流视频',
+    input: {
+      stage: 'workflow_video',
+      modelId: 'development-video-id',
+      sourceImageAssetId: source.id,
+      storyboardArtifactId: storyboard.id,
+      sceneBackgroundId: 'wood-table-handmade-1',
+      origin: 'https://app.example',
+      storyboardPromptMap: { shot1: '开场' },
+      durationSeconds: 5,
+      resolution: '720p',
+    },
+  });
+
+  const detail = await repository.getRunDetailForUser(result.run.id, 'user-1');
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(requestedModelIds, [configuredModel]);
+  assert.equal(providerRequests[0]?.model.model, configuredModel);
+  assert.equal(detail?.internal?.input?.modelId, 'seedance-model-id');
+});
+
+test('workflow video accepts configured seedance model from enabled database provider code', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
+  const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  const configuredModel = 'doubao-seedance-2-0-fast-260128';
+  const providerRequests: VideoProviderCreateRequest[] = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () =>
+      workflowVideoCapabilitySnapshot({
+        modelBinding: {
+          providerCode: 'doubao',
+          model: configuredModel,
+          executionProtocol: 'video_task_polling',
+        },
+      }),
+    resolveVideoModelForUser: async () =>
+      resolvedVideoModel({
+        id: 'seedance-model-id',
+        model: configuredModel,
+        providerCode: 'ark',
+    }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    generatedMediaCache: testGeneratedMediaCache(),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask(request) {
+        providerRequests.push(request);
+        return { providerTaskId: 'task-workflow-video', rawMetadata: { id: 'task-workflow-video' } };
+      },
+      async getVideoTask() {
+        throw new Error('not used');
+      },
+    }),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'workflow',
+    prompt: '生成工作流视频',
+    input: {
+      stage: 'workflow_video',
+      modelId: 'development-video-id',
+      sourceImageAssetId: source.id,
+      storyboardArtifactId: storyboard.id,
+      sceneBackgroundId: 'wood-table-handmade-1',
+      origin: 'https://app.example',
+      storyboardPromptMap: { shot1: '开场' },
+      durationSeconds: 5,
+      resolution: '720p',
+    },
+  });
+
+  assert.equal(result.run.status, 'running');
+  assert.equal(providerRequests[0]?.model.providerCode, 'ark');
+  assert.equal(providerRequests[0]?.model.model, configuredModel);
+});
+
+test('workflow video marks run failed when scene background cache fails', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
+  const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () => workflowVideoCapabilitySnapshot(),
+    resolveVideoModelForUser: async () =>
+      resolvedVideoModel({ id: 'model-video', model: 'doubao-seedance-2-0' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    generatedMediaCache: failingGeneratedMediaCache('background cache unavailable'),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        throw new Error('provider should not be called');
+      },
+      async getVideoTask() {
+        throw new Error('not used');
+      },
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'workflow',
+        prompt: '生成工作流视频',
+        input: {
+          stage: 'workflow_video',
+          modelId: 'model-video',
+          sourceImageAssetId: source.id,
+          storyboardArtifactId: storyboard.id,
+          sceneBackgroundId: 'wood-table-handmade-1',
+          origin: 'https://app.example',
+          storyboardPromptMap: { shot1: '开场' },
+          durationSeconds: 5,
+          resolution: '720p',
+        },
+      }),
+    /background cache unavailable/,
+  );
+
+  const runs = await repository.listRunsForUser('user-1');
+  assert.equal(runs[0]?.status, 'failed');
+});
+
+test('workflow video sync records generated video billing and artifact', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
+  const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  const debits: Array<{ amount: number; runId: string }> = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () => workflowVideoCapabilitySnapshot(),
+    resolveVideoModelForUser: async () =>
+      resolvedVideoModel({
+        id: 'model-video',
+        model: 'doubao-seedance-2-0',
+        pricing: {
+          unit: 'token',
+          promptCreditsPer1k: 0,
+          completionCreditsPer1k: 1,
+          minimumCredits: 6,
+        },
+      }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        return { providerTaskId: 'task-workflow-video', rawMetadata: { id: 'task-workflow-video' } };
+      },
+      async getVideoTask() {
+        return {
+          providerTaskId: 'task-workflow-video',
+          status: 'succeeded',
+          outputUrl: 'https://provider.example/workflow-video.mp4',
+          rawMetadata: { usage: { output_seconds: 5 } },
+        };
+      },
+    }),
+    debitForImageAgentRun: async (input) => {
+      debits.push({ amount: input.amount, runId: input.runId });
+      return { entryId: 'ledger-workflow-video', balanceAfter: 84 };
+    },
+    generatedMediaCache: testGeneratedMediaCache(),
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'workflow',
+    prompt: '生成工作流视频',
+    input: {
+      stage: 'workflow_video',
+      modelId: 'model-video',
+      sourceImageAssetId: source.id,
+      storyboardArtifactId: storyboard.id,
+      sceneBackgroundId: 'wood-table-handmade-1',
+      origin: 'https://app.example',
+      storyboardPromptMap: { shot1: '开场' },
+      durationSeconds: 5,
+      resolution: '720p',
+    },
+  });
+
+  const completed = await service.syncVideoAgentRunForUser('user-1', result.run.id);
+  const events = await repository.listRunEvents(result.run.id);
+
+  assert.equal(completed.taskType, 'workflow');
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(completed.artifacts[0]?.kind, 'video');
+  assert.equal(completed.billing?.status, 'billed');
+  assert.equal(completed.billing?.creditCost, 6);
+  assert.equal(completed.billing?.ledgerEntryId, 'ledger-workflow-video');
+  assert.deepEqual(debits, [{ amount: 6, runId: result.run.id }]);
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],
+  );
 });
 
 test('workflow video rejects disabled configured scene background', async () => {

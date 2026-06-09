@@ -126,7 +126,7 @@ test('createProtectedEnterpriseJsonGet rejects invalid bearer token errors', asy
   assert.equal(response.status, 401);
   assert.equal(
     response.headers.get('www-authenticate'),
-    'Bearer error="invalid_token", error_description="Bearer 令牌无效。"'
+    'Bearer error="invalid_token", error_description="Bearer invalid_token"'
   );
   assert.deepEqual(body, {
     error: 'invalid_token',
@@ -139,6 +139,6 @@ test('parseBearerAuthorizationHeader creates bearer challenge for invalid token 
     parseBearerAuthorizationHeader(
       new EnterpriseOAuthError('invalid_token', 'Bearer 令牌无效。', 401),
     ),
-    'Bearer error="invalid_token", error_description="Bearer 令牌无效。"'
+    'Bearer error="invalid_token", error_description="Bearer invalid_token"'
   );
 });

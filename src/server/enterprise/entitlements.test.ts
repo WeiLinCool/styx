@@ -30,6 +30,7 @@ function createModel(id = 'gpt-4o-mini'): PublicChatModelDto {
     id,
     code: id,
     name: id,
+    model: id,
     providerName: 'Enterprise',
     isDefault: id === 'gpt-4o-mini',
     entitlementLabel: 'Enterprise',
@@ -45,7 +46,14 @@ test('toEnterpriseUserInfo maps stable identity claims from user account fields'
     email: 'alice@example.com',
     name: 'Alice Example',
     preferred_username: 'alice@example.com',
+    points: 0,
   });
+});
+
+test('toEnterpriseUserInfo exposes current points for desktop enterprise sessions', () => {
+  const userInfo = toEnterpriseUserInfo({ ...createUser(), points: 128 });
+
+  assert.equal(userInfo.points, 128);
 });
 
 test('toEnterpriseUserInfo falls back from email to phone and user id', () => {

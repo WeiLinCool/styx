@@ -114,6 +114,61 @@ test('memory agent run repository filters runs by task type for user history', a
   assert.equal(allRuns.length, 3);
 });
 
+test('memory agent run repository maps workflow storyboard and video stages into media history', async () => {
+  const repo = createMemoryAgentRunRepository();
+  await repo.createRun({
+    userId: 'user-alice',
+    taskType: 'workflow',
+    prompt: '12宫格',
+    provider: 'openai',
+    model: 'gpt-image-2',
+    capabilitySnapshot: {
+      bundleId: 'workflow',
+      bundleCode: 'workflow',
+      provider: 'openai',
+      model: 'gpt-image-2',
+      capabilities: [],
+    },
+    input: { stage: 'storyboard' },
+  });
+  await repo.createRun({
+    userId: 'user-alice',
+    taskType: 'workflow',
+    prompt: '工作流视频',
+    provider: 'doubao',
+    model: 'doubao-seedance-2-0',
+    capabilitySnapshot: {
+      bundleId: 'workflow',
+      bundleCode: 'workflow',
+      provider: 'doubao',
+      model: 'doubao-seedance-2-0',
+      capabilities: [],
+    },
+    input: { stage: 'workflow_video' },
+  });
+  await repo.createRun({
+    userId: 'user-alice',
+    taskType: 'workflow',
+    prompt: '普通工作流',
+    provider: 'pi',
+    model: 'pi-default',
+    capabilitySnapshot: {
+      bundleId: 'workflow',
+      bundleCode: 'workflow',
+      provider: 'pi',
+      model: 'pi-default',
+      capabilities: [],
+    },
+    input: { stage: 'other' },
+  });
+
+  const imageRuns = await repo.listRunsForUser('user-alice', { taskType: 'image' });
+  const videoRuns = await repo.listRunsForUser('user-alice', { taskType: 'video' });
+
+  assert.deepEqual(imageRuns.map((run) => run.prompt), ['12宫格']);
+  assert.deepEqual(videoRuns.map((run) => run.prompt), ['工作流视频']);
+});
+
 test('memory agent run repository protects stored state from returned DTO mutation', async () => {
   const repo = createMemoryAgentRunRepository();
   const run = await createChatRun(repo);

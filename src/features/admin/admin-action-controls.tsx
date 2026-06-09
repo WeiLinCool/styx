@@ -119,7 +119,7 @@ type WorkflowVideoCapabilityConfigClient = {
   promptTemplate: string;
   modelBinding: {
     providerCode: 'doubao';
-    model: 'doubao-seedance-2-0';
+    model: string;
     executionProtocol: 'video_task_polling';
   };
   defaults: {
@@ -1083,6 +1083,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
   const [config, setConfig] = useState<WorkflowVideoCapabilityConfigClient | null>(null);
   const [description, setDescription] = useState('');
   const [promptTemplate, setPromptTemplate] = useState('');
+  const [modelBindingModel, setModelBindingModel] = useState('doubao-seedance-2-0');
   const [durationSeconds, setDurationSeconds] = useState('5');
   const [resolution, setResolution] = useState('720p');
   const [sceneBackgrounds, setSceneBackgrounds] = useState<WorkflowVideoSceneBackgroundClient[]>([]);
@@ -1110,6 +1111,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
       setConfig(payload.config);
       setDescription(payload.config.description);
       setPromptTemplate(payload.config.promptTemplate);
+      setModelBindingModel(payload.config.modelBinding.model);
       setDurationSeconds(String(payload.config.defaults.durationSeconds));
       setResolution(payload.config.defaults.resolution);
       setSceneBackgrounds(payload.config.sceneBackgrounds);
@@ -1151,6 +1153,11 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
       return;
     }
 
+    if (!modelBindingModel.trim()) {
+      setState({ tone: 'error', message: '请填写工作流视频模型。' });
+      return;
+    }
+
     setSaving(true);
     setState(null);
 
@@ -1163,6 +1170,11 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
           body: JSON.stringify({
             description: description.trim(),
             promptTemplate: promptTemplate.trim(),
+            modelBinding: {
+              providerCode: 'doubao',
+              model: modelBindingModel.trim(),
+              executionProtocol: 'video_task_polling',
+            },
             defaults: {
               durationSeconds: parsedDuration,
               resolution: resolution.trim(),
@@ -1185,6 +1197,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
       setConfig(payload.config);
       setDescription(payload.config.description);
       setPromptTemplate(payload.config.promptTemplate);
+      setModelBindingModel(payload.config.modelBinding.model);
       setDurationSeconds(String(payload.config.defaults.durationSeconds));
       setResolution(payload.config.defaults.resolution);
       setSceneBackgrounds(payload.config.sceneBackgrounds);
@@ -1273,7 +1286,27 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
                 <div className="font-medium text-foreground">固定输入 schema</div>
                 <div>材料：{requiredMaterials}</div>
                 <div>快照：storyboard_prompt_map</div>
-                <div>模型：{config?.modelBinding.model ?? 'doubao-seedance-2-0'}</div>
+                <div>供应商：doubao</div>
+                <div>协议：video_task_polling</div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`workflow-video-model-${capabilityId}`}>视频模型</Label>
+                <Input
+                  id={`workflow-video-model-${capabilityId}`}
+                  value={modelBindingModel}
+                  onChange={(event) => setModelBindingModel(event.target.value)}
+                  disabled={busy}
+                  placeholder="doubao-seedance-2-0-fast-260128"
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  填写管理端 AI 模型里的上游模型名，需要启用视频生成并使用 video_task_polling。
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-md border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <div className="font-medium text-foreground">当前模型绑定</div>
+                <div>模型：{modelBindingModel || '--'}</div>
                 <div>协议：video_task_polling</div>
               </div>
 
