@@ -52,6 +52,11 @@ export type GeneratedMediaAssetRepository = {
     input: { shareId: string; sharedAt: string },
   ): Promise<GeneratedMediaAssetDto | null>;
   disableSharingForUser(assetId: string, userId: string): Promise<GeneratedMediaAssetDto | null>;
+  updateSavedAssetTitleForUser(
+    assetId: string,
+    userId: string,
+    title: string,
+  ): Promise<GeneratedMediaAssetDto | null>;
   getActiveSharedAssetByShareId(shareId: string): Promise<GeneratedMediaAssetDto | null>;
   getSavedAssetForAdmin(assetId: string): Promise<GeneratedMediaAssetDto | null>;
   softDeleteSavedAssetForUser(assetId: string, userId: string): Promise<GeneratedMediaAssetDto | null>;
@@ -284,6 +289,25 @@ export function createDatabaseGeneratedMediaAssetRepository(): GeneratedMediaAss
 
       return asset ? toGeneratedMediaAssetDto(asset) : null;
     },
+    async updateSavedAssetTitleForUser(assetId, userId, title) {
+      const [asset] = await database
+        .update(schema.generatedMediaAssets)
+        .set({
+          title,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.generatedMediaAssets.id, assetId),
+            eq(schema.generatedMediaAssets.userId, userId),
+            eq(schema.generatedMediaAssets.status, 'ready'),
+            isNull(schema.generatedMediaAssets.deletedAt),
+          ),
+        )
+        .returning();
+
+      return asset ? toGeneratedMediaAssetDto(asset) : null;
+    },
     async getActiveSharedAssetByShareId(shareId) {
       const [asset] = await database
         .select()
@@ -397,6 +421,16 @@ export function createMemoryGeneratedMediaAssetRepository(): GeneratedMediaAsset
       }
 
       asset.shareStatus = 'disabled';
+      asset.updatedAt = new Date().toISOString();
+      return structuredClone(asset);
+    },
+    async updateSavedAssetTitleForUser(assetId, userId, title) {
+      const asset = assets.get(assetId);
+      if (!asset || asset.userId !== userId || asset.status !== 'ready' || asset.deletedAt) {
+        return null;
+      }
+
+      asset.title = title;
       asset.updatedAt = new Date().toISOString();
       return structuredClone(asset);
     },

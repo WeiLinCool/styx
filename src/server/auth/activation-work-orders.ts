@@ -94,11 +94,13 @@ export function getActivationWorkOrderTransition(input: {
   action: ActivationWorkOrderAction;
   now?: Date;
 }): 
-  | { ok: true; nextStatus: 'processing' | 'closed' | 'archived' }
+  | { ok: true; nextStatus: 'processing' | 'closed' | 'archived'; warning?: 'work_order_expired' }
   | { ok: false; code: 'work_order_not_pending' | 'work_order_expired' } {
   const now = input.now ?? new Date();
+  const isExpired = input.expiresAt <= now;
 
-  if (input.expiresAt <= now) {
+  // Allow archive operation on expired work orders (with warning)
+  if (isExpired && input.action !== 'archive') {
     return { ok: false, code: 'work_order_expired' };
   }
 
@@ -122,7 +124,12 @@ export function getActivationWorkOrderTransition(input: {
     return { ok: false, code: 'work_order_not_pending' };
   }
 
-  return { ok: true, nextStatus: 'archived' };
+  // Archive operation - allow expired work orders with warning
+  return { 
+    ok: true, 
+    nextStatus: 'archived',
+    warning: isExpired ? 'work_order_expired' : undefined,
+  };
 }
 
 export function summarizeDeviceMetadata(payload: BrowserFingerprintInput) {
@@ -367,7 +374,12 @@ export async function startProcessingActivationWorkOrder(input: {
 export async function archiveActivationWorkOrder(input: {
   workOrderId: string;
   actorId: string;
-}) {
+}): Promise<{
+  id: string;
+  status: string;
+  expiresAt: Date;
+  warning?: 'work_order_expired';
+}> {
   const database = requireDb();
   const workOrder = await getWorkOrderById(input.workOrderId);
   if (!workOrder) {
@@ -408,8 +420,14 @@ export async function archiveActivationWorkOrder(input: {
     metadata: {
       workOrderId: workOrder.id,
       code: workOrder.code,
+      expiredWarning: transition.warning ? '工单已过期，管理员强制归档' : undefined,
     },
   });
 
-  return updated;
+  return {
+    id: updated.id,
+    status: updated.status,
+    expiresAt: updated.expiresAt,
+    warning: transition.warning,
+  };
 }

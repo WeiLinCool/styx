@@ -31,7 +31,7 @@ export async function POST(
         parsedBody: parsed.body,
       },
       async () => {
-        const workOrder = await archiveActivationWorkOrder({
+        const result = await archiveActivationWorkOrder({
           workOrderId: params.workOrderId,
           actorId: session.user.id,
         });
@@ -39,9 +39,12 @@ export async function POST(
         return createJsonResponse({
           ok: true,
           workOrder: {
-            id: workOrder.id,
-            status: workOrder.status,
+            id: result.id,
+            status: result.status,
           },
+          warning: result.warning === 'work_order_expired' 
+            ? '激活工单已过期，管理员已强制归档' 
+            : undefined,
         });
       },
     );

@@ -792,16 +792,16 @@ docker rmi styx-webui:prod-旧时间戳
 
 #### 本次构建的新镜像
 
-本次构建的新镜像名为：`styx-webui:prod-202606092120`
+本次构建的新镜像名为：`styx-webui:prod-202606092200`
 
-对应的镜像包文件：`styx-webui-prod-202606092120.tar.gz`（约 363MB）
+对应的镜像包文件：`styx-webui-prod-202606092200.tar.gz`（约 363MB）
 
 操作命令汇总：
 
 ```bash
 # 本地构建和导出
 export TARGET_PLATFORM=linux/amd64
-export APP_IMAGE=styx-webui:prod-202606092120
+export APP_IMAGE=styx-webui:prod-202606092200
 
 docker buildx build --platform "$TARGET_PLATFORM" -t "$APP_IMAGE" --load .
 mkdir -p deploy-artifacts
@@ -809,11 +809,11 @@ docker save "$APP_IMAGE" | gzip > "deploy-artifacts/${APP_IMAGE//:/-}.tar.gz"
 echo "$APP_IMAGE" > deploy-artifacts/app-image.txt
 
 # 上传到服务器（假设服务器 IP 为 YOUR_SERVER_IP）
-scp deploy-artifacts/styx-webui-prod-202606092120.tar.gz root@YOUR_SERVER_IP:/opt/styx/
+scp deploy-artifacts/styx-webui-prod-202606092200.tar.gz root@YOUR_SERVER_IP:/opt/styx/
 
 # 服务器端操作
 cd /opt/styx
-gunzip -c styx-webui-prod-202606092120.tar.gz | docker load
+gunzip -c styx-webui-prod-202606092200.tar.gz | docker load
 docker compose -f docker-compose.prod.yml exec postgres pg_dump -U styx -d styx > styx-backup-$(date +%Y%m%d%H%M).sql
 docker compose -f docker-compose.prod.yml run --rm app pnpm db:migrate
 docker compose -f docker-compose.prod.yml up -d app

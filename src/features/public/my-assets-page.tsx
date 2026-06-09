@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, Link2, Loader2, MessageSquarePlus, Search, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Check, Download, Edit3, Link2, Loader2, MessageSquarePlus, Search, Trash2, Upload, X } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth-context';
@@ -16,6 +16,7 @@ import {
   enableMediaShare,
   getSavedMediaAssetAccess,
   listSavedMediaAssets,
+  renameSavedMediaAsset,
   uploadUserMedia,
 } from './agent-runtime-client';
 import { MediaThumbnail } from './media-thumbnail';
@@ -127,6 +128,9 @@ export function MyAssetsPageClient() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [renamingAssetId, setRenamingAssetId] = useState<string | null>(null);
+  const [isEditingPreviewTitle, setIsEditingPreviewTitle] = useState(false);
+  const [previewTitleDraft, setPreviewTitleDraft] = useState('');
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -241,6 +245,58 @@ export function MyAssetsPageClient() {
       window.open(access.url, '_blank', 'noopener,noreferrer');
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : '下载资料失败');
+    }
+  };
+
+  const handleStartRenamePreviewAsset = () => {
+    if (!previewAsset) {
+      return;
+    }
+
+    setPreviewTitleDraft(previewAsset.title);
+    setIsEditingPreviewTitle(true);
+    setActionMessage(null);
+  };
+
+  const handleCancelRenamePreviewAsset = () => {
+    setIsEditingPreviewTitle(false);
+    setPreviewTitleDraft(previewAsset?.title ?? '');
+  };
+
+  const handleRenamePreviewAsset = async () => {
+    if (!previewAsset || renamingAssetId) {
+      return;
+    }
+
+    const nextTitle = previewTitleDraft.trim();
+    if (!nextTitle) {
+      setActionMessage('标题不能为空。');
+      return;
+    }
+
+    if (nextTitle.length > 100) {
+      setActionMessage('标题最多100个字符。');
+      return;
+    }
+
+    if (nextTitle === previewAsset.title) {
+      setIsEditingPreviewTitle(false);
+      return;
+    }
+
+    setRenamingAssetId(previewAsset.id);
+    setActionMessage(null);
+    try {
+      const updated = await renameSavedMediaAsset(previewAsset.id, nextTitle);
+      setAssets((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setPreviewAsset(updated);
+      setPreviewTitleDraft(updated.title);
+      setIsEditingPreviewTitle(false);
+      setActionMessage('资料名称已更新。');
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : '资料重命名失败');
+    } finally {
+      setRenamingAssetId(null);
     }
   };
 
@@ -520,12 +576,63 @@ export function MyAssetsPageClient() {
             setPreviewUrl(null);
             setPreviewError(null);
             setPreviewLoading(false);
+            setRenamingAssetId(null);
+            setIsEditingPreviewTitle(false);
+            setPreviewTitleDraft('');
           }
         }}
       >
         <DialogContent className="max-w-4xl rounded-3xl border-border bg-popover p-0" showCloseButton={false}>
           <DialogHeader className="border-b border-border px-6 py-5">
-            <DialogTitle className="text-base text-foreground">{previewAsset?.title ?? '资料预览'}</DialogTitle>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                {isEditingPreviewTitle ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={previewTitleDraft}
+                      onChange={(event) => setPreviewTitleDraft(event.target.value)}
+                      maxLength={100}
+                      className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-ring"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      disabled={renamingAssetId === previewAsset?.id}
+                      onClick={() => void handleRenamePreviewAsset()}
+                      className="rounded-full border border-border p-2 text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label="保存标题"
+                    >
+                      {renamingAssetId === previewAsset?.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={renamingAssetId === previewAsset?.id}
+                      onClick={handleCancelRenamePreviewAsset}
+                      className="rounded-full border border-border p-2 text-muted-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label="取消重命名"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <DialogTitle className="line-clamp-1 text-base text-foreground">
+                      {previewAsset?.title ?? '资料预览'}
+                    </DialogTitle>
+                    {previewAsset ? (
+                      <button
+                        type="button"
+                        onClick={handleStartRenamePreviewAsset}
+                        className="rounded-full border border-border p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                        aria-label="重命名资料"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
             <DialogDescription className="text-xs text-muted-foreground">
               {previewAsset ? `${kindLabel(previewAsset.kind)} · ${formatBytes(previewAsset.byteSize)}` : '加载中'}
             </DialogDescription>

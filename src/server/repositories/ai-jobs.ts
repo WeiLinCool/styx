@@ -4,7 +4,7 @@ import { schema } from '@/server/db';
 import {
   type AdminModuleData,
   ensureAdminReadSource,
-  formatIso,
+  formatFullDateTime,
   metadataText,
 } from './admin-shared';
 import type { AgentCapabilitySnapshot } from '@/server/agent/types';
@@ -125,7 +125,7 @@ function getSeedAiJobs(): AdminModuleData<AdminAiJobRow> {
       model: 'seed-image-model',
       outputReference: '/seed/image.png',
       errorSummary: 'none',
-      createdAt: '2026-05-29T07:40:00.000Z',
+      createdAt: '2026-05-29 07:40:00',
       duration: '10s',
       actions: ['Review output', 'Rerun', 'Mark resolved'],
     },
@@ -140,7 +140,7 @@ function getSeedAiJobs(): AdminModuleData<AdminAiJobRow> {
       model: 'seed-video-model',
       outputReference: 'none',
       errorSummary: 'provider timeout',
-      createdAt: '2026-05-29T07:12:00.000Z',
+      createdAt: '2026-05-29 07:12:00',
       duration: 'timeout',
       actions: ['Review error', 'Rerun', 'Cancel'],
     },
@@ -155,7 +155,7 @@ function getSeedAiJobs(): AdminModuleData<AdminAiJobRow> {
       model: 'pi-default · 能力快照 workflow-default: stone-script, asset-library',
       outputReference: 'Agent run seed-run-1 · has capability snapshot',
       errorSummary: 'none',
-      createdAt: '2026-05-29T07:48:00.000Z',
+      createdAt: '2026-05-29 07:48:00',
       duration: '14s',
       actions: ['Review output', 'Rerun', 'Mark resolved'],
     },
@@ -293,7 +293,7 @@ export async function getAdminAiJobs(): Promise<AdminModuleData<AdminAiJobRow>> 
     model: resolveModel(job),
     outputReference: resolveOutputReference(job),
     errorSummary: job.errorMessage ?? 'none',
-    createdAt: formatIso(job.createdAt),
+    createdAt: formatFullDateTime(job.createdAt),
     duration:
       job.startedAt && job.completedAt
         ? `${Math.max(0, Math.round((job.completedAt.getTime() - job.startedAt.getTime()) / 1000))}s`
@@ -337,7 +337,7 @@ export async function getAdminAiJobs(): Promise<AdminModuleData<AdminAiJobRow>> 
       model: modelSummary || run.model,
       outputReference: `Agent run ${run.id}`,
       errorSummary: run.errorMessage ?? 'none',
-      createdAt: formatIso(run.createdAt),
+      createdAt: formatFullDateTime(run.createdAt),
       duration:
         run.startedAt && completedAt
           ? `${Math.max(0, Math.round((completedAt.getTime() - run.startedAt.getTime()) / 1000))}s`

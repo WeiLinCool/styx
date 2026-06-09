@@ -338,3 +338,84 @@ test('soft delete clears active sharing from public resolution', async () => {
   assert.equal(deleted?.shareStatus, 'disabled');
   assert.equal(await repository.getActiveSharedAssetByShareId('share-delete'), null);
 });
+
+test('generated media asset repository updates title for owning user only', async () => {
+  const repository = createMemoryGeneratedMediaAssetRepository();
+  const asset = await repository.createSavedAsset({
+    userId: 'user-1',
+    runId: null,
+    conversationId: null,
+    artifactId: null,
+    kind: 'image',
+    title: 'Original title',
+    sourceType: 'user_uploaded',
+    sourceProvider: null,
+    sourceModel: null,
+    sourceUrl: null,
+    sourceExpiresAt: null,
+    originalFilename: 'photo.png',
+    sha256: 'sha256-title',
+    shareId: 'share-title',
+    shareStatus: 'active',
+    sharedAt: '2026-06-04T10:00:00.000Z',
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket-a',
+    region: 'ap-shanghai',
+    objectKey: 'user-uploaded/dev/users/user-1/assets/asset-title/photo.png',
+    mimeType: 'image/png',
+    byteSize: 12,
+    width: 100,
+    height: 100,
+    durationSeconds: null,
+    metadata: {},
+  });
+
+  const updated = await repository.updateSavedAssetTitleForUser(asset.id, asset.userId, 'Renamed title');
+  assert.equal(updated?.title, 'Renamed title');
+  assert.equal(updated?.objectKey, asset.objectKey);
+  assert.equal(updated?.shareId, asset.shareId);
+  assert.equal(updated?.originalFilename, asset.originalFilename);
+});
+
+test('generated media asset repository rejects title update for non-owner or deleted asset', async () => {
+  const repository = createMemoryGeneratedMediaAssetRepository();
+  const asset = await repository.createSavedAsset({
+    userId: 'user-1',
+    runId: 'run-1',
+    conversationId: 'conversation-1',
+    artifactId: 'artifact-1',
+    kind: 'video',
+    title: 'AI video',
+    sourceType: 'ai_generated',
+    sourceProvider: 'doubao',
+    sourceModel: 'seed-video',
+    sourceUrl: 'https://provider.example/video.mp4',
+    sourceExpiresAt: '2026-06-04T10:00:00.000Z',
+    originalFilename: null,
+    sha256: null,
+    shareId: null,
+    shareStatus: 'disabled',
+    sharedAt: null,
+    storageProvider: 'tencent_cos',
+    bucket: 'bucket-a',
+    region: 'ap-shanghai',
+    objectKey: 'ai-generated/dev/users/user-1/conversations/conversation-1/runs/run-1/asset-1.mp4',
+    mimeType: 'video/mp4',
+    byteSize: 128,
+    width: 1920,
+    height: 1080,
+    durationSeconds: 3.2,
+    metadata: {},
+  });
+
+  assert.equal(
+    await repository.updateSavedAssetTitleForUser(asset.id, 'user-2', 'Should fail'),
+    null,
+  );
+
+  await repository.softDeleteSavedAssetForUser(asset.id, asset.userId);
+  assert.equal(
+    await repository.updateSavedAssetTitleForUser(asset.id, asset.userId, 'Should also fail'),
+    null,
+  );
+});

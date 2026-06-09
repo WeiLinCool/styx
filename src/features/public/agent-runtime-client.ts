@@ -825,6 +825,26 @@ export async function disableMediaShare(assetId: string): Promise<GeneratedMedia
   return payload.asset;
 }
 
+export async function renameSavedMediaAsset(
+  assetId: string,
+  title: string,
+): Promise<GeneratedMediaAssetDto> {
+  const response = await userApiRequest(`/api/user/media-assets/${assetId}`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw apiErrorFromPayload(payload, response.status, '资料重命名失败');
+  }
+
+  return payload.asset;
+}
+
 export async function getPublicSharedMedia(shareId: string): Promise<{
   asset: {
     id: string;
