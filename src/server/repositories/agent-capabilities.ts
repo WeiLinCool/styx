@@ -49,6 +49,13 @@ export type AdminStoryboardCapabilityConfigRecord = WorkflowStoryboardCapability
   capabilityStatus: AgentCapabilityStatus;
 };
 
+export type AdminWorkflowVideoCapabilityConfigRecord = WorkflowVideoMvpCapabilityConfig & {
+  capabilityId: string;
+  capabilityCode: string;
+  capabilityName: string;
+  capabilityStatus: AgentCapabilityStatus;
+};
+
 export class StoryboardCapabilityNotFoundError extends Error {
   constructor() {
     super('Storyboard capability was not found.');
@@ -930,6 +937,114 @@ export async function updateAgentCapabilityStoryboardConfig(input: {
     capabilityName: updated.name,
     capabilityStatus: updated.status,
     code: 'workflow-storyboard-template',
+    ...config,
+  };
+}
+
+export async function getWorkflowVideoMvpCapabilityConfig(input: {
+  capabilityId: string;
+}): Promise<AdminWorkflowVideoCapabilityConfigRecord> {
+  const database = requireAgentCapabilityDatabase('workflow video capability config read');
+
+  if (!database) {
+    const capability = seedAgentCapabilities.find((item) => item.id === input.capabilityId);
+    if (!capability || capability.code !== 'workflow-video-mvp') {
+      throw new StoryboardCapabilityNotFoundError();
+    }
+
+    const config = normalizeWorkflowVideoMvpCapabilityConfigRecord(capability.config);
+    return {
+      capabilityId: capability.id,
+      capabilityCode: capability.code,
+      capabilityName: capability.name,
+      capabilityStatus: capability.status,
+      code: 'workflow-video-mvp',
+      ...config,
+    };
+  }
+
+  await ensureWorkflowStoryboardCapabilitySeed(database);
+
+  const [capability] = await database
+    .select({
+      id: schema.agentCapabilities.id,
+      code: schema.agentCapabilities.code,
+      name: schema.agentCapabilities.name,
+      status: schema.agentCapabilities.status,
+      config: schema.agentCapabilities.config,
+    })
+    .from(schema.agentCapabilities)
+    .where(eq(schema.agentCapabilities.id, input.capabilityId))
+    .limit(1);
+
+  if (!capability || capability.code !== 'workflow-video-mvp') {
+    throw new StoryboardCapabilityNotFoundError();
+  }
+
+  const config = normalizeWorkflowVideoMvpCapabilityConfigRecord(capability.config);
+  return {
+    capabilityId: capability.id,
+    capabilityCode: capability.code,
+    capabilityName: capability.name,
+    capabilityStatus: capability.status,
+    code: 'workflow-video-mvp',
+    ...config,
+  };
+}
+
+export async function saveWorkflowVideoMvpCapabilityConfig(input: {
+  capabilityId: string;
+  adminUserId: string;
+  description: string;
+  promptTemplate: string;
+  defaults: { durationSeconds: number; resolution: string };
+}): Promise<AdminWorkflowVideoCapabilityConfigRecord> {
+  const database = requireAgentCapabilityDatabase('workflow video capability config mutation');
+
+  if (!database) {
+    throw new Error('DATABASE_URL is required for workflow video config mutation.');
+  }
+
+  await ensureWorkflowStoryboardCapabilitySeed(database);
+
+  const draft = validateWorkflowVideoMvpCapabilityDraft(input);
+  const defaults = createDefaultWorkflowVideoMvpConfig();
+  const normalized: Omit<WorkflowVideoMvpCapabilityConfig, 'code'> = {
+    description: draft.description,
+    inputSchema: defaults.inputSchema,
+    promptTemplate: draft.promptTemplate,
+    modelBinding: defaults.modelBinding,
+    defaults: draft.defaults,
+    updatedAt: new Date().toISOString(),
+    updatedByUserId: input.adminUserId,
+  };
+
+  const [updated] = await database
+    .update(schema.agentCapabilities)
+    .set({
+      config: normalized satisfies Omit<WorkflowVideoMvpCapabilityConfig, 'code'>,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.agentCapabilities.id, input.capabilityId))
+    .returning({
+      id: schema.agentCapabilities.id,
+      code: schema.agentCapabilities.code,
+      name: schema.agentCapabilities.name,
+      status: schema.agentCapabilities.status,
+      config: schema.agentCapabilities.config,
+    });
+
+  if (!updated || updated.code !== 'workflow-video-mvp') {
+    throw new StoryboardCapabilityNotFoundError();
+  }
+
+  const config = normalizeWorkflowVideoMvpCapabilityConfigRecord(updated.config);
+  return {
+    capabilityId: updated.id,
+    capabilityCode: updated.code,
+    capabilityName: updated.name,
+    capabilityStatus: updated.status,
+    code: 'workflow-video-mvp',
     ...config,
   };
 }

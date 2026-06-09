@@ -105,6 +105,38 @@ type StoryboardConfigResponse = {
   };
 };
 
+type WorkflowVideoCapabilityConfigClient = {
+  capabilityId: string;
+  capabilityCode: string;
+  capabilityName: string;
+  capabilityStatus: 'enabled' | 'disabled' | 'archived';
+  code: 'workflow-video-mvp';
+  description: string;
+  inputSchema: {
+    requiredMaterials: Array<'source_image' | 'storyboard_image' | 'scene_background'>;
+    requiredSnapshots: Array<'storyboard_prompt_map'>;
+  };
+  promptTemplate: string;
+  modelBinding: {
+    providerCode: 'doubao';
+    model: 'doubao-seedance-2-0';
+    executionProtocol: 'video_task_polling';
+  };
+  defaults: {
+    durationSeconds: number;
+    resolution: string;
+  };
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+};
+
+type WorkflowVideoConfigResponse = {
+  config?: WorkflowVideoCapabilityConfigClient;
+  error?: {
+    message?: string;
+  };
+};
+
 async function postAdminAction(url: string, body: Record<string, unknown>) {
   const response = await adminApiRequest(url, {
     method: 'POST',
@@ -773,7 +805,20 @@ export function AdminAgentCapabilityActions({
     );
   }
 
+  if (shouldShowWorkflowVideoConfigEditor(capabilityCode)) {
+    return (
+      <div className="flex flex-wrap justify-end gap-1.5">
+        <WorkflowVideoCapabilityConfigDialog capabilityId={capabilityId} />
+        <CompactActionMenu actions={actions} />
+      </div>
+    );
+  }
+
   return <ActionButtons actions={actions} />;
+}
+
+export function shouldShowWorkflowVideoConfigEditor(capabilityCode: string) {
+  return capabilityCode === 'workflow-video-mvp';
 }
 
 function StoryboardCapabilityConfigDialog({ capabilityId }: { capabilityId: string }) {
@@ -984,6 +1029,250 @@ function StoryboardCapabilityConfigDialog({ capabilityId }: { capabilityId: stri
                 <div>当前布局：{config ? `${config.layout.columns} x ${config.layout.rows}` : '--'}</div>
                 <div>模板状态：{config?.templateAsset ? '已配置' : '缺失'}</div>
                 <div>提示词状态：{promptText.trim() ? '已配置' : '缺失'}</div>
+                <div>最近更新：{config?.updatedAt ?? '未保存'}</div>
+              </div>
+            </div>
+          </div>
+
+          {state ? (
+            <div
+              className={cn(
+                'flex items-center gap-2 text-xs',
+                state.tone === 'success' ? 'text-emerald-700' : 'text-red-700',
+              )}
+            >
+              {state.tone === 'success' ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span>{state.message}</span>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+              关闭
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              保存配置
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState<WorkflowVideoCapabilityConfigClient | null>(null);
+  const [description, setDescription] = useState('');
+  const [promptTemplate, setPromptTemplate] = useState('');
+  const [durationSeconds, setDurationSeconds] = useState('5');
+  const [resolution, setResolution] = useState('720p');
+  const [state, setState] = useState<ActionState | null>(null);
+  const [, startTransition] = useTransition();
+
+  async function loadConfig() {
+    setLoading(true);
+    setState(null);
+
+    try {
+      const response = await adminApiRequest(
+        `/api/admin/agent-capabilities/${capabilityId}/workflow-video-config`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        },
+      );
+      const payload = await readJsonResponse<WorkflowVideoConfigResponse>(response);
+
+      if (!response.ok || !payload?.config) {
+        throw new Error(payload?.error?.message ?? '工作流视频配置加载失败。');
+      }
+
+      setConfig(payload.config);
+      setDescription(payload.config.description);
+      setPromptTemplate(payload.config.promptTemplate);
+      setDurationSeconds(String(payload.config.defaults.durationSeconds));
+      setResolution(payload.config.defaults.resolution);
+    } catch (error) {
+      setState({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '工作流视频配置加载失败。',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (nextOpen) {
+      await loadConfig();
+    } else {
+      setState(null);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const parsedDuration = Number(durationSeconds);
+    if (!promptTemplate.trim()) {
+      setState({ tone: 'error', message: '请填写工作流视频提示词。' });
+      return;
+    }
+
+    if (!Number.isInteger(parsedDuration) || parsedDuration <= 0) {
+      setState({ tone: 'error', message: '默认时长必须为正整数。' });
+      return;
+    }
+
+    if (!resolution.trim()) {
+      setState({ tone: 'error', message: '默认分辨率不能为空。' });
+      return;
+    }
+
+    setSaving(true);
+    setState(null);
+
+    try {
+      const response = await adminApiRequest(
+        `/api/admin/agent-capabilities/${capabilityId}/workflow-video-config`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            description: description.trim(),
+            promptTemplate: promptTemplate.trim(),
+            defaults: {
+              durationSeconds: parsedDuration,
+              resolution: resolution.trim(),
+            },
+          }),
+        },
+      );
+      const payload = await readJsonResponse<WorkflowVideoConfigResponse>(response);
+
+      if (!response.ok || !payload?.config) {
+        throw new Error(payload?.error?.message ?? '工作流视频配置保存失败。');
+      }
+
+      setConfig(payload.config);
+      setDescription(payload.config.description);
+      setPromptTemplate(payload.config.promptTemplate);
+      setDurationSeconds(String(payload.config.defaults.durationSeconds));
+      setResolution(payload.config.defaults.resolution);
+      setState({ tone: 'success', message: '工作流视频配置已保存。' });
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setState({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '工作流视频配置保存失败。',
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const busy = loading || saving;
+  const requiredMaterials = config?.inputSchema.requiredMaterials.join(' + ') ?? 'source_image + storyboard_image + scene_background';
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => void handleOpenChange(nextOpen)}>
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant="outline" className="h-7 rounded-md px-2 text-xs">
+          <Pencil className="h-3.5 w-3.5" />
+          编辑配置
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>工作流视频生成</DialogTitle>
+          <DialogDescription>
+            维护最终视频提示词和默认规格。运行时会固定校验三类材料，并绑定 Doubao Seedance 视频任务。
+          </DialogDescription>
+        </DialogHeader>
+
+        <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor={`workflow-video-description-${capabilityId}`}>能力说明</Label>
+                <Input
+                  id={`workflow-video-description-${capabilityId}`}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  disabled={busy}
+                  placeholder="工作流视频能力说明"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`workflow-video-prompt-${capabilityId}`}>最终视频提示词</Label>
+                <Textarea
+                  id={`workflow-video-prompt-${capabilityId}`}
+                  value={promptTemplate}
+                  onChange={(event) => setPromptTemplate(event.target.value)}
+                  placeholder="在这里维护最终发送给视频模型的提示词模板。"
+                  className="min-h-64 rounded-md text-xs leading-5"
+                  disabled={busy}
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  可用占位符：
+                  <code className="mx-1">{'{{workflow_prompt}}'}</code>
+                  <code className="mr-1">{'{{source_image_url}}'}</code>
+                  <code className="mr-1">{'{{storyboard_image_url}}'}</code>
+                  <code className="mr-1">{'{{scene_background_url}}'}</code>
+                  <code className="mr-1">{'{{storyboard_prompt_map}}'}</code>
+                  <code className="mr-1">{'{{duration_seconds}}'}</code>
+                  <code>{'{{resolution}}'}</code>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-2 rounded-md border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <div className="font-medium text-foreground">固定输入 schema</div>
+                <div>材料：{requiredMaterials}</div>
+                <div>快照：storyboard_prompt_map</div>
+                <div>模型：{config?.modelBinding.model ?? 'doubao-seedance-2-0'}</div>
+                <div>协议：video_task_polling</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor={`workflow-video-duration-${capabilityId}`}>默认时长</Label>
+                  <Input
+                    id={`workflow-video-duration-${capabilityId}`}
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={durationSeconds}
+                    onChange={(event) => setDurationSeconds(event.target.value)}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`workflow-video-resolution-${capabilityId}`}>默认分辨率</Label>
+                  <Input
+                    id={`workflow-video-resolution-${capabilityId}`}
+                    value={resolution}
+                    onChange={(event) => setResolution(event.target.value)}
+                    disabled={busy}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1 rounded-md border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <div>提示词状态：{promptTemplate.trim() ? '已配置' : '缺失'}</div>
+                <div>默认规格：{durationSeconds || '--'}s / {resolution || '--'}</div>
                 <div>最近更新：{config?.updatedAt ?? '未保存'}</div>
               </div>
             </div>
