@@ -258,6 +258,46 @@ test('parseVideoModel accepts chat model shape', () => {
   assert.equal(model?.id, 'video-model');
 });
 
+test('getVideoGenerationConfig preserves workflow duration and resolution options for selection UI', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      enabled: true,
+      upgradeRequired: false,
+      message: null,
+      styles: [{ id: 'style-1', code: 'stone', name: '石纹', prompt: 'stone prompt' }],
+      durations: [5, 10],
+      resolutions: [
+        { value: '720p', label: '720P' },
+        { value: '1080p', label: '1080P' },
+      ],
+      defaults: {
+        styleCode: 'stone',
+        durationSeconds: 10,
+        resolution: '1080p',
+      },
+      models: [],
+      workflowSceneBackgrounds: [],
+    });
+
+  try {
+    const config = await getVideoGenerationConfig();
+
+    assert.deepEqual(config.durations, [5, 10]);
+    assert.deepEqual(config.resolutions, [
+      { value: '720p', label: '720P' },
+      { value: '1080p', label: '1080P' },
+    ]);
+    assert.deepEqual(config.defaults, {
+      styleCode: 'stone',
+      durationSeconds: 10,
+      resolution: '1080p',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('listVideoModels returns parsed video model options', async () => {
   const restore = installFetchMock({
     models: [

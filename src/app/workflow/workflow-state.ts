@@ -11,6 +11,12 @@ type WorkflowVideoConfigSnapshot = {
   upgradeRequired: boolean;
   message: string | null;
   models: SelectableModel[];
+  durations?: number[];
+  resolutions?: Array<{ value: string; label: string }>;
+  defaults?: {
+    durationSeconds: number | null;
+    resolution: string | null;
+  };
 };
 
 export type WorkflowStateSnapshot = {
@@ -39,6 +45,8 @@ export type WorkflowDraftSnapshot = {
   selectedSceneBackgroundId: string | null;
   prompt: string;
   selectedVideoModel: string | null;
+  selectedDurationSeconds: number | null;
+  selectedResolution: string | null;
   dreamRunId: string | null;
   dreamVideoUrl: string | null;
   dreamVideoArtifactId: string | null;
@@ -109,6 +117,47 @@ export function resolveWorkflowVideoModelAvailability(
     selectedModelId: modelState.selectedModelId,
     status: 'ready' as const,
     message: null,
+  };
+}
+
+export function resolveWorkflowVideoSelections(input: {
+  hasLoadedConfig: boolean;
+  config: {
+    enabled: boolean;
+    durations: number[];
+    resolutions: Array<{ value: string; label: string }>;
+    defaults: {
+      durationSeconds: number | null;
+      resolution: string | null;
+    };
+  };
+  currentDurationSeconds: number | null;
+  currentResolution: string | null;
+}) {
+  if (!input.hasLoadedConfig) {
+    return {
+      selectedDurationSeconds: input.currentDurationSeconds,
+      selectedResolution: input.currentResolution,
+    };
+  }
+
+  if (!input.config.enabled) {
+    return {
+      selectedDurationSeconds: null,
+      selectedResolution: null,
+    };
+  }
+
+  return {
+    selectedDurationSeconds:
+      input.currentDurationSeconds !== null && input.config.durations.includes(input.currentDurationSeconds)
+        ? input.currentDurationSeconds
+        : input.config.defaults.durationSeconds,
+    selectedResolution:
+      input.currentResolution !== null &&
+      input.config.resolutions.some((item) => item.value === input.currentResolution)
+        ? input.currentResolution
+        : input.config.defaults.resolution,
   };
 }
 
@@ -297,6 +346,10 @@ function readOrigin(value: unknown) {
   return value === 'manual' || value === 'generated' ? value : null;
 }
 
+function readPositiveInteger(value: unknown) {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -352,6 +405,8 @@ export function parseWorkflowDraftSnapshot(value: unknown): WorkflowDraftSnapsho
     selectedSceneBackgroundId,
     prompt: readString(value.prompt) ?? '',
     selectedVideoModel: readString(value.selectedVideoModel),
+    selectedDurationSeconds: readPositiveInteger(value.selectedDurationSeconds),
+    selectedResolution: readString(value.selectedResolution),
     dreamRunId: readString(value.dreamRunId),
     dreamVideoUrl: readString(value.dreamVideoUrl),
     dreamVideoArtifactId: readString(value.dreamVideoArtifactId),

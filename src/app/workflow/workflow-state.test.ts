@@ -10,6 +10,7 @@ import {
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
   resolveWorkflowVideoMaterialReadiness,
+  resolveWorkflowVideoSelections,
   resolveWorkflowVideoModelAvailability,
   resolveWorkflowSceneStepDreamAction,
   resolveWorkflowUploadStepNextAction,
@@ -423,6 +424,8 @@ test('parseWorkflowDraftSnapshot restores completed workflow material references
       selectedSceneBackgroundId: 'official-bg',
       prompt: 'prompt',
       selectedVideoModel: 'video-model',
+      selectedDurationSeconds: null,
+      selectedResolution: null,
       dreamRunId: 'dream-run',
       dreamVideoUrl: 'video-preview',
       dreamVideoArtifactId: 'video-artifact',
@@ -443,10 +446,94 @@ test('parseWorkflowDraftSnapshot restores completed workflow material references
       selectedSceneBackgroundId: 'official-bg',
       prompt: 'prompt',
       selectedVideoModel: 'video-model',
+      selectedDurationSeconds: null,
+      selectedResolution: null,
       dreamRunId: 'dream-run',
       dreamVideoUrl: 'video-preview',
       dreamVideoArtifactId: 'video-artifact',
       updatedAt: '2026-06-09T00:00:00.000Z',
+    },
+  );
+});
+
+test('parseWorkflowDraftSnapshot preserves selected video duration and resolution', () => {
+  const parsed = parseWorkflowDraftSnapshot({
+    version: 1,
+    step: 2,
+    uploadedImage: 'blob-preview',
+    selectedDurationSeconds: 10,
+    selectedResolution: '1080p',
+  });
+
+  assert.equal(parsed?.selectedDurationSeconds, 10);
+  assert.equal(parsed?.selectedResolution, '1080p');
+});
+
+test('resolveWorkflowVideoSelections preserves restored values until video config has loaded', () => {
+  assert.deepEqual(
+    resolveWorkflowVideoSelections({
+      hasLoadedConfig: false,
+      config: {
+        enabled: false,
+        durations: [],
+        resolutions: [],
+        defaults: {
+          durationSeconds: null,
+          resolution: null,
+        },
+      },
+      currentDurationSeconds: 10,
+      currentResolution: '1080p',
+    }),
+    {
+      selectedDurationSeconds: 10,
+      selectedResolution: '1080p',
+    },
+  );
+});
+
+test('resolveWorkflowVideoSelections clears selections when video is disabled after config load', () => {
+  assert.deepEqual(
+    resolveWorkflowVideoSelections({
+      hasLoadedConfig: true,
+      config: {
+        enabled: false,
+        durations: [],
+        resolutions: [],
+        defaults: {
+          durationSeconds: null,
+          resolution: null,
+        },
+      },
+      currentDurationSeconds: 10,
+      currentResolution: '1080p',
+    }),
+    {
+      selectedDurationSeconds: null,
+      selectedResolution: null,
+    },
+  );
+});
+
+test('resolveWorkflowVideoSelections falls back to defaults when current values are no longer allowed', () => {
+  assert.deepEqual(
+    resolveWorkflowVideoSelections({
+      hasLoadedConfig: true,
+      config: {
+        enabled: true,
+        durations: [5, 10],
+        resolutions: [{ value: '720p', label: '720P' }],
+        defaults: {
+          durationSeconds: 5,
+          resolution: '720p',
+        },
+      },
+      currentDurationSeconds: 30,
+      currentResolution: '1080p',
+    }),
+    {
+      selectedDurationSeconds: 5,
+      selectedResolution: '720p',
     },
   );
 });

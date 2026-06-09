@@ -1139,6 +1139,91 @@ test('workflow video creates doubao seedance video task with ordered materials',
   assert.equal(detail?.internal?.input?.providerTaskId, 'task-workflow-video');
 });
 
+async function setupWorkflowVideoPolicyRejectionTest() {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
+  const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  let providerCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () => workflowVideoCapabilitySnapshot(),
+    resolveVideoModelForUser: async () =>
+      resolvedVideoModel({ id: 'model-video', model: 'doubao-seedance-2-0' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    generatedMediaCache: testGeneratedMediaCache(),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        providerCalled = true;
+        throw new Error('provider should not be called');
+      },
+      async getVideoTask() {
+        throw new Error('not used');
+      },
+    }),
+  });
+
+  const createRequest = (inputOverrides: Partial<Record<string, unknown>>) =>
+    service.createAndRunAgentRun({
+      userId: 'user-1',
+      taskType: 'workflow',
+      prompt: '生成工作流视频',
+      input: {
+        stage: 'workflow_video',
+        modelId: 'model-video',
+        sourceImageAssetId: source.id,
+        storyboardArtifactId: storyboard.id,
+        sceneBackgroundId: 'wood-table-handmade-1',
+        origin: 'https://app.example',
+        storyboardPromptMap: { shot1: '开场' },
+        durationSeconds: 5,
+        resolution: '720p',
+        ...inputOverrides,
+      },
+    });
+
+  return {
+    repository,
+    createRequest,
+    wasProviderCalled: () => providerCalled,
+  };
+}
+
+test('workflow video rejects duration outside membership policy before creating a run', async () => {
+  const { repository, createRequest, wasProviderCalled } =
+    await setupWorkflowVideoPolicyRejectionTest();
+
+  await assert.rejects(() => createRequest({ durationSeconds: 8 }), (error: unknown) => {
+    assert.ok(error instanceof AgentRunVideoSelectionError);
+    assert.equal(error.code, 'invalid_request');
+    assert.match(error.message, /selected video duration is not available/i);
+    return true;
+  });
+
+  assert.equal(wasProviderCalled(), false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
+test('workflow video rejects resolution outside membership policy before creating a run', async () => {
+  const { repository, createRequest, wasProviderCalled } =
+    await setupWorkflowVideoPolicyRejectionTest();
+
+  await assert.rejects(() => createRequest({ resolution: '1080p' }), (error: unknown) => {
+    assert.ok(error instanceof AgentRunVideoSelectionError);
+    assert.equal(error.code, 'invalid_request');
+    assert.match(error.message, /selected video resolution is not available/i);
+    return true;
+  });
+
+  assert.equal(wasProviderCalled(), false);
+  assert.deepEqual(await repository.listRunsForUser('user-1'), []);
+});
+
 test('workflow video uses configured capability-bound seedance model when request model differs', async () => {
   const repository = createMemoryAgentRunRepository();
   const assetRepository = createMemoryGeneratedMediaAssetRepository();

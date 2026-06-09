@@ -37,6 +37,7 @@ import {
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
   resolveWorkflowVideoMaterialReadiness,
+  resolveWorkflowVideoSelections,
   resolveWorkflowVideoModelAvailability,
   resolveWorkflowSceneStepDreamAction,
   resolveWorkflowUploadStepNextAction,
@@ -508,7 +509,7 @@ function SceneSelector({
   unavailableMessage,
   dreamAction,
   onSelectBackground,
-  onStartDream,
+  onProceedToDreamStep,
   onViewHistoryVideo,
 }: {
   backgrounds: WorkflowSceneBackgroundOption[];
@@ -517,7 +518,7 @@ function SceneSelector({
   unavailableMessage: string | null;
   dreamAction: { label: string; description: string | null; viewHistoryVideoLabel: string | null };
   onSelectBackground: (id: string) => void;
-  onStartDream: () => void;
+  onProceedToDreamStep: () => void;
   onViewHistoryVideo: () => void;
 }) {
   const selectedBackground = backgrounds.find((background) => background.id === selectedBackgroundId) ?? null;
@@ -591,7 +592,7 @@ function SceneSelector({
                 <ChevronRight size={14} />
               </button>
             ) : null}
-            <button onClick={onStartDream} className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/85">
+            <button onClick={onProceedToDreamStep} className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/85">
               {dreamAction.label}
               <Sparkles size={14} />
             </button>
@@ -651,6 +652,9 @@ export default function WorkflowPage() {
   const [videoConfig, setVideoConfig] = useState<VideoGenerationConfigDto>(emptyVideoConfig);
   const [videoModels, setVideoModels] = useState<VideoModelOption[]>([]);
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
+  const [selectedDurationSeconds, setSelectedDurationSeconds] = useState<number | null>(null);
+  const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
+  const [videoConfigLoaded, setVideoConfigLoaded] = useState(false);
   const [videoModelAvailability, setVideoModelAvailability] = useState(createInitialModelAvailabilityState());
   const [storyboardGenerating, setStoryboardGenerating] = useState(false);
   const [storyboardGenerated, setStoryboardGenerated] = useState(false);
@@ -770,6 +774,8 @@ export default function WorkflowPage() {
     setSelectedSceneBackgroundId(draft.selectedSceneBackgroundId);
     setPrompt(draft.prompt || DEFAULT_PROMPT);
     setSelectedVideoModel(draft.selectedVideoModel);
+    setSelectedDurationSeconds(draft.selectedDurationSeconds);
+    setSelectedResolution(draft.selectedResolution);
     setDreaming(false);
     setDreamRunId(draft.dreamRunId);
     setDreamVideoUrl(draft.dreamVideoUrl);
@@ -806,6 +812,8 @@ export default function WorkflowPage() {
           selectedSceneBackgroundId,
           prompt,
           selectedVideoModel,
+          selectedDurationSeconds,
+          selectedResolution,
           dreamRunId,
           dreamVideoUrl,
           dreamVideoArtifactId,
@@ -821,7 +829,9 @@ export default function WorkflowPage() {
     dreamVideoArtifactId,
     dreamVideoUrl,
     prompt,
+    selectedDurationSeconds,
     selectedImageModel,
+    selectedResolution,
     selectedSceneBackgroundId,
     selectedVideoModel,
     sourceImageAssetId,
@@ -892,6 +902,7 @@ export default function WorkflowPage() {
       setVideoConfig(emptyVideoConfig);
       setVideoModels([]);
       setSelectedVideoModel(null);
+      setVideoConfigLoaded(false);
       setVideoModelAvailability(createInitialModelAvailabilityState());
       return;
     }
@@ -910,6 +921,7 @@ export default function WorkflowPage() {
         }
 
         setVideoConfig(config);
+        setVideoConfigLoaded(true);
         setVideoModels(config.models);
         const nextVideoModelState = resolveWorkflowVideoModelAvailability(
           config,
@@ -929,6 +941,7 @@ export default function WorkflowPage() {
         }
 
         setVideoConfig(emptyVideoConfig);
+        setVideoConfigLoaded(true);
         setVideoModels([]);
         setSelectedVideoModel(null);
         setVideoModelAvailability((current) => ({
@@ -942,6 +955,40 @@ export default function WorkflowPage() {
       cancelled = true;
     };
   }, [activationRequired, isLoggedIn, videoModelAvailability.reloadKey]);
+
+  useEffect(() => {
+    const nextSelections = resolveWorkflowVideoSelections({
+      hasLoadedConfig: videoConfigLoaded,
+      config: {
+        enabled: videoConfig.enabled,
+        durations: videoConfig.durations,
+        resolutions: videoConfig.resolutions,
+        defaults: {
+          durationSeconds: videoConfig.defaults.durationSeconds,
+          resolution: videoConfig.defaults.resolution,
+        },
+      },
+      currentDurationSeconds: selectedDurationSeconds,
+      currentResolution: selectedResolution,
+    });
+
+    if (nextSelections.selectedDurationSeconds !== selectedDurationSeconds) {
+      setSelectedDurationSeconds(nextSelections.selectedDurationSeconds);
+    }
+
+    if (nextSelections.selectedResolution !== selectedResolution) {
+      setSelectedResolution(nextSelections.selectedResolution);
+    }
+  }, [
+    selectedDurationSeconds,
+    selectedResolution,
+    videoConfigLoaded,
+    videoConfig.enabled,
+    videoConfig.defaults.durationSeconds,
+    videoConfig.defaults.resolution,
+    videoConfig.durations,
+    videoConfig.resolutions,
+  ]);
 
   useEffect(() => {
     if (!isLoggedIn || activationRequired) {
@@ -1096,6 +1143,16 @@ export default function WorkflowPage() {
 
   const handleSelectVideoModel = useCallback((modelId: string) => {
     setSelectedVideoModel(modelId);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback]);
+
+  const handleSelectDurationSeconds = useCallback((value: string) => {
+    setSelectedDurationSeconds(value ? Number(value) : null);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback]);
+
+  const handleSelectResolution = useCallback((value: string) => {
+    setSelectedResolution(value || null);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback]);
 
@@ -1378,6 +1435,11 @@ export default function WorkflowPage() {
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback]);
 
+  const handleProceedToDreamStep = useCallback(() => {
+    clearRuntimeFeedback();
+    setStep(3);
+  }, [clearRuntimeFeedback]);
+
   const handleSelectWorkflowSceneBackground = useCallback((id: string) => {
     const resetState = resetWorkflowForSceneChange(currentSnapshot());
     setStep(resetState.step);
@@ -1482,8 +1544,12 @@ export default function WorkflowPage() {
       setRuntimeError(materialReadiness.message ?? '请补齐工作流视频材料。');
       return;
     }
-    const operationId = dreamOperationRef.current + 1;
-    dreamOperationRef.current = operationId;
+    const resolvedDurationSeconds = selectedDurationSeconds ?? videoConfig.defaults.durationSeconds;
+    const resolvedResolution = selectedResolution ?? videoConfig.defaults.resolution;
+    if (resolvedDurationSeconds === null || !resolvedResolution) {
+      setRuntimeError('视频参数未准备完成，请确认时长和分辨率后重试。');
+      return;
+    }
     setStep(3);
     setDreaming(true);
     setRuntimeStatus(null);
@@ -1491,6 +1557,8 @@ export default function WorkflowPage() {
     setDreamRunId(null);
     setDreamVideoUrl(null);
     setDreamVideoArtifactId(null);
+    const operationId = dreamOperationRef.current + 1;
+    dreamOperationRef.current = operationId;
     try {
       setRuntimeStatus('正在上传原图并保存分镜图...');
       const sourceAssetId =
@@ -1530,8 +1598,8 @@ export default function WorkflowPage() {
             sceneBackgroundId: selectedWorkflowSceneBackground?.id,
             sceneBackgroundName: selectedWorkflowSceneBackground?.name,
           },
-          durationSeconds: videoConfig.defaults.durationSeconds ?? 5,
-          resolution: videoConfig.defaults.resolution ?? '720p',
+          durationSeconds: resolvedDurationSeconds,
+          resolution: resolvedResolution,
           styleCode: videoConfig.defaults.styleCode ?? undefined,
         },
       });
@@ -1616,6 +1684,8 @@ export default function WorkflowPage() {
     storyboardArtifactId,
     storyboardAssetId,
     storyboardRunId,
+    selectedDurationSeconds,
+    selectedResolution,
     uploadedImageFile,
     uploadedImageOrigin,
     videoConfig.enabled,
@@ -1922,7 +1992,7 @@ export default function WorkflowPage() {
                     hasDreamVideo: Boolean(dreamVideoUrl),
                   })}
                   onSelectBackground={handleSelectWorkflowSceneBackground}
-                  onStartDream={handleStartDream}
+                  onProceedToDreamStep={handleProceedToDreamStep}
                   onViewHistoryVideo={handleViewHistoryVideo}
                 />
               </div>
@@ -1951,6 +2021,20 @@ export default function WorkflowPage() {
                     <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm text-muted-foreground">
                       工作流视频已生成{dreamVideoArtifactId ? `，结果 ID：${dreamVideoArtifactId}` : ''}。
                     </div>
+                  </div>
+                ) : !dreamRunId ? (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-border bg-secondary/40 px-4 py-4 text-sm text-muted-foreground">
+                      已确认场景与视频参数。点击下方按钮后才会正式提交视频生成任务。
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleStartDream()}
+                      className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/85"
+                    >
+                      开始造梦并提交视频任务
+                      <Sparkles size={14} />
+                    </button>
                   </div>
                 ) : (
                   <div className="rounded-xl border border-border bg-secondary/40 px-4 py-6 text-sm text-muted-foreground">
@@ -2072,6 +2156,49 @@ export default function WorkflowPage() {
                     rows={4}
                     className="w-full resize-none rounded-xl border border-input bg-card p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                   />
+                </div>
+                <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-5">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-foreground">视频参数</p>
+                    <span className="text-[11px] text-muted-foreground">按会员配置展示</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="space-y-1.5">
+                      <span className="text-xs text-muted-foreground">时长</span>
+                      <select
+                        value={selectedDurationSeconds?.toString() ?? ''}
+                        onChange={(e) => handleSelectDurationSeconds(e.target.value)}
+                        disabled={videoConfig.durations.length <= 1}
+                        className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {videoConfig.durations.map((duration) => (
+                          <option key={duration} value={duration.toString()}>
+                            {duration} 秒
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="text-xs text-muted-foreground">分辨率</span>
+                      <select
+                        value={selectedResolution ?? ''}
+                        onChange={(e) => handleSelectResolution(e.target.value)}
+                        disabled={videoConfig.resolutions.length <= 1}
+                        className="w-full rounded-xl border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {videoConfig.resolutions.map((resolution) => (
+                          <option key={resolution.value} value={resolution.value}>
+                            {resolution.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {!videoConfig.enabled ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      当前账号暂未启用视频生成参数配置。
+                    </p>
+                  ) : null}
                 </div>
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-5">
                   {videoModelAvailability.status === 'ready' ? (
