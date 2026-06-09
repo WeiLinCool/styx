@@ -1,4 +1,4 @@
-# Workflow Storyboard Admin Capability Design
+# Workflow Storyboard And Video MVP Admin Capability Design
 
 Status: Draft
 Date: 2026-06-09
@@ -12,23 +12,34 @@ The `/workflow` page currently treats storyboard generation as a mostly code-own
 - the fixed 12-grid base image exists only as a product assumption, not as admin-managed configuration;
 - any storyboard template change currently pushes work back into front-end or server implementation.
 
-This is now a product problem, not just an image prompt problem. The business need is to let operators change the storyboard template image and the full storyboard system prompt from the admin console without editing front-end code or redeploying for every template update.
+This is now a product problem, not just an image prompt problem. The business need is to let operators change the workflow generation behavior from the admin console without editing front-end code or redeploying for every template update.
 
-The requested first phase is intentionally narrow:
+The requested first phase originally covered storyboard configuration. The approved MVP now extends that design to the first usable workflow-video path:
 
-- storyboard only;
-- one active template only;
-- admin uploads the template image directly inside Agent Capability configuration;
-- admin edits the full prompt as freeform text;
-- if configuration is incomplete, storyboard generation must fail closed.
+- Step 0 uploads the user source image;
+- Step 1 executes the configured 12-grid storyboard image conversion and records the prompt/map snapshot needed downstream;
+- Step 2 configures or selects the scene background image;
+- final execution combines the three material groups plus server-rendered prompts and sends them to `doubao-seedance-2-0` through the existing video task polling runtime.
+
+The approved "skills paradigm" interpretation is configuration-first. Admin Agent capabilities should behave like skill definitions in shape, but MVP execution remains inside the existing server runtime:
+
+- `code`
+- operator-facing description
+- input schema
+- prompt template
+- model binding
+- execution protocol
+- enabled/disabled status
 
 ## Goal
 
-Turn workflow storyboard generation into a server-authoritative admin configuration surface by extending the existing Agent Capability system so that:
+Turn workflow storyboard and workflow-video generation into server-authoritative admin configuration surfaces by extending the existing Agent Capability system so that:
 
 - a single active storyboard template image is managed from the admin console;
 - a single active full storyboard prompt is managed from the admin console;
 - runtime storyboard generation reads this configuration instead of hard-coded template defaults;
+- a workflow-video MVP capability defines the final video input schema, prompt template, and `doubao-seedance-2-0` model binding;
+- final video generation is blocked until source image, storyboard result, scene background, and required prompt snapshots are present;
 - missing or invalid storyboard configuration blocks generation with a clear admin-facing remediation message.
 
 ## Non-Goals
@@ -36,9 +47,12 @@ Turn workflow storyboard generation into a server-authoritative admin configurat
 - No multi-template switching in phase one.
 - No template version history, drafts, or rollback UI.
 - No automatic template selection by model, scene, or user segment.
-- No admin configuration for scene generation, reference image generation, or final video prompts in this phase.
+- No general-purpose plugin loader or arbitrary code execution for admin skills in this phase.
+- No multi-skill chaining UI beyond the single workflow-video MVP capability.
+- No scene-background generation feature in MVP; scene background is selected or uploaded as material.
 - No provider-parity guarantee across every image provider for template-backed storyboard generation.
 - No replacement of the broader Agent Capability bundle system.
+- No durable workflow project/history redesign beyond using existing run/artifact persistence for recoverable material references.
 
 ## Reference Research
 
@@ -105,10 +119,17 @@ Local design:
 | Storyboard prompt text | Storyboard capability config | Admin config save route | `agent_capabilities.config.promptText` |
 | Storyboard template asset descriptor | Storyboard capability config | Admin template upload/save route | `agent_capabilities.config.templateAsset` |
 | Storyboard layout metadata | Storyboard capability config | Server-owned config normalization on save | `agent_capabilities.config.layout` |
+| Workflow video MVP capability | Admin capability repository | Admin config save route | `agent_capabilities` row |
+| Workflow video prompt template | Workflow video capability config | Admin config save route | `agent_capabilities.config.promptTemplate` |
+| Workflow video input schema | Workflow video capability config | Admin config save route / server normalization | `agent_capabilities.config.inputSchema` |
+| Workflow video model binding | Workflow video capability config | Admin config save route / model validation | `agent_capabilities.config.modelBinding` |
 | Template binary in COS | Admin upload service | Admin template upload/save route | COS object referenced by config |
 | Workflow selected image model | Workflow request input | User request | request payload |
 | Workflow uploaded pattern image | Workflow request input | User request | request payload |
+| Workflow storyboard result | Agent runtime | Storyboard run completion | `agent_runs` + `agent_artifacts` |
+| Workflow scene background | Workflow request input | User upload/selection | request payload, then final video run input snapshot |
 | Runtime storyboard prompt sent to provider | Storyboard runtime service | Server prompt renderer | derived at run time from config + request context |
+| Runtime video prompt sent to provider | Workflow video runtime service | Server prompt renderer | derived from workflow-video config + material snapshots |
 
 ## Invariants
 
@@ -117,10 +138,13 @@ Local design:
 3. Admin template upload must be direct and single-active: each save leaves exactly one current template descriptor in capability config.
 4. Storyboard runtime must use the configured template dimensions as its canonical output basis instead of legacy hard-coded layout constants.
 5. If the selected provider cannot support the configured template-backed execution path, storyboard generation must fail with an explicit capability/provider message instead of silently degrading to the old text-only path.
+6. Workflow-video generation must not create a provider task unless Step 0 source image, Step 1 storyboard artifact, Step 2 scene background, storyboard prompt/map snapshot, final prompt template, and `doubao-seedance-2-0` binding are all valid.
+7. The public workflow client must submit material references and intent; it must not assemble the final provider prompt or override the configured model binding.
+8. The final video run must snapshot the capability config version used for execution so later admin edits do not mutate already-created runs.
 
 ## Capability Design
 
-Phase one will extend the existing Agent Capability system rather than introducing a separate storyboard configuration subsystem.
+Phase one will extend the existing Agent Capability system rather than introducing a separate storyboard or workflow-video configuration subsystem.
 
 The workflow default bundle will include one dedicated capability record for storyboard configuration. To avoid widening the capability enum in phase one, this record will reuse an existing capability kind, with a workflow-specific code such as:
 
@@ -157,6 +181,49 @@ The capability `config` becomes the only runtime-owned storyboard configuration 
   "updatedByUserId": "admin-user-id"
 }
 ```
+
+### Workflow video MVP capability
+
+The final video step adds one skill-like capability record:
+
+- kind: `skill`
+- code: `workflow-video-mvp`
+- name: `工作流视频生成`
+- execution protocol: `video_task_polling`
+- default model binding: `doubao-seedance-2-0`
+
+The config stores the runtime contract that would normally live in a skill definition:
+
+```json
+{
+  "mode": "workflow_video_mvp_v1",
+  "description": "将原图、12宫格分镜图、场景底图和提示词地图合成为工作流视频。",
+  "inputSchema": {
+    "requiredMaterials": [
+      "source_image",
+      "storyboard_image",
+      "scene_background"
+    ],
+    "requiredSnapshots": [
+      "storyboard_prompt_map"
+    ]
+  },
+  "promptTemplate": "Use the source image, storyboard image, scene background, and prompt map to create a short workflow video...",
+  "modelBinding": {
+    "providerCode": "doubao",
+    "model": "doubao-seedance-2-0",
+    "executionProtocol": "video_task_polling"
+  },
+  "defaults": {
+    "durationSeconds": 5,
+    "resolution": "720p"
+  },
+  "updatedAt": "2026-06-09T12:00:00.000Z",
+  "updatedByUserId": "admin-user-id"
+}
+```
+
+MVP does not execute arbitrary skill code. The runtime recognizes `workflow-video-mvp` by `code`, validates its config, then uses a dedicated workflow-video orchestrator to create the existing video run.
 
 ### Layout metadata
 
@@ -205,8 +272,21 @@ The capability row summary should make current state obvious:
 - template dimensions
 - layout `4 x 3`
 - last updated timestamp
+- for `workflow-video-mvp`: model binding, prompt configured/missing, required material schema, default duration/resolution, last updated timestamp
 
 This keeps operators from opening the editor just to answer “is storyboard currently configured?”
+
+### Workflow video editor fields
+
+The same Agent Capability admin surface should expose an editor for `workflow-video-mvp`:
+
+- operator-facing description
+- final video prompt template
+- read-only required material schema
+- model binding display and validation result for `doubao-seedance-2-0`
+- default duration and resolution if allowed by membership video policy
+
+MVP may keep the model binding fixed to `doubao-seedance-2-0` in the editor. If the configured model is missing, disabled, or not `video_task_polling`, the editor and runtime both show an explicit remediation message.
 
 ## API And Boundary Design
 
@@ -229,6 +309,14 @@ Phase one should add admin-only routes dedicated to storyboard capability editin
   - validates admin auth, image type, prompt presence, and normalized config
   - uploads a new template file when present
   - updates the capability config atomically from the server’s point of view
+
+Workflow-video config can use a JSON route because MVP does not upload files in that editor:
+
+- `GET /api/admin/agent-capabilities/[capabilityId]/workflow-video-config`
+  - returns description, input schema, prompt template, model binding, defaults, and validation summary.
+- `PUT /api/admin/agent-capabilities/[capabilityId]/workflow-video-config`
+  - accepts JSON fields for description, prompt template, and defaults.
+  - validates admin auth, non-empty prompt, fixed material schema, and model binding compatibility.
 
 ### Why multipart in one save route
 
@@ -336,6 +424,58 @@ That means:
 
 This keeps storyboard output faithful to the admin-managed template requirement.
 
+## Workflow Video MVP Runtime Design
+
+### Execution entry
+
+Final video generation should be a workflow-stage request, not a generic text-to-video prompt. The public client submits:
+
+- `stage: "workflow_video"`
+- source image artifact/material reference from Step 0
+- storyboard artifact reference from Step 1
+- scene background material reference from Step 2
+- storyboard prompt/map snapshot reference or inline safe metadata
+- optional user-facing workflow prompt/context
+
+The server resolves `workflow-video-mvp`, validates the config, loads signed material URLs for the three images, renders the final prompt, and then delegates to the existing video task polling path.
+
+### Prompt rendering
+
+`workflow-video-mvp.config.promptTemplate` should support a small placeholder vocabulary:
+
+- `{{workflow_prompt}}`
+- `{{source_image_url}}`
+- `{{storyboard_image_url}}`
+- `{{scene_background_url}}`
+- `{{storyboard_prompt_map}}`
+- `{{duration_seconds}}`
+- `{{resolution}}`
+
+Unknown placeholders remain untouched. Known missing values fail validation before provider execution when they are required by the input schema.
+
+### Material validation
+
+The video orchestrator must validate:
+
+- source image exists and belongs to the requesting user or current workflow session;
+- storyboard image is a succeeded workflow storyboard artifact;
+- scene background exists as a user-provided or admin-provided image material;
+- all material URLs are signed server-side and are not accepted from raw client input;
+- membership video policy permits requested duration/resolution;
+- configured model binding resolves to an enabled video model using `video_task_polling`.
+
+### Provider request
+
+The final provider request should use the existing video adapter contract. If the current adapter supports multiple material URLs, pass source image, storyboard image, and scene background as ordered material URLs. If the adapter only supports one material URL today, extend it in the narrowest compatible way while preserving existing single-material callers.
+
+Ordering:
+
+1. source image
+2. storyboard image
+3. scene background
+
+The provider/model snapshot stored on the run must identify `doubao` / `doubao-seedance-2-0` and include the workflow-video capability config snapshot used to render the prompt.
+
 ## Media And Validation Design
 
 ### Server-side upload validation
@@ -383,13 +523,19 @@ Admin preview should use a signed read URL created from the stored COS object ke
 - storyboard image runs read workflow capability config before provider execution
 - storyboard generation fails with admin-remediation copy when config is incomplete
 - storyboard runs pass template-backed dimensions into runtime prompt/render flow
+- workflow-video runs reject missing source image, storyboard image, scene background, or prompt map before creating a provider task
+- workflow-video runs render the final prompt from `workflow-video-mvp` config and material snapshots
+- workflow-video runs bind to `doubao-seedance-2-0` and existing video task polling semantics
+- existing generic video runs keep working unchanged
 
 ### Browser verification
 
 - admin can open storyboard capability editor
 - admin can upload the supplied template image and save prompt text
+- admin can open workflow video capability editor and save final prompt/defaults
 - admin sees preview and dimensions after save
 - `/workflow` storyboard generation uses the newly configured template-backed path
+- `/workflow` final video generation remains blocked until all three material groups are present, then starts a `doubao-seedance-2-0` video run
 
 ## Local Design Summary
 
@@ -397,8 +543,11 @@ Phase one keeps the system narrow and operationally useful:
 
 - extend the existing Agent Capability system rather than inventing a new storyboard settings subsystem;
 - store one active storyboard prompt and one active template descriptor in capability config;
+- store one workflow-video MVP prompt/schema/model binding in capability config;
 - upload the template file through an admin-only capability save flow backed by COS;
 - make storyboard runtime read this capability config before building the provider request;
+- make final video runtime read the workflow-video capability config before creating a provider task;
+- combine Step 0 source image, Step 1 storyboard artifact, Step 2 scene background, and server-rendered prompts before calling `doubao-seedance-2-0`;
 - fail closed when configuration or provider support is incomplete.
 
-This solves the product problem the current implementation cannot solve well: changing storyboard template behavior becomes an admin operation instead of a front-end change.
+This solves the product problem the current implementation cannot solve well: changing workflow storyboard and video behavior becomes an admin Agent capability operation instead of a front-end change.

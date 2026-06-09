@@ -55,6 +55,14 @@ The user agent runtime SHALL route chat and image runs through the model selecte
 - **AND** validates the current workflow upload context before execution
 - **AND** returns the completed storyboard result through the existing run artifact path once the run reaches a terminal state
 
+#### Scenario: Runtime executes workflow video MVP
+- **WHEN** an active user submits the final workflow video request
+- **THEN** the runtime resolves the `workflow-video-mvp` Agent Capability configuration
+- **AND** validates the source image, storyboard artifact, scene background, and storyboard prompt/map snapshot
+- **AND** renders the final video prompt on the server
+- **AND** creates a video task polling run bound to `doubao-seedance-2-0`
+- **AND** returns the completed video artifact through the existing run artifact path once the run reaches a terminal state
+
 ## ADDED Requirements
 
 ### Requirement: Workflow Storyboard Prompt Ownership
@@ -69,3 +77,29 @@ The user agent runtime SHALL own the storyboard prompt template for the Step 1 `
 - **WHEN** the workflow storyboard generation is still running on the server
 - **THEN** the client-side request handling keeps polling the run detail endpoint until the run becomes succeeded or failed
 - **AND** does not report a timeout while the server run is still actively progressing
+
+### Requirement: Workflow Video Skill-Like Capability
+The user agent runtime SHALL treat `workflow-video-mvp` as a skill-like capability config while keeping execution inside the server runtime.
+
+#### Scenario: Runtime resolves workflow video capability
+- **WHEN** a final workflow video request is created
+- **THEN** the runtime reads the enabled Agent Capability with code `workflow-video-mvp`
+- **AND** validates its description, input schema, prompt template, model binding, defaults, and execution protocol
+- **AND** snapshots the effective config into the created run
+
+#### Scenario: Runtime rejects incomplete workflow video capability
+- **WHEN** the `workflow-video-mvp` capability is missing, disabled, lacks a prompt template, or has an invalid model binding
+- **THEN** the runtime rejects final workflow video generation before creating a provider task
+- **AND** returns an explicit admin-remediation error
+
+#### Scenario: Runtime validates workflow video materials
+- **WHEN** final workflow video generation is requested
+- **THEN** the runtime requires Step 0 source image, Step 1 storyboard image artifact, Step 2 scene background, and storyboard prompt/map snapshot
+- **AND** signs or resolves material URLs server-side
+- **AND** does not trust raw material URLs supplied by the client
+
+#### Scenario: Runtime calls Doubao Seedance
+- **WHEN** workflow video materials and capability config are valid
+- **THEN** the runtime sends the rendered prompt and ordered material URLs to the configured video adapter
+- **AND** the provider/model snapshot identifies `doubao` and `doubao-seedance-2-0`
+- **AND** existing single-prompt video generation behavior remains compatible
