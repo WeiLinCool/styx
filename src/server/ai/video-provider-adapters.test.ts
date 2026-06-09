@@ -36,6 +36,7 @@ async function captureCreateVideoTaskBody(
   request: {
     prompt: string;
     imageUrl?: string;
+    imageUrls?: string[];
     audioUrl?: string;
   },
   model = resolvedVideoModel(),
@@ -152,6 +153,49 @@ test('doubao video create body includes prompt text plus image and audio entries
       {
         type: 'image_url',
         image_url: { url: 'https://cdn.example/input.png' },
+      },
+      {
+        type: 'audio_url',
+        audio_url: { url: 'https://cdn.example/input.mp3' },
+      },
+    ],
+  });
+});
+
+test('doubao video create body includes ordered image url entries before audio', async () => {
+  const model = resolvedVideoModel();
+
+  const body = await captureCreateVideoTaskBody(
+    {
+      prompt: 'Use workflow materials',
+      imageUrls: [
+        'https://cdn.example/source.png',
+        'https://cdn.example/storyboard.png',
+        'https://cdn.example/scene.png',
+      ],
+      audioUrl: 'https://cdn.example/input.mp3',
+    },
+    model,
+  );
+
+  assert.deepEqual(body, {
+    model: model.model,
+    content: [
+      {
+        type: 'text',
+        text: 'Use workflow materials --rs 720p --rt 16:9 --dur 5',
+      },
+      {
+        type: 'image_url',
+        image_url: { url: 'https://cdn.example/source.png' },
+      },
+      {
+        type: 'image_url',
+        image_url: { url: 'https://cdn.example/storyboard.png' },
+      },
+      {
+        type: 'image_url',
+        image_url: { url: 'https://cdn.example/scene.png' },
       },
       {
         type: 'audio_url',

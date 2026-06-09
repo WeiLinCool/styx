@@ -35,6 +35,7 @@ export type VideoProviderCreateRequest = {
   duration?: number;
   resolution?: string;
   imageUrl?: string;
+  imageUrls?: string[];
   audioUrl?: string;
   ratio?: string;
   seed?: number;
@@ -183,10 +184,15 @@ function createVideoTaskBody(request: VideoProviderCreateRequest): Record<string
     },
   ];
 
-  if (request.imageUrl) {
+  const imageUrls = [
+    ...(request.imageUrls ?? []),
+    ...(request.imageUrl ? [request.imageUrl] : []),
+  ].filter((url, index, urls) => url.trim().length > 0 && urls.indexOf(url) === index);
+
+  for (const imageUrl of imageUrls) {
     content.push({
       type: 'image_url',
-      image_url: { url: request.imageUrl },
+      image_url: { url: imageUrl },
     });
   }
 
