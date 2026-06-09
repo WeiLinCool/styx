@@ -357,7 +357,7 @@ export function AdminUserActions({
         label: '同步媒体额度',
         url: `/api/admin/users/${userId}/membership-media-policy`,
         body: {},
-        successMessage: '媒体额度已按用户当前生效会员版本同步。',
+        successMessage: '媒体额度已按会员方案最新发布版本同步。',
       },
       {
         label: '重发激活',

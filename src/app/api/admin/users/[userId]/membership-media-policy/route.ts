@@ -3,8 +3,8 @@ import { z } from 'zod';
 
 import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { accountErrorToResponse } from '@/server/auth/account-types';
+import { resolveAdminResyncMembershipMediaPolicy } from '@/server/auth/admin-membership-media-policy';
 import { requireAdmin } from '@/server/auth/guards';
-import { resolveCurrentUserMediaPolicy } from '@/server/auth/membership-media-policy';
 import { recordAuditEvent } from '@/server/audit/audit-service';
 import { createJsonResponse } from '@/server/encrypted-response';
 import { applyMembershipMediaQuota } from '@/server/repositories/users';
@@ -41,10 +41,10 @@ export async function POST(
         parsedBody,
       },
       async () => {
-        const policy = await resolveCurrentUserMediaPolicy(params.userId);
+        const resolution = await resolveAdminResyncMembershipMediaPolicy(params.userId);
         const quota = await applyMembershipMediaQuota(
           params.userId,
-          policy.storageQuotaBytes,
+          resolution.policy.storageQuotaBytes,
         );
 
         await recordAuditEvent({
@@ -54,9 +54,12 @@ export async function POST(
           entityType: 'user',
           entityId: params.userId,
           metadata: {
-            storageQuotaBytes: policy.storageQuotaBytes,
-            allowUserUpload: policy.allowUserUpload,
-            allowPublicSharing: policy.allowPublicSharing,
+            sourcePlanCode: resolution.sourcePlanCode,
+            sourceVersionId: resolution.sourceVersionId,
+            sourceVersionNumber: resolution.sourceVersionNumber,
+            storageQuotaBytes: resolution.policy.storageQuotaBytes,
+            allowUserUpload: resolution.policy.allowUserUpload,
+            allowPublicSharing: resolution.policy.allowPublicSharing,
           },
         });
 
