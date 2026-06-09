@@ -73,6 +73,7 @@ import {
   XCircle,
   RotateCcw,
 } from 'lucide-react';
+import UserAvatar from '@/components/user-avatar';
 
 // 默认提示词
 const DEFAULT_PROMPT = '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板';
@@ -201,16 +202,17 @@ function WorkflowNav() {
         </div>
         <div className="hidden items-center gap-3 sm:flex">
           {isLoggedIn && user ? (
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-secondary">
-                {user.avatar ? (
-                  <img src={user.avatar} alt={user.nickname} className="h-full w-full object-cover" />
-                ) : (
-                  <User size={14} className="text-foreground" />
-                )}
-              </div>
+            <Link 
+              href="/user-center" 
+              className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-secondary/50 cursor-pointer"
+            >
+              <UserAvatar
+                avatar={user.avatar}
+                size={28}
+                userLevel={user.userLevel}
+              />
               <span className="text-xs text-foreground">{user.nickname}</span>
-            </div>
+            </Link>
           ) : (
             <Link href="/home" className="rounded-full border border-border bg-card px-4 py-1.5 text-xs font-medium text-foreground backdrop-blur-md transition-all hover:bg-secondary">
               登录
