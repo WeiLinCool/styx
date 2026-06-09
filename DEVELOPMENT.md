@@ -158,7 +158,7 @@ When the problem likely has mature industry practice, use `docs/development/REFE
 
 Project-specific reference:
 
-- `../lingwei`: sibling implementation repository for desktop app behavior and agent architecture design. Consult it when WebUI work needs to align with desktop behavior, agent lifecycle, capability routing, or control-surface semantics.
+- `../openpawz`: sibling implementation repository for desktop app behavior and agent architecture design. Consult it when WebUI work needs to align with desktop behavior, agent lifecycle, capability routing, or control-surface semantics.
 
 Default research-trigger examples:
 

@@ -1400,6 +1400,135 @@ test('workflow video sync records generated video billing and artifact', async (
   );
 });
 
+test('workflow video creation schedules backend sync so billing is not frontend-dependent', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const assetRepository = createMemoryGeneratedMediaAssetRepository();
+  const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
+  const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
+  const scheduledTasks: Array<{ runId: string; task: () => Promise<void> }> = [];
+  const debits: Array<{ amount: number; runId: string }> = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveWorkflowCapabilityBundle: async () => workflowVideoCapabilitySnapshot(),
+    resolveVideoModelForUser: async () =>
+      resolvedVideoModel({ id: 'model-video', model: 'doubao-seedance-2-0' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    mediaAssetRepository: assetRepository,
+    signVideoMaterialUrl: async (asset) => `https://signed.example/${asset.objectKey}`,
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        return { providerTaskId: 'task-workflow-video', rawMetadata: { id: 'task-workflow-video' } };
+      },
+      async getVideoTask() {
+        return {
+          providerTaskId: 'task-workflow-video',
+          status: 'succeeded',
+          outputUrl: 'https://provider.example/workflow-video.mp4',
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async (input) => {
+      debits.push({ amount: input.amount, runId: input.runId });
+      return { entryId: 'ledger-workflow-video', balanceAfter: 84 };
+    },
+    generatedMediaCache: testGeneratedMediaCache(),
+    mediaRunScheduler: {
+      schedule(runId, task) {
+        scheduledTasks.push({ runId, task });
+      },
+      getActiveRunIds() {
+        return scheduledTasks.map((task) => task.runId);
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'workflow',
+    prompt: '生成工作流视频',
+    input: {
+      stage: 'workflow_video',
+      modelId: 'model-video',
+      sourceImageAssetId: source.id,
+      storyboardArtifactId: storyboard.id,
+      sceneBackgroundId: 'wood-table-handmade-1',
+      origin: 'https://app.example',
+      storyboardPromptMap: { shot1: '开场' },
+      durationSeconds: 5,
+      resolution: '720p',
+    },
+  });
+
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(scheduledTasks.map((task) => task.runId), [result.run.id]);
+
+  await scheduledTasks[0]?.task();
+  const completed = await repository.getRunForUser(result.run.id, 'user-1');
+
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.billing?.status, 'billed');
+  assert.deepEqual(debits, [{ amount: 3, runId: result.run.id }]);
+});
+
+test('syncVideoAgentRunForUser does not rebill terminal video runs', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerPolls = 0;
+  let debitCalls = 0;
+  const service = createAgentRunService({
+    repository,
+    runtime: createDeterministicPiRuntime(),
+    resolveVideoModelForUser: async () => resolvedVideoModel({ id: 'model-video' }),
+    resolveVideoGenerationPolicyForUser: async () => enabledVideoPolicy(),
+    assertCanAffordMinimum: async () => {},
+    createVideoProviderAdapter: () => ({
+      protocol: 'video_task_polling',
+      async createVideoTask() {
+        return { providerTaskId: 'task-video', rawMetadata: {} };
+      },
+      async getVideoTask() {
+        providerPolls += 1;
+        return {
+          providerTaskId: 'task-video',
+          status: 'succeeded',
+          outputUrl: 'https://provider.example/video.mp4',
+          rawMetadata: {},
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => {
+      debitCalls += 1;
+      return { entryId: `ledger-video-${debitCalls}`, balanceAfter: 90 - debitCalls };
+    },
+    mediaRunScheduler: {
+      schedule() {},
+      getActiveRunIds() {
+        return [];
+      },
+    },
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'video',
+    prompt: '石头印画动起来',
+    modelId: 'model-video',
+    input: { durationSeconds: 5, resolution: '720p', styleCode: 'stone' },
+  });
+
+  const completed = await service.syncVideoAgentRunForUser('user-1', result.run.id);
+  const syncedAgain = await service.syncVideoAgentRunForUser('user-1', result.run.id);
+
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(syncedAgain.status, 'succeeded');
+  assert.equal(providerPolls, 1);
+  assert.equal(debitCalls, 1);
+  assert.equal(syncedAgain.billing?.ledgerEntryId, 'ledger-video-1');
+});
+
 test('workflow video rejects disabled configured scene background', async () => {
   const repository = createMemoryAgentRunRepository();
   const assetRepository = createMemoryGeneratedMediaAssetRepository();

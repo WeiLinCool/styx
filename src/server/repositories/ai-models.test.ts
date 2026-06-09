@@ -310,6 +310,26 @@ test('resolveDatabaseChatModelForUserFromRows carries provider billing rules int
   assert.equal(model.billingRules?.chat?.cacheMissInputCreditsPer1k, 3);
 });
 
+test('resolveDatabaseChatModelForUserFromRows accepts provider model names exposed by OpenAI model list', () => {
+  const rows: DatabaseChatModelRow[] = [
+    buildDatabaseChatModelRow({
+      id: 'model-chat',
+      code: 'internal-chat-code',
+      requirement: {
+        requirementType: 'none',
+        requirementValue: null,
+        label: 'Free',
+      },
+    }),
+  ];
+  rows[0]!.model.model = 'provider-chat-model';
+
+  const model = resolveDatabaseChatModelForUserFromRows(rows, 'provider-chat-model', []);
+
+  assert.equal(model.id, 'model-chat');
+  assert.equal(model.model, 'provider-chat-model');
+});
+
 test('getSeedImageModelsForUser returns entitled models for the requested image mode', async () => {
   const freeModels = await getSeedImageModelsForUser('user-free', 'generate', []);
   assert.equal(freeModels.some((model) => model.code === 'dev-free-image'), true);

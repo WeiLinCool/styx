@@ -7,8 +7,15 @@ import { readJsonBody, runProtectedMutation } from '@/server/api-request-guard';
 import { updateUserProfile } from '@/server/repositories/users';
 
 const updateProfileSchema = z.object({
-  displayName: z.string().min(1).max(50).optional(),
-  avatarUrl: z.string().url().or(z.string().startsWith('data:')).nullable().optional(),
+  displayName: z.string()
+    .min(1, '显示名称至少需要1个字符')
+    .max(50, '显示名称最多50个字符')
+    .optional(),
+  avatarUrl: z.string()
+    .url('头像链接必须是有效的URL')
+    .or(z.string().startsWith('data:image/', 'Data URL 必须是图片类型'))
+    .nullable()
+    .optional(),
 });
 
 type UpdateUserProfileInput = Parameters<typeof updateUserProfile>[1];
@@ -26,7 +33,7 @@ export function createProfileRouteHandler(
       const validated = updateProfileSchema.parse(parsedBody);
       
       // 至少需要一个字段
-      if (!validated.displayName && validated.avatarUrl === undefined) {
+      if (validated.displayName === undefined && validated.avatarUrl === undefined) {
         return NextResponse.json(
           { error: { code: 'invalid_request', message: '至少需要提供displayName或avatarUrl字段。' } },
           { status: 400 }

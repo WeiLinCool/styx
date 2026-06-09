@@ -165,22 +165,7 @@ export async function listEnterpriseOpenAiModels(
 ) {
   const resolvedDeps = resolveDeps(deps);
   await requireEnterpriseModelProxy(userId, resolvedDeps);
-  const [chatModels, imageGenerateModels, imageEditModels, imageUpscaleModels, videoModels] =
-    await Promise.all([
-      resolvedDeps.listAvailableChatModelsForUser(userId),
-      resolvedDeps.listAvailableImageModelsForUser(userId, 'generate'),
-      resolvedDeps.listAvailableImageModelsForUser(userId, 'edit'),
-      resolvedDeps.listAvailableImageModelsForUser(userId, 'upscale'),
-      resolvedDeps.listAvailableVideoModelsForUser(userId),
-    ]);
-
-  return toOpenAiModelList([
-    ...chatModels,
-    ...imageGenerateModels,
-    ...imageEditModels,
-    ...imageUpscaleModels,
-    ...videoModels,
-  ]);
+  return toOpenAiModelList(await resolvedDeps.listAvailableChatModelsForUser(userId));
 }
 
 export async function createEnterpriseChatCompletion(

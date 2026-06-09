@@ -11,6 +11,7 @@ import {
   EnterpriseGatewayError,
   createEnterpriseChatCompletion,
   createOpenAiSseStream,
+  listEnterpriseOpenAiModels,
   requireEnterpriseModelProxy,
   toOpenAiModelList,
 } from './gateway';
@@ -87,6 +88,38 @@ test('toOpenAiModelList exposes configured provider model names instead of datab
       data: [{ id: 'deepseek-v4-pro', object: 'model', owned_by: 'enterprise' }],
     },
   );
+});
+
+test('listEnterpriseOpenAiModels exposes only chat-capable models', async () => {
+  let imageModelsListed = false;
+  let videoModelsListed = false;
+
+  const models = await listEnterpriseOpenAiModels('user-1', {
+    async resolveEnterpriseEntitlements() {
+      return { plan: 'enterprise', entitlements: ['models:proxy'] };
+    },
+    async listAvailableChatModelsForUser() {
+      return [publicModel('chat-model')];
+    },
+    async listAvailableImageModelsForUser() {
+      imageModelsListed = true;
+      return [
+        {
+          ...publicModel('image-model'),
+          supportedModes: ['generate'],
+          supportsWorkflowStoryboardTemplate: false,
+        },
+      ];
+    },
+    async listAvailableVideoModelsForUser() {
+      videoModelsListed = true;
+      return [publicModel('video-model')];
+    },
+  });
+
+  assert.deepEqual(models.data.map((model) => model.id), ['chat-model']);
+  assert.equal(imageModelsListed, false);
+  assert.equal(videoModelsListed, false);
 });
 
 test('requireEnterpriseModelProxy rejects missing models proxy before model/provider calls', async () => {

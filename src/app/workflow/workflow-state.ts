@@ -222,6 +222,36 @@ export function shouldContinueWorkflowVideoSync(status: string) {
   return status === 'queued' || status === 'running';
 }
 
+export async function syncWorkflowVideoRunUntilTerminal<T extends { status: string }>(input: {
+  runId: string;
+  maxAttempts: number;
+  intervalMs: number;
+  syncRun: (runId: string) => Promise<T>;
+  wait: (durationMs: number) => Promise<void>;
+  onRun?: (run: T) => void;
+}): Promise<T> {
+  let latestRun: T | null = null;
+
+  for (let attempt = 0; attempt < input.maxAttempts; attempt += 1) {
+    latestRun = await input.syncRun(input.runId);
+    input.onRun?.(latestRun);
+
+    if (!shouldContinueWorkflowVideoSync(latestRun.status)) {
+      return latestRun;
+    }
+
+    if (attempt < input.maxAttempts - 1) {
+      await input.wait(input.intervalMs);
+    }
+  }
+
+  if (!latestRun) {
+    throw new Error('工作流视频任务同步未开始。');
+  }
+
+  return latestRun;
+}
+
 export function isWorkflowVideoHistoryRun(input: {
   taskType: AgentTaskType;
   input?: Record<string, unknown> | null;

@@ -540,6 +540,29 @@ test('serviceErrorToResponse maps billing and provider errors to stable API code
   }
 });
 
+test('serviceErrorToResponse maps provider request errors from duplicated module instances', async () => {
+  const error = new Error('Provider request failed with status 400: policy violation');
+  error.name = 'ProviderRequestError';
+
+  const response = serviceErrorToResponse(error);
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.error.code, 'provider_error');
+  assert.match(body.error.message, /policy violation/);
+});
+
+test('serviceErrorToResponse maps provider request failures without Error prototype', async () => {
+  const response = serviceErrorToResponse({
+    message: 'Provider request failed with status 400: content policy violation',
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.error.code, 'provider_error');
+  assert.match(body.error.message, /content policy violation/);
+});
+
 test('serviceErrorToResponse returns localized fallback message for unexpected internal errors', async () => {
   const response = serviceErrorToResponse(new Error('unexpected failure'));
   const body = await response.json();

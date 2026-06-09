@@ -237,6 +237,7 @@ export type CreateAgentRunServiceInput = {
   waitForVideoPoll?: (attempt: number) => Promise<void>;
   debitForImageAgentRun?: DebitForImageAgentRun;
   generatedMediaCache?: GeneratedMediaCache;
+  mediaRunScheduler?: MediaRunScheduler;
   resolveWorkflowCapabilityBundle?: WorkflowCapabilityBundleResolver;
   readStoryboardTemplateDataUrl?: StoryboardTemplateDataUrlResolver;
 };
@@ -1272,11 +1273,44 @@ export function createAgentRunService({
   waitForVideoPoll = async () => {},
   debitForImageAgentRun = defaultDebitForImageAgentRun,
   generatedMediaCache,
+  mediaRunScheduler = createMediaRunScheduler(),
   resolveWorkflowCapabilityBundle = resolveDefaultAgentCapabilityBundle,
   readStoryboardTemplateDataUrl = readStoryboardTemplateDataUrlFromStorage,
 }: CreateAgentRunServiceInput) {
   const resolveGeneratedMediaCache: GeneratedMediaCacheResolver = () =>
     generatedMediaCache ?? null;
+  const activeVideoSyncs = new Map<string, Promise<AgentRunDto>>();
+
+  const syncVideoRunOnce = (userId: string, runId: string) => {
+    const activeSync = activeVideoSyncs.get(runId);
+    if (activeSync) {
+      return activeSync;
+    }
+
+    const sync = syncVideoAgentRunForUser({
+      repository,
+      userId,
+      runId,
+      createVideoProviderAdapter,
+      debitForImageAgentRun,
+      waitForVideoPoll,
+      resolveGeneratedMediaCache,
+    });
+    activeVideoSyncs.set(runId, sync);
+    const cleanup = () => {
+      if (activeVideoSyncs.get(runId) === sync) {
+        activeVideoSyncs.delete(runId);
+      }
+    };
+    sync.then(cleanup, cleanup);
+    return sync;
+  };
+
+  const scheduleVideoRunSync = (userId: string, runId: string) => {
+    mediaRunScheduler.schedule(runId, async () => {
+      await syncVideoRunOnce(userId, runId);
+    });
+  };
 
   return {
     async createAndRunAgentRun(input: CreateAndRunAgentRunInput): Promise<CreateAgentRunResult> {
@@ -1315,6 +1349,7 @@ export function createAgentRunService({
           mediaAssetRepository,
           signVideoMaterialUrl,
           debitForImageAgentRun,
+          scheduleVideoRunSync,
         });
       }
 
@@ -1345,6 +1380,7 @@ export function createAgentRunService({
             mediaAssetRepository,
             signVideoMaterialUrl,
             resolveGeneratedMediaCache,
+            scheduleVideoRunSync,
           });
         }
 
@@ -1420,15 +1456,7 @@ export function createAgentRunService({
       }
     },
     async syncVideoAgentRunForUser(userId: string, runId: string): Promise<AgentRunDto> {
-      return syncVideoAgentRunForUser({
-        repository,
-        userId,
-        runId,
-        createVideoProviderAdapter,
-        debitForImageAgentRun,
-        waitForVideoPoll,
-        resolveGeneratedMediaCache,
-      });
+      return syncVideoRunOnce(userId, runId);
     },
   };
 }
@@ -1709,6 +1737,7 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
   mediaAssetRepository?: GeneratedMediaAssetRepository;
   signVideoMaterialUrl: VideoMaterialSigner;
   resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
+  scheduleVideoRunSync: (userId: string, runId: string) => void;
 }): Promise<CreateAgentRunResult> {
   const request = input.input;
   const workflowVideoInput = parseWorkflowVideoMvpInput(request.input);
@@ -1948,6 +1977,7 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
       startedAt: new Date().toISOString(),
     },
   });
+  input.scheduleVideoRunSync(request.userId, updated.id);
 
   return runResult(updated);
 }
@@ -2049,6 +2079,7 @@ async function createAndRunVideoAgentRun(input: {
   mediaAssetRepository?: GeneratedMediaAssetRepository;
   signVideoMaterialUrl: VideoMaterialSigner;
   debitForImageAgentRun: DebitForImageAgentRun;
+  scheduleVideoRunSync: (userId: string, runId: string) => void;
 }): Promise<CreateAgentRunResult> {
   const { repository, resolveVideoModelForUser, assertCanAffordMinimum } = input;
   const request = input.input;
@@ -2190,6 +2221,7 @@ async function createAndRunVideoAgentRun(input: {
       startedAt: new Date().toISOString(),
     },
   });
+  input.scheduleVideoRunSync(request.userId, updated.id);
 
   return runResult(updated);
 }
@@ -2206,6 +2238,10 @@ async function syncVideoAgentRunForUser(input: {
   const detail = await input.repository.getRunDetailForUser(input.runId, input.userId);
   if (!detail) {
     throw new Error('Agent run was not found.');
+  }
+
+  if (detail.run.status !== 'queued' && detail.run.status !== 'running') {
+    return detail.run;
   }
 
   const snapshot = (detail.internal?.capabilitySnapshot ?? {}) as AgentCapabilitySnapshot &

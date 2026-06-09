@@ -41,6 +41,7 @@ import {
   resolveWorkflowSceneStepDreamAction,
   resolveWorkflowUploadStepNextAction,
   shouldContinueWorkflowVideoSync,
+  syncWorkflowVideoRunUntilTerminal,
   type WorkflowStateSnapshot,
 } from './workflow-state';
 import type {
@@ -110,7 +111,7 @@ const emptyVideoConfig: VideoGenerationConfigDto = {
   workflowSceneBackgrounds: [],
 };
 
-function wait(ms: number) {
+function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
@@ -1540,22 +1541,62 @@ export default function WorkflowPage() {
       setDreamRunId(run.id);
       setSelectedWorkflowHistoryRunId(run.id);
       setWorkflowHistoryRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
-      setRuntimeStatus(`视频任务已提交，任务 ID：${run.id}。你可以继续调整工作流并发起新的视频。`);
-      setDreaming(false);
+      setRuntimeStatus(`视频任务已提交，任务 ID：${run.id}。正在等待模型处理...`);
       void (async () => {
-        let latestRun = run;
-        for (let attempt = 0; attempt < WORKFLOW_VIDEO_SYNC_MAX_ATTEMPTS; attempt += 1) {
-          latestRun = await syncAgentRun(run.id);
-          setWorkflowHistoryRuns((current) => [
-            latestRun,
-            ...current.filter((item) => item.id !== latestRun.id),
-          ]);
-          if (!shouldContinueWorkflowVideoSync(latestRun.status)) {
-            break;
-          }
-          await wait(WORKFLOW_VIDEO_SYNC_INTERVAL_MS);
+        const latestRun = await syncWorkflowVideoRunUntilTerminal({
+          runId: run.id,
+          maxAttempts: WORKFLOW_VIDEO_SYNC_MAX_ATTEMPTS,
+          intervalMs: WORKFLOW_VIDEO_SYNC_INTERVAL_MS,
+          syncRun: syncAgentRun,
+          wait,
+          onRun: (syncedRun) => {
+            setWorkflowHistoryRuns((current) => [
+              syncedRun,
+              ...current.filter((item) => item.id !== syncedRun.id),
+            ]);
+          },
+        });
+        if (dreamOperationRef.current !== operationId) {
+          return;
         }
-      })().catch(() => null);
+
+        if (latestRun.status === 'succeeded') {
+          const detail = await getAgentRunDetail(run.id);
+          const videoArtifact = firstMediaArtifact(detail.run, 'video');
+          if (!videoArtifact) {
+            throw new Error('工作流视频已完成，但没有找到可预览的视频。');
+          }
+
+          const videoAccess = await getGeneratedRunArtifactAccess(detail.run.id, videoArtifact.id, 'preview');
+          if (dreamOperationRef.current !== operationId) {
+            return;
+          }
+
+          setWorkflowHistoryRuns((current) => [
+            detail.run,
+            ...current.filter((item) => item.id !== detail.run.id),
+          ]);
+          setDreamVideoArtifactId(videoArtifact.id);
+          setDreamVideoUrl(videoAccess.url);
+          setRuntimeStatus('工作流视频已生成。');
+          setDreaming(false);
+          return;
+        }
+
+        if (latestRun.status === 'failed') {
+          throw new Error(latestRun.errorMessage ?? '工作流视频生成失败');
+        }
+
+        setRuntimeStatus('工作流视频任务仍在处理中，请稍后从历史记录查看。');
+        setDreaming(false);
+      })().catch((error) => {
+        if (dreamOperationRef.current !== operationId) {
+          return;
+        }
+        setDreaming(false);
+        setRuntimeStatus(null);
+        setRuntimeError(error instanceof Error ? error.message : '工作流视频同步失败');
+      });
     } catch (error) {
       if (dreamOperationRef.current !== operationId) return;
       setDreaming(false);

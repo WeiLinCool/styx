@@ -743,7 +743,7 @@ export function resolveDatabaseChatModelForUserFromRows(
   entitlements: ActiveUserEntitlement[],
 ): ResolvedChatModel {
   const models = groupResolvedDatabaseChatRows(rows, entitlements, modelId);
-  const model = models.find((item) => item.id === modelId);
+  const model = models.find((item) => item.id === modelId || item.model === modelId);
   if (!model) {
     throw new ModelNotAvailableError();
   }
@@ -1929,7 +1929,7 @@ function groupResolvedDatabaseChatRows(
 ): ResolvedChatModel[] {
   const availableRows = rows.filter(
     (row) =>
-      (!modelId || row.model.id === modelId) &&
+      (!modelId || matchesRuntimeModelId(row.model, modelId)) &&
       row.model.status === 'enabled' &&
       row.model.supportsChat &&
       isChatExecutionProtocol(row.model.executionProtocol) &&
@@ -1939,6 +1939,13 @@ function groupResolvedDatabaseChatRows(
   );
 
   return groupResolvedRows(availableRows as ChatModelRow[], entitlements, 'chat');
+}
+
+function matchesRuntimeModelId(
+  model: Pick<typeof schema.aiModels.$inferSelect, 'id' | 'model'>,
+  modelId: string,
+) {
+  return model.id === modelId || model.model === modelId;
 }
 
 function groupResolvedDatabaseImageRows(

@@ -314,6 +314,44 @@ function validationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? 'Invalid agent run request.';
 }
 
+function readErrorField(error: unknown, key: 'message' | 'name') {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const value = (error as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function readErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return readErrorField(error, 'message') ?? String(error);
+}
+
+function isProviderRequestError(error: unknown) {
+  if (error instanceof ProviderRequestError) {
+    return true;
+  }
+
+  const name = error instanceof Error ? error.name : readErrorField(error, 'name');
+  if (name === 'ProviderRequestError') {
+    return true;
+  }
+
+  const constructorName =
+    error && typeof error === 'object'
+      ? (error.constructor as { name?: unknown } | undefined)?.name
+      : null;
+  if (constructorName === 'ProviderRequestError') {
+    return true;
+  }
+
+  return readErrorMessage(error).startsWith('Provider request failed');
+}
+
 export function serviceErrorToResponse(error: unknown) {
   if (error instanceof InvalidJsonRequestError) {
     return jsonError('invalid_request', error.message, 400);
@@ -359,8 +397,8 @@ export function serviceErrorToResponse(error: unknown) {
     return jsonError('provider_unconfigured', error.message, 503);
   }
 
-  if (error instanceof ProviderRequestError) {
-    return jsonError('provider_error', error.message, 502);
+  if (isProviderRequestError(error)) {
+    return jsonError('provider_error', readErrorMessage(error), 502);
   }
 
   const accountResponse = accountErrorToResponse(error);

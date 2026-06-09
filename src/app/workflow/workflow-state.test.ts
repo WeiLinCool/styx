@@ -14,6 +14,7 @@ import {
   resolveWorkflowSceneStepDreamAction,
   resolveWorkflowUploadStepNextAction,
   shouldContinueWorkflowVideoSync,
+  syncWorkflowVideoRunUntilTerminal,
   type WorkflowStateSnapshot,
 } from './workflow-state';
 import type { AgentRunDetailDto, AgentRunDto } from '@/server/agent/types';
@@ -309,6 +310,34 @@ test('shouldContinueWorkflowVideoSync keeps non-terminal workflow video runs pol
   assert.equal(shouldContinueWorkflowVideoSync('running'), true);
   assert.equal(shouldContinueWorkflowVideoSync('succeeded'), false);
   assert.equal(shouldContinueWorkflowVideoSync('failed'), false);
+});
+
+test('syncWorkflowVideoRunUntilTerminal polls sync until the workflow video reaches a terminal status', async () => {
+  const syncedRuns = [
+    makeRun({ id: 'dream-run', status: 'running' }),
+    makeRun({ id: 'dream-run', status: 'running' }),
+    makeRun({ id: 'dream-run', status: 'succeeded' }),
+  ];
+  const seenStatuses: string[] = [];
+  let waitCount = 0;
+
+  const result = await syncWorkflowVideoRunUntilTerminal({
+    runId: 'dream-run',
+    maxAttempts: 5,
+    intervalMs: 3000,
+    syncRun: async () => syncedRuns.shift() ?? makeRun({ id: 'dream-run', status: 'succeeded' }),
+    wait: async (durationMs) => {
+      waitCount += 1;
+      assert.equal(durationMs, 3000);
+    },
+    onRun: (run) => {
+      seenStatuses.push(run.status);
+    },
+  });
+
+  assert.equal(result.status, 'succeeded');
+  assert.deepEqual(seenStatuses, ['running', 'running', 'succeeded']);
+  assert.equal(waitCount, 2);
 });
 
 test('isWorkflowVideoHistoryRun accepts only workflow video stage runs', () => {
