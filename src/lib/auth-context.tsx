@@ -543,13 +543,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     toast.success('已退出登录。');
   }, []);
 
-  const updateUser = useCallback((updates: Partial<AuthUserInfo>) => {
+  const updateUser = useCallback(async (updates: Partial<AuthUserInfo>) => {
     setUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
       saveUserToCookie(updated);
       return updated;
     });
+
+    try {
+      const response = await userApiRequest('/api/user/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          displayName: updates.nickname,
+          avatarUrl: updates.avatar,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to update profile:', await response.text());
+        return;
+      }
+
+      const payload = await readJsonResponse(response);
+      if (payload?.user) {
+        setUser(prev => {
+          if (!prev) return prev;
+          const serverUpdated: AuthUserInfo = {
+            ...prev,
+            nickname: payload.user.displayName,
+            avatar: payload.user.avatarUrl || prev.avatar,
+          };
+          saveUserToCookie(serverUpdated);
+          return serverUpdated;
+        });
+      }
+    } catch (error) {
+      console.error('Failed to persist profile update:', error);
+    }
   }, []);
 
   const openLoginModal = useCallback(() => setShowLoginModal(true), []);

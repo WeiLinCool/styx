@@ -15,6 +15,7 @@ function createUser(overrides: Partial<UserRecord> = {}): UserRecord {
     email: 'email' in overrides ? (overrides.email ?? null) : 'alice@example.com',
     phone: 'phone' in overrides ? (overrides.phone ?? null) : '13800138000',
     displayName: overrides.displayName ?? 'Alice Example',
+    avatarUrl: overrides.avatarUrl ?? null,
     accountState: overrides.accountState ?? 'active',
     activatedAt: overrides.activatedAt ?? now,
     suspendedAt: overrides.suspendedAt ?? null,

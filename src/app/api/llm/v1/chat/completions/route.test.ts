@@ -28,6 +28,7 @@ function resolvedBearer(): ResolvedEnterpriseBearerToken {
       email: 'user@example.com',
       phone: null,
       displayName: 'User One',
+      avatarUrl: null,
       accountState: 'active',
       activatedAt: now,
       suspendedAt: null,

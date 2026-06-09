@@ -45,6 +45,7 @@ export type UserRecord = {
   email: string | null;
   phone: string | null;
   displayName: string;
+  avatarUrl: string | null;
   accountState: AccountState;
   activatedAt: Date | null;
   suspendedAt: Date | null;

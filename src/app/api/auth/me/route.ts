@@ -77,7 +77,10 @@ export async function GET(request: Request) {
       user: {
         id: session.user.id,
         nickname: session.user.displayName,
-        avatar: session.user.phone ?? session.user.email ?? session.user.displayName,
+        avatar: session.user.avatarUrl || 
+        session.user.phone || 
+        session.user.email || 
+        session.user.displayName,
         email: session.user.email ?? '',
         phone: session.user.phone ?? '',
         membershipLevel: membershipSnapshot.membershipLevel,
