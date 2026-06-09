@@ -47,7 +47,7 @@ interface AuthContextType {
   isLoggedIn: boolean;
   login: (user: AuthUserInfo) => void;
   logout: () => void;
-  updateUser: (updates: Partial<AuthUserInfo>) => void;
+  updateUser: (updates: Partial<AuthUserInfo>) => Promise<void>;
   refreshUser: () => Promise<AuthUserInfo | null>;
   showLoginModal: boolean;
   openLoginModal: () => void;
@@ -544,6 +544,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateUser = useCallback(async (updates: Partial<AuthUserInfo>) => {
+    const previousUser = user; // 保存之前的状态
+    
+    // 乐观更新
     setUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
@@ -562,7 +565,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
+        // 回滚到之前的状态
+        if (previousUser) {
+          setUser(previousUser);
+          saveUserToCookie(previousUser);
+        }
         console.error('Failed to update profile:', await response.text());
+        toast.error('更新失败，已恢复原始状态');
         return;
       }
 
@@ -578,11 +587,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           saveUserToCookie(serverUpdated);
           return serverUpdated;
         });
+        toast.success('个人资料已更新');
       }
     } catch (error) {
+      // 网络异常等情况，回滚状态
+      if (previousUser) {
+        setUser(previousUser);
+        saveUserToCookie(previousUser);
+      }
       console.error('Failed to persist profile update:', error);
+      toast.error('网络错误，更新已撤销');
     }
-  }, []);
+  }, [user]);  
 
   const openLoginModal = useCallback(() => setShowLoginModal(true), []);
   const closeLoginModal = useCallback(() => setShowLoginModal(false), []);

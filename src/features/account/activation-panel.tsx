@@ -23,7 +23,7 @@ type WorkOrderState = {
 };
 
 export function ActivationPanel({ accountState = 'pending_activation' }: ActivationPanelProps) {
-  const { updateUser } = useAuth();
+  const { updateUser, refreshUser } = useAuth();
   const [bindSubject, setBindSubject] = useState('');
   const [bindProvider, setBindProvider] = useState<'email' | 'phone' | 'github'>('email');
   const [message, setMessage] = useState('');
@@ -66,7 +66,7 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
         const nextState = payload.user?.accountState;
 
         if (nextState === 'active') {
-          updateUser({ accountState: 'active' });
+          await refreshUser(); // 从服务器获取最新状态
           setSubmitState('success');
           setMessage('激活申请已审核通过，账号已激活。');
           setPolling(false);
@@ -92,7 +92,7 @@ export function ActivationPanel({ accountState = 'pending_activation' }: Activat
         clearTimeout(timeoutId);
       }
     };
-  }, [polling, updateUser, workOrder]);
+  }, [polling, refreshUser, workOrder]);
 
   async function createActivationRequest() {
     setSubmitState('submitting');
