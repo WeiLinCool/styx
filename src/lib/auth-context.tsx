@@ -59,6 +59,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user: AuthUserInfo) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { updateUser } = useAuth(); // 获取updateUser函数
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -151,14 +152,10 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
       // 如果注册时选择了头像，持久化到服务器
       if (avatarUrl && payload.user) {
         try {
-          await fetch('/api/user/profile', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ avatarUrl }),
-          });
+          await updateUser({ avatar: avatarUrl });
         } catch (error) {
           console.error('Failed to save avatar during registration:', error);
-          // 不阻塞注册流程
+          // updateUser already handles rollback and toast
         }
       }
     } finally {
