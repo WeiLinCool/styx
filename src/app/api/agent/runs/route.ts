@@ -71,7 +71,7 @@ const workflowVideoRunInputSchema = z.object({
   modelId: optionalNonEmptyStringSchema.optional(),
   sourceImageAssetId: z.string().uuid('input.sourceImageAssetId must be a valid UUID.'),
   storyboardArtifactId: z.string().uuid('input.storyboardArtifactId must be a valid UUID.'),
-  sceneBackgroundAssetId: z.string().uuid('input.sceneBackgroundAssetId must be a valid UUID.'),
+  sceneBackgroundId: optionalNonEmptyStringSchema,
   storyboardPromptMap: z.record(z.string(), z.unknown()),
   durationSeconds: z.number().int().positive().optional(),
   resolution: optionalNonEmptyStringSchema.optional(),
@@ -160,6 +160,14 @@ const createAgentRunBodySchema = z
             message: issue.message,
           });
         }
+      }
+
+      if (typeof body.input.sceneBackgroundAssetId === 'string') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['input', 'sceneBackgroundAssetId'],
+          message: 'input.sceneBackgroundAssetId is not accepted for workflow video requests.',
+        });
       }
     }
 

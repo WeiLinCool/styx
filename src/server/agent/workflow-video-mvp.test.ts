@@ -24,7 +24,7 @@ test('renderWorkflowVideoMvpPrompt replaces known placeholders and preserves unk
   assert.equal(prompt, 'A 石头印画 5 {{missing_value}}');
 });
 
-test('parseWorkflowVideoMvpInput rejects missing scene background', () => {
+test('parseWorkflowVideoMvpInput rejects missing configured scene background', () => {
   assert.throws(
     () =>
       parseWorkflowVideoMvpInput({
@@ -34,4 +34,15 @@ test('parseWorkflowVideoMvpInput rejects missing scene background', () => {
       }),
     WorkflowVideoMvpValidationError,
   );
+});
+
+test('parseWorkflowVideoMvpInput accepts configured scene background id', () => {
+  const parsed = parseWorkflowVideoMvpInput({
+    sourceImageAssetId: '11111111-1111-4111-8111-111111111111',
+    storyboardArtifactId: '22222222-2222-4222-8222-222222222222',
+    sceneBackgroundId: 'wood-table-handmade-1',
+    storyboardPromptMap: { shot1: '开场' },
+  });
+
+  assert.equal(parsed.sceneBackgroundId, 'wood-table-handmade-1');
 });

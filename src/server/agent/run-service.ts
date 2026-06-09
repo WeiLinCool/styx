@@ -25,6 +25,7 @@ import {
   createMediaProviderAdapter,
   type MediaProviderAdapter,
 } from '@/server/ai/media-provider-adapters';
+import { findEnabledWorkflowSceneBackground } from '@/server/agent/workflow-backgrounds';
 import { listActiveUserEntitlements, type ActiveUserEntitlement } from '@/server/ai/model-entitlements';
 import { createTencentCosClient } from '@/server/media/cos-client';
 import {
@@ -934,6 +935,25 @@ async function resolveWorkflowVideoImageMaterialUrl(input: {
   return input.signVideoMaterialUrl(asset);
 }
 
+function resolvePublicWorkflowBackgroundUrl(
+  publicUrl: string,
+  requestInput: Record<string, unknown>,
+) {
+  const baseUrl =
+    typeof requestInput.origin === 'string' && requestInput.origin.startsWith('http')
+      ? requestInput.origin
+      : process.env.NEXT_PUBLIC_APP_URL;
+
+  if (!baseUrl) {
+    throw new AgentRunVideoMaterialError({
+      code: 'invalid_request',
+      message: 'workflow video scene background base URL is not configured.',
+    });
+  }
+
+  return new URL(publicUrl, baseUrl).toString();
+}
+
 function selectMembershipEntitlement(entitlements: ActiveUserEntitlement[]) {
   const membershipEntitlements = entitlements.filter(
     (entitlement) =>
@@ -1588,6 +1608,17 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
     );
   }
 
+  const sceneBackground = findEnabledWorkflowSceneBackground(
+    workflowVideoConfig.sceneBackgrounds,
+    workflowVideoInput.sceneBackgroundId,
+  );
+  if (!sceneBackground) {
+    throw new AgentRunVideoMaterialError({
+      code: 'invalid_request',
+      message: 'Selected workflow scene background is not available.',
+    });
+  }
+
   const durationSeconds =
     workflowVideoInput.durationSeconds ?? workflowVideoConfig.defaults.durationSeconds;
   const resolution = workflowVideoInput.resolution ?? workflowVideoConfig.defaults.resolution;
@@ -1629,7 +1660,7 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
 
   await input.assertCanAffordMinimum(request.userId, model.pricing);
 
-  const [sourceImageUrl, storyboardImageUrl, sceneBackgroundUrl] = await Promise.all([
+  const [sourceImageUrl, storyboardImageUrl] = await Promise.all([
     resolveWorkflowVideoImageMaterialUrl({
       userId: request.userId,
       assetId: workflowVideoInput.sourceImageAssetId,
@@ -1644,14 +1675,11 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
       repository: input.mediaAssetRepository,
       signVideoMaterialUrl: input.signVideoMaterialUrl,
     }),
-    resolveWorkflowVideoImageMaterialUrl({
-      userId: request.userId,
-      assetId: workflowVideoInput.sceneBackgroundAssetId,
-      label: 'Workflow scene background',
-      repository: input.mediaAssetRepository,
-      signVideoMaterialUrl: input.signVideoMaterialUrl,
-    }),
   ]);
+  const sceneBackgroundUrl = resolvePublicWorkflowBackgroundUrl(
+    sceneBackground.publicUrl,
+    request.input,
+  );
 
   const storyboardPromptMap = JSON.stringify(workflowVideoInput.storyboardPromptMap);
   const renderedPrompt = renderWorkflowVideoMvpPrompt({
@@ -1678,6 +1706,12 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
       promptTemplate: workflowVideoConfig.promptTemplate,
       modelBinding: workflowVideoConfig.modelBinding,
       defaults: workflowVideoConfig.defaults,
+      sceneBackground: {
+        id: sceneBackground.id,
+        name: sceneBackground.name,
+        styleName: sceneBackground.styleName,
+        publicUrl: sceneBackground.publicUrl,
+      },
       updatedAt: workflowVideoConfig.updatedAt,
     },
   } satisfies AgentCapabilitySnapshot & Record<string, unknown>;
@@ -1686,7 +1720,7 @@ async function createAndRunWorkflowVideoMvpAgentRun(input: {
     stage: 'workflow_video',
     sourceImageAssetId: workflowVideoInput.sourceImageAssetId,
     storyboardArtifactId: workflowVideoInput.storyboardArtifactId,
-    sceneBackgroundAssetId: workflowVideoInput.sceneBackgroundAssetId,
+    sceneBackgroundId: workflowVideoInput.sceneBackgroundId,
     storyboardPromptMap: workflowVideoInput.storyboardPromptMap,
     styleCode: selectedStyleCode,
     durationSeconds,

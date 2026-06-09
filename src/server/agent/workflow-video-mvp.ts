@@ -10,7 +10,7 @@ export class WorkflowVideoMvpValidationError extends Error {
 export type WorkflowVideoMvpInput = {
   sourceImageAssetId: string;
   storyboardArtifactId: string;
-  sceneBackgroundAssetId: string;
+  sceneBackgroundId: string;
   storyboardPromptMap: Record<string, unknown>;
   durationSeconds?: number;
   resolution?: string;
@@ -34,6 +34,14 @@ function readUuid(input: Record<string, unknown>, key: string) {
   return value;
 }
 
+function readNonEmptyString(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new WorkflowVideoMvpValidationError(`workflow video input.${key} is required.`);
+  }
+  return value.trim();
+}
+
 export function parseWorkflowVideoMvpInput(input: Record<string, unknown>): WorkflowVideoMvpInput {
   const storyboardPromptMap = input.storyboardPromptMap;
   if (!storyboardPromptMap || typeof storyboardPromptMap !== 'object' || Array.isArray(storyboardPromptMap)) {
@@ -52,7 +60,7 @@ export function parseWorkflowVideoMvpInput(input: Record<string, unknown>): Work
   return {
     sourceImageAssetId: readUuid(input, 'sourceImageAssetId'),
     storyboardArtifactId: readUuid(input, 'storyboardArtifactId'),
-    sceneBackgroundAssetId: readUuid(input, 'sceneBackgroundAssetId'),
+    sceneBackgroundId: readNonEmptyString(input, 'sceneBackgroundId'),
     storyboardPromptMap: storyboardPromptMap as Record<string, unknown>,
     ...(durationSeconds ? { durationSeconds } : {}),
     ...(resolution ? { resolution } : {}),

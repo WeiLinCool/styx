@@ -312,7 +312,7 @@ test('parseCreateAgentRunRawBody accepts workflow video material references', ()
       modelId: 'model-video',
       sourceImageAssetId: '11111111-1111-4111-8111-111111111111',
       storyboardArtifactId: '22222222-2222-4222-8222-222222222222',
-      sceneBackgroundAssetId: '33333333-3333-4333-8333-333333333333',
+      sceneBackgroundId: 'wood-table-handmade-1',
       storyboardPromptMap: { shot1: '开场' },
       durationSeconds: 5,
       resolution: '720p',
@@ -322,7 +322,7 @@ test('parseCreateAgentRunRawBody accepts workflow video material references', ()
   assert.equal(parsed.input.stage, 'workflow_video');
   assert.equal(parsed.input.sourceImageAssetId, '11111111-1111-4111-8111-111111111111');
   assert.equal(parsed.input.storyboardArtifactId, '22222222-2222-4222-8222-222222222222');
-  assert.equal(parsed.input.sceneBackgroundAssetId, '33333333-3333-4333-8333-333333333333');
+  assert.equal(parsed.input.sceneBackgroundId, 'wood-table-handmade-1');
 });
 
 test('parseCreateAgentRunRawBody rejects workflow video without source image reference', () => {
@@ -334,11 +334,30 @@ test('parseCreateAgentRunRawBody rejects workflow video without source image ref
         input: {
           stage: 'workflow_video',
           storyboardArtifactId: '22222222-2222-4222-8222-222222222222',
-          sceneBackgroundAssetId: '33333333-3333-4333-8333-333333333333',
+          sceneBackgroundId: 'wood-table-handmade-1',
           storyboardPromptMap: { shot1: '开场' },
         },
       }),
     /sourceImageAssetId/,
+  );
+});
+
+test('parseCreateAgentRunRawBody rejects workflow video custom scene background asset', () => {
+  assert.throws(
+    () =>
+      parseCreateAgentRunRawBody({
+        taskType: 'workflow',
+        prompt: '生成工作流视频',
+        input: {
+          stage: 'workflow_video',
+          sourceImageAssetId: '11111111-1111-4111-8111-111111111111',
+          storyboardArtifactId: '22222222-2222-4222-8222-222222222222',
+          sceneBackgroundId: 'wood-table-handmade-1',
+          sceneBackgroundAssetId: '33333333-3333-4333-8333-333333333333',
+          storyboardPromptMap: { shot1: '开场' },
+        },
+      }),
+    /sceneBackgroundAssetId/,
   );
 });
 
