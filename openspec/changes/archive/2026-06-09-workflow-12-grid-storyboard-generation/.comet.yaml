@@ -9,5 +9,5 @@ verify_result: pass
 verification_report: docs/superpowers/verification/2026-06-09-workflow-video-mvp.md
 branch_status: handled
 verified_at: 2026-06-09
-archived: false
+archived: true
 direct_override: true

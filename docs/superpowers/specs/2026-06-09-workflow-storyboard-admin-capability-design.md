@@ -1,3 +1,7 @@
+---
+archived-with: 2026-06-09-workflow-12-grid-storyboard-generation
+status: final
+---
 # Workflow Storyboard And Video MVP Admin Capability Design
 
 Status: Draft
