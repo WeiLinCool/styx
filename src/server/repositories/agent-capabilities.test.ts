@@ -81,6 +81,43 @@ test('readWorkflowVideoMvpCapabilityConfig returns skill-like workflow video con
   assert.equal(config?.defaults.resolution, '720p');
 });
 
+test('readWorkflowVideoMvpCapabilityConfig includes enabled official scene backgrounds', () => {
+  const snapshot = getDefaultAgentCapabilityBundle('workflow');
+  const config = readWorkflowVideoMvpCapabilityConfig(snapshot!);
+
+  assert.ok(config);
+  assert.ok(config.sceneBackgrounds.length >= 50);
+  assert.ok(
+    config.sceneBackgrounds.every((background) =>
+      background.publicUrl.startsWith('/workflow-backgrounds/'),
+    ),
+  );
+  assert.ok(config.sceneBackgrounds.every((background) => background.enabled));
+});
+
+test('validateWorkflowVideoMvpCapabilityDraft preserves configured background edits', () => {
+  const draft = validateWorkflowVideoMvpCapabilityDraft({
+    description: '工作流视频',
+    promptTemplate: 'prompt',
+    defaults: { durationSeconds: 5, resolution: '720p' },
+    sceneBackgrounds: [
+      {
+        id: 'wood-table-handmade-1',
+        name: '手作桌面',
+        enabled: false,
+        sortOrder: 9,
+      },
+    ],
+  });
+
+  const edited = draft.sceneBackgrounds.find(
+    (background) => background.id === 'wood-table-handmade-1',
+  );
+  assert.equal(edited?.name, '手作桌面');
+  assert.equal(edited?.enabled, false);
+  assert.equal(edited?.sortOrder, 9);
+});
+
 test('validateWorkflowVideoMvpCapabilityDraft rejects empty prompt templates', () => {
   assert.throws(
     () =>

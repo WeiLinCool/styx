@@ -32,6 +32,16 @@ const bodySchema = z.object({
     durationSeconds: z.number().int().positive(),
     resolution: z.string().transform((value) => value.trim()).pipe(z.string().min(1)),
   }),
+  sceneBackgrounds: z
+    .array(
+      z.object({
+        id: z.string().transform((value) => value.trim()),
+        name: z.string().transform((value) => value.trim()),
+        enabled: z.boolean(),
+        sortOrder: z.number(),
+      }),
+    )
+    .default([]),
 });
 
 export function parseWorkflowVideoConfigBody(body: unknown) {
@@ -55,6 +65,7 @@ export function createWorkflowVideoConfigRouteHandlers(dependencies: {
     description: string;
     promptTemplate: string;
     defaults: { durationSeconds: number; resolution: string };
+    sceneBackgrounds?: unknown;
   }) => Promise<AdminWorkflowVideoCapabilityConfigRecord>;
 }) {
   return {

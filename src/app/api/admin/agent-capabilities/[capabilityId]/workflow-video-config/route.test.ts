@@ -5,6 +5,7 @@ import {
   createWorkflowVideoConfigRouteHandlers,
   parseWorkflowVideoConfigBody,
 } from './route';
+import { normalizeWorkflowSceneBackgrounds } from '@/server/agent/workflow-backgrounds';
 
 const capabilityId = '66666666-6666-4666-8666-666666666666';
 
@@ -22,12 +23,28 @@ test('parseWorkflowVideoConfigBody accepts prompt and defaults', () => {
     description: '视频能力',
     promptTemplate: '生成 {{workflow_prompt}}',
     defaults: { durationSeconds: 5, resolution: '720p' },
+    sceneBackgrounds: [
+      {
+        id: 'wood-table-handmade-1',
+        name: '手作桌面',
+        enabled: false,
+        sortOrder: 9,
+      },
+    ],
   });
 
   assert.equal(body.description, '视频能力');
   assert.equal(body.promptTemplate, '生成 {{workflow_prompt}}');
   assert.equal(body.defaults.durationSeconds, 5);
   assert.equal(body.defaults.resolution, '720p');
+  assert.deepEqual(body.sceneBackgrounds, [
+    {
+      id: 'wood-table-handmade-1',
+      name: '手作桌面',
+      enabled: false,
+      sortOrder: 9,
+    },
+  ]);
 });
 
 test('parseWorkflowVideoConfigBody rejects empty prompt', () => {
@@ -63,6 +80,7 @@ test('GET workflow-video-config returns skill-like config', async () => {
         executionProtocol: 'video_task_polling',
       },
       defaults: { durationSeconds: 5, resolution: '720p' },
+      sceneBackgrounds: normalizeWorkflowSceneBackgrounds(null),
       updatedAt: null,
       updatedByUserId: null,
     }),
@@ -84,6 +102,7 @@ test('GET workflow-video-config returns skill-like config', async () => {
 
 test('PUT workflow-video-config saves parsed config', async () => {
   let savedPrompt = '';
+  let savedBackgrounds: unknown = null;
   const handlers = createWorkflowVideoConfigRouteHandlers({
     requireAdminSession: async () => ({ user: { id: 'admin-1' } }),
     getConfig: async () => {
@@ -91,6 +110,7 @@ test('PUT workflow-video-config saves parsed config', async () => {
     },
     saveConfig: async (input) => {
       savedPrompt = input.promptTemplate;
+      savedBackgrounds = input.sceneBackgrounds;
       return {
         capabilityId,
         capabilityCode: 'workflow-video-mvp',
@@ -109,6 +129,7 @@ test('PUT workflow-video-config saves parsed config', async () => {
           executionProtocol: 'video_task_polling',
         },
         defaults: input.defaults,
+        sceneBackgrounds: normalizeWorkflowSceneBackgrounds(input.sceneBackgrounds),
         updatedAt: '2026-06-09T10:00:00.000Z',
         updatedByUserId: input.adminUserId,
       };
@@ -126,6 +147,14 @@ test('PUT workflow-video-config saves parsed config', async () => {
         description: ' 视频能力 ',
         promptTemplate: ' 生成 {{workflow_prompt}} ',
         defaults: { durationSeconds: 5, resolution: '720p' },
+        sceneBackgrounds: [
+          {
+            id: 'wood-table-handmade-1',
+            name: ' 手作桌面 ',
+            enabled: false,
+            sortOrder: 9,
+          },
+        ],
       }),
     }),
     { params: Promise.resolve({ capabilityId }) },
@@ -134,5 +163,19 @@ test('PUT workflow-video-config saves parsed config', async () => {
 
   assert.equal(response.status, 200);
   assert.equal(savedPrompt, '生成 {{workflow_prompt}}');
+  assert.deepEqual(savedBackgrounds, [
+    {
+      id: 'wood-table-handmade-1',
+      name: '手作桌面',
+      enabled: false,
+      sortOrder: 9,
+    },
+  ]);
   assert.equal(body.config.defaults.durationSeconds, 5);
+  assert.equal(
+    body.config.sceneBackgrounds.find(
+      (background: { id: string }) => background.id === 'wood-table-handmade-1',
+    ).enabled,
+    false,
+  );
 });

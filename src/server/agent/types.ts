@@ -74,6 +74,15 @@ export type WorkflowVideoMvpRequiredMaterial =
 
 export type WorkflowVideoMvpRequiredSnapshot = 'storyboard_prompt_map';
 
+export type WorkflowVideoSceneBackgroundConfig = {
+  id: string;
+  name: string;
+  styleName: string;
+  publicUrl: string;
+  enabled: boolean;
+  sortOrder: number;
+};
+
 export type WorkflowVideoMvpCapabilityConfig = {
   code: 'workflow-video-mvp';
   description: string;
@@ -91,6 +100,7 @@ export type WorkflowVideoMvpCapabilityConfig = {
     durationSeconds: number;
     resolution: string;
   };
+  sceneBackgrounds: WorkflowVideoSceneBackgroundConfig[];
   updatedAt: string | null;
   updatedByUserId: string | null;
 };

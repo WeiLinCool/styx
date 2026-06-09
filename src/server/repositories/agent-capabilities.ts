@@ -1,6 +1,7 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { buildCapabilitySnapshot, resolveDefaultBundle } from '@/server/agent/capability-resolution';
+import { normalizeWorkflowSceneBackgrounds } from '@/server/agent/workflow-backgrounds';
 import type {
   AgentCapabilityBundleRecord,
   AgentCapabilityKind,
@@ -135,6 +136,7 @@ function createDefaultWorkflowVideoMvpConfig(): Omit<
       durationSeconds: 5,
       resolution: '720p',
     },
+    sceneBackgrounds: normalizeWorkflowSceneBackgrounds(null),
     updatedAt: null,
     updatedByUserId: null,
   };
@@ -144,6 +146,7 @@ export function validateWorkflowVideoMvpCapabilityDraft(input: {
   description: string;
   promptTemplate: string;
   defaults: { durationSeconds: number; resolution: string };
+  sceneBackgrounds?: unknown;
 }) {
   const description = input.description.trim();
   const promptTemplate = input.promptTemplate.trim();
@@ -165,6 +168,7 @@ export function validateWorkflowVideoMvpCapabilityDraft(input: {
     description: description || createDefaultWorkflowVideoMvpConfig().description,
     promptTemplate,
     defaults: { durationSeconds: input.defaults.durationSeconds, resolution },
+    sceneBackgrounds: normalizeWorkflowSceneBackgrounds(input.sceneBackgrounds),
   };
 }
 
@@ -557,6 +561,7 @@ function normalizeWorkflowVideoMvpCapabilityConfigRecord(
       durationSeconds,
       resolution,
     },
+    sceneBackgrounds: normalizeWorkflowSceneBackgrounds(config.sceneBackgrounds),
     updatedAt: typeof config.updatedAt === 'string' ? config.updatedAt : defaults.updatedAt,
     updatedByUserId:
       typeof config.updatedByUserId === 'string'
@@ -584,6 +589,7 @@ function summarizeCapabilityConfig(config: Record<string, unknown>, code?: strin
       `提示词: ${video.promptTemplate.trim().length > 0 ? '已配置' : '缺失'}`,
       '模型: doubao-seedance-2-0',
       `素材: ${WORKFLOW_VIDEO_MVP_REQUIRED_MATERIALS.join('+')}`,
+      `背景: ${video.sceneBackgrounds.filter((background) => background.enabled).length}/${video.sceneBackgrounds.length}`,
       `默认: ${video.defaults.durationSeconds}s/${video.defaults.resolution}`,
     ].join(' · ');
   }
@@ -998,6 +1004,7 @@ export async function saveWorkflowVideoMvpCapabilityConfig(input: {
   description: string;
   promptTemplate: string;
   defaults: { durationSeconds: number; resolution: string };
+  sceneBackgrounds?: unknown;
 }): Promise<AdminWorkflowVideoCapabilityConfigRecord> {
   const database = requireAgentCapabilityDatabase('workflow video capability config mutation');
 
@@ -1015,6 +1022,7 @@ export async function saveWorkflowVideoMvpCapabilityConfig(input: {
     promptTemplate: draft.promptTemplate,
     modelBinding: defaults.modelBinding,
     defaults: draft.defaults,
+    sceneBackgrounds: draft.sceneBackgrounds,
     updatedAt: new Date().toISOString(),
     updatedByUserId: input.adminUserId,
   };

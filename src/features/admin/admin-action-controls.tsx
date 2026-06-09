@@ -126,8 +126,18 @@ type WorkflowVideoCapabilityConfigClient = {
     durationSeconds: number;
     resolution: string;
   };
+  sceneBackgrounds: WorkflowVideoSceneBackgroundClient[];
   updatedAt: string | null;
   updatedByUserId: string | null;
+};
+
+type WorkflowVideoSceneBackgroundClient = {
+  id: string;
+  name: string;
+  styleName: string;
+  publicUrl: string;
+  enabled: boolean;
+  sortOrder: number;
 };
 
 type WorkflowVideoConfigResponse = {
@@ -1075,6 +1085,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
   const [promptTemplate, setPromptTemplate] = useState('');
   const [durationSeconds, setDurationSeconds] = useState('5');
   const [resolution, setResolution] = useState('720p');
+  const [sceneBackgrounds, setSceneBackgrounds] = useState<WorkflowVideoSceneBackgroundClient[]>([]);
   const [state, setState] = useState<ActionState | null>(null);
   const [, startTransition] = useTransition();
 
@@ -1101,6 +1112,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
       setPromptTemplate(payload.config.promptTemplate);
       setDurationSeconds(String(payload.config.defaults.durationSeconds));
       setResolution(payload.config.defaults.resolution);
+      setSceneBackgrounds(payload.config.sceneBackgrounds);
     } catch (error) {
       setState({
         tone: 'error',
@@ -1155,6 +1167,12 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
               durationSeconds: parsedDuration,
               resolution: resolution.trim(),
             },
+            sceneBackgrounds: sceneBackgrounds.map((background) => ({
+              id: background.id,
+              name: background.name.trim(),
+              enabled: background.enabled,
+              sortOrder: background.sortOrder,
+            })),
           }),
         },
       );
@@ -1169,6 +1187,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
       setPromptTemplate(payload.config.promptTemplate);
       setDurationSeconds(String(payload.config.defaults.durationSeconds));
       setResolution(payload.config.defaults.resolution);
+      setSceneBackgrounds(payload.config.sceneBackgrounds);
       setState({ tone: 'success', message: '工作流视频配置已保存。' });
       startTransition(() => router.refresh());
     } catch (error) {
@@ -1183,6 +1202,18 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
 
   const busy = loading || saving;
   const requiredMaterials = config?.inputSchema.requiredMaterials.join(' + ') ?? 'source_image + storyboard_image + scene_background';
+  const enabledBackgroundCount = sceneBackgrounds.filter((background) => background.enabled).length;
+
+  function updateSceneBackground(
+    backgroundId: string,
+    patch: Partial<Pick<WorkflowVideoSceneBackgroundClient, 'name' | 'enabled' | 'sortOrder'>>,
+  ) {
+    setSceneBackgrounds((current) =>
+      current.map((background) =>
+        background.id === backgroundId ? { ...background, ...patch } : background,
+      ),
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => void handleOpenChange(nextOpen)}>
@@ -1273,8 +1304,77 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
               <div className="space-y-1 rounded-md border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
                 <div>提示词状态：{promptTemplate.trim() ? '已配置' : '缺失'}</div>
                 <div>默认规格：{durationSeconds || '--'}s / {resolution || '--'}</div>
+                <div>官网背景：{enabledBackgroundCount}/{sceneBackgrounds.length} 启用</div>
                 <div>最近更新：{config?.updatedAt ?? '未保存'}</div>
               </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-md border border-border bg-muted/10 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-foreground">官网背景图</div>
+                <div className="text-xs text-muted-foreground">
+                  用户只能选择这里启用的背景图，不能自定义上传场景底图。
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {enabledBackgroundCount}/{sceneBackgrounds.length} 启用
+              </div>
+            </div>
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {sceneBackgrounds.map((background) => (
+                <div
+                  key={background.id}
+                  className="grid gap-3 rounded-md border border-border bg-card p-2 text-xs sm:grid-cols-[72px_minmax(0,1fr)_72px_72px]"
+                >
+                  <div className="overflow-hidden rounded border border-border bg-muted">
+                    <img
+                      src={background.publicUrl}
+                      alt={background.name}
+                      className="aspect-video h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      {background.styleName}
+                    </div>
+                    <Input
+                      value={background.name}
+                      disabled={busy}
+                      onChange={(event) =>
+                        updateSceneBackground(background.id, { name: event.target.value })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">排序</Label>
+                    <Input
+                      type="number"
+                      value={String(background.sortOrder)}
+                      disabled={busy}
+                      onChange={(event) =>
+                        updateSceneBackground(background.id, {
+                          sortOrder: Number(event.target.value),
+                        })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 self-end pb-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={background.enabled}
+                      disabled={busy}
+                      onChange={(event) =>
+                        updateSceneBackground(background.id, { enabled: event.target.checked })
+                      }
+                    />
+                    启用
+                  </label>
+                </div>
+              ))}
             </div>
           </div>
 
