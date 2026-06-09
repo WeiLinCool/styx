@@ -25,6 +25,7 @@ export type ImageModelMode = 'generate' | 'edit' | 'upscale';
 
 export type ImageModelOption = ChatModelOption & {
   supportedModes: ImageModelMode[];
+  supportsWorkflowStoryboardTemplate: boolean;
 };
 
 export type VideoModelOption = ChatModelOption;
@@ -247,7 +248,8 @@ export function parseImageModel(value: unknown): ImageModelOption | null {
     return null;
   }
 
-  const supportedModes = (value as Record<string, unknown>).supportedModes;
+  const payload = value as Record<string, unknown>;
+  const supportedModes = payload.supportedModes;
   if (
     !Array.isArray(supportedModes) ||
     supportedModes.length === 0 ||
@@ -259,6 +261,7 @@ export function parseImageModel(value: unknown): ImageModelOption | null {
   return {
     ...model,
     supportedModes,
+    supportsWorkflowStoryboardTemplate: payload.supportsWorkflowStoryboardTemplate === true,
   };
 }
 
@@ -400,6 +403,14 @@ export function selectImageModelId(
   }
 
   return models.find((model) => model.isDefault)?.id ?? models[0]?.id ?? null;
+}
+
+export function filterStoryboardTemplateImageModels(models: ImageModelOption[]) {
+  return models.filter(
+    (model) =>
+      model.supportsWorkflowStoryboardTemplate &&
+      model.supportedModes.includes('generate'),
+  );
 }
 
 export async function listChatModels(): Promise<ChatModelOption[]> {

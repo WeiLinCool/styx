@@ -7,6 +7,9 @@ import { requiresActivation } from '@/features/account/account-state';
 import { ProtectedAccountPanel } from '@/features/account/protected-account-panel';
 import {
   createAgentRun,
+  filterStoryboardTemplateImageModels,
+  getAgentRunDetail,
+  getGeneratedRunArtifactAccess,
   listImageModels,
   getVideoGenerationConfig,
   selectImageModelId,
@@ -22,6 +25,7 @@ import {
 } from '@/features/public/model-availability';
 import {
   applyGeneratedReferenceScene,
+  applyGeneratedWorkflowImage,
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
   resolveWorkflowVideoModelAvailability,
@@ -29,8 +33,10 @@ import {
 } from './workflow-state';
 import { createReferenceImageDialogState } from './workflow-quick-actions';
 import {
+  ImageGenerationDialog,
   PromptOptimizationDialog,
   ReferenceImageDialog,
+  waitForTerminalRun,
 } from './workflow-quick-action-dialogs';
 import {
   ArrowLeft,
@@ -196,6 +202,7 @@ function WorkflowNav() {
 // 上传图案区域
 function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string | null; onUpload: (dataUrl: string) => void }) {
   const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -216,12 +223,23 @@ function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string 
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (file) handleFile(file);
   }, [handleFile]);
+
+  const openFilePicker = useCallback(() => {
+    if (!inputRef.current) {
+      return;
+    }
+
+    inputRef.current.value = '';
+    inputRef.current.click();
+  }, []);
 
   if (uploadedImage) {
     return (
       <div className="space-y-3">
+        <input ref={inputRef} id="pattern-upload" type="file" accept="image/*" className="hidden" onChange={handleInputChange} />
         <div className="relative overflow-hidden rounded-xl border border-border bg-card p-2">
           <img src={uploadedImage} alt="已上传图案" className="mx-auto max-h-72 object-contain" />
           <div className="absolute top-3 right-3">
@@ -231,10 +249,23 @@ function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string 
             </span>
           </div>
         </div>
-        <button onClick={() => onUpload('')} className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
-          <RefreshCw size={12} />
-          重新上传
-        </button>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <button
+            type="button"
+            onClick={openFilePicker}
+            className="flex cursor-pointer items-center gap-1.5 transition-colors hover:text-foreground"
+          >
+            <RefreshCw size={12} />
+            重新上传
+          </button>
+          <button
+            type="button"
+            onClick={() => onUpload('')}
+            className="transition-colors hover:text-foreground"
+          >
+            清空
+          </button>
+        </div>
       </div>
     );
   }
@@ -247,9 +278,9 @@ function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string 
       className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-10 transition-all ${
         dragOver ? 'border-ring bg-secondary/70' : 'border-border bg-card hover:border-ring'
       }`}
-      onClick={() => document.getElementById('pattern-upload')?.click()}
+      onClick={openFilePicker}
     >
-      <input id="pattern-upload" type="file" accept="image/*" className="hidden" onChange={handleInputChange} />
+      <input ref={inputRef} id="pattern-upload" type="file" accept="image/*" className="hidden" onChange={handleInputChange} />
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-secondary">
         <Upload size={28} className="text-muted-foreground" />
       </div>
@@ -317,9 +348,10 @@ function ModelSelector({ models, selectedModel, onSelect, title, icon: Icon }: {
 }
 
 // 12宫格分镜图（单张图）
-function StoryboardSingleImage({ generating, generated, modelName, onCancel, onRegenerate, onNext }: {
+function StoryboardSingleImage({ generating, generated, imageUrl, modelName, onCancel, onRegenerate, onNext }: {
   generating: boolean;
   generated: boolean;
+  imageUrl: string | null;
   modelName: string;
   onCancel: () => void;
   onRegenerate: () => void;
@@ -406,13 +438,17 @@ function StoryboardSingleImage({ generating, generated, modelName, onCancel, onR
         {/* 单张分镜图 - 整体展示 */}
         <div className="group relative overflow-hidden rounded-xl border border-border bg-card">
           <div className="relative aspect-[4/3] w-full bg-gradient-to-br from-[#f5f5f7] to-[#ebebed]">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-2">
-                <Film size={40} className="text-foreground/30" />
-                <span className="text-sm font-medium text-foreground/50">12宫格分镜图</span>
-                <span className="text-xs text-muted-foreground">由 {modelName} 生成</span>
+            {imageUrl ? (
+              <img src={imageUrl} alt="12宫格分镜图" className="h-full w-full object-contain" />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Film size={40} className="text-foreground/30" />
+                  <span className="text-sm font-medium text-foreground/50">12宫格分镜图</span>
+                  <span className="text-xs text-muted-foreground">由 {modelName} 生成</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -664,6 +700,7 @@ export default function WorkflowPage() {
   const [videoModelAvailability, setVideoModelAvailability] = useState(createInitialModelAvailabilityState());
   const [storyboardGenerating, setStoryboardGenerating] = useState(false);
   const [storyboardGenerated, setStoryboardGenerated] = useState(false);
+  const [storyboardImageUrl, setStoryboardImageUrl] = useState<string | null>(null);
   const [selectedScene, setSelectedScene] = useState<string | null>(null);
   const [customSceneUrl, setCustomSceneUrl] = useState<string | null>(null);
   const [aiSceneGenerating, setAiSceneGenerating] = useState(false);
@@ -672,7 +709,10 @@ export default function WorkflowPage() {
   const [dreaming, setDreaming] = useState(false);
   const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [uploadedImageOrigin, setUploadedImageOrigin] = useState<'manual' | 'generated' | null>(null);
+  const [pendingGeneratedImage, setPendingGeneratedImage] = useState<string | null>(null);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [imageGenerationDialogOpen, setImageGenerationDialogOpen] = useState(false);
   const [referenceImageDialogOpen, setReferenceImageDialogOpen] = useState(false);
   const storyboardOperationRef = useRef(0);
   const sceneOperationRef = useRef(0);
@@ -721,18 +761,22 @@ export default function WorkflowPage() {
       message: null,
     }));
 
-    void listImageModels('generate')
+    void listImageModels('edit')
       .then((models) => {
         if (cancelled) {
           return;
         }
 
-        setImageModels(models);
-        setSelectedImageModel(selectImageModelId(models, selectedImageModelRef.current));
+        const workflowModels = filterStoryboardTemplateImageModels(models);
+        setImageModels(workflowModels);
+        setSelectedImageModel(selectImageModelId(workflowModels, selectedImageModelRef.current));
         setImageModelAvailability((current) => ({
           ...current,
-          status: models.length > 0 ? 'ready' : 'maintenance',
-          message: models.length > 0 ? null : buildUnavailableModelMessage(),
+          status: workflowModels.length > 0 ? 'ready' : 'maintenance',
+          message:
+            workflowModels.length > 0
+              ? null
+              : '当前没有支持 12 宫格模板分镜的生图模型，请在管理端启用支持多图编辑的 OpenAI 图片模型。',
         }));
       })
       .catch(() => {
@@ -841,10 +885,13 @@ export default function WorkflowPage() {
 
   const handlePatternUpload = useCallback((nextImage: string) => {
     setUploadedImage(nextImage || null);
+    setUploadedImageOrigin(nextImage ? 'manual' : null);
+    setPendingGeneratedImage(null);
     const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
     setStep(resetState.step);
     setStoryboardGenerated(resetState.storyboardGenerated);
     setStoryboardGenerating(resetState.storyboardGenerating);
+    setStoryboardImageUrl(null);
     setSelectedScene(resetState.selectedScene);
     setCustomSceneUrl(resetState.customSceneUrl);
     setAiSceneGenerated(resetState.aiSceneGenerated);
@@ -858,10 +905,12 @@ export default function WorkflowPage() {
       return;
     }
     setSelectedImageModel(modelId);
+    setPendingGeneratedImage(null);
     const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
     setStep(resetState.step);
     setStoryboardGenerated(resetState.storyboardGenerated);
     setStoryboardGenerating(resetState.storyboardGenerating);
+    setStoryboardImageUrl(null);
     setSelectedScene(resetState.selectedScene);
     setCustomSceneUrl(resetState.customSceneUrl);
     setAiSceneGenerated(resetState.aiSceneGenerated);
@@ -899,75 +948,184 @@ export default function WorkflowPage() {
   }, []);
 
   const handleSubmitStoryboard = useCallback(async () => {
-    if (!isLoggedIn) { openLoginModal(); return; }
-    if (activationRequired) return;
-    if (!uploadedImage) return;
-    if (storyboardGenerating) return;
+    if (!isLoggedIn) {
+      openLoginModal();
+      return;
+    }
+    if (activationRequired) {
+      return;
+    }
+    if (!uploadedImage) {
+      return;
+    }
+    if (storyboardGenerating) {
+      return;
+    }
     if (!selectedImageModel) {
       setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
       return;
     }
+
     const operationId = storyboardOperationRef.current + 1;
     storyboardOperationRef.current = operationId;
     setStep(1);
     setStoryboardGenerating(true);
     setStoryboardGenerated(false);
+    setStoryboardImageUrl(null);
     setRuntimeStatus(null);
     setRuntimeError(null);
+
     try {
-      const message = await runWorkflowAgent(prompt, {
-        stage: 'storyboard',
-        imageModel: selectedImageModel,
-        hasUploadedImage: Boolean(uploadedImage),
-      }, '分镜任务已完成，但没有返回可展示的结果说明。');
-      if (storyboardOperationRef.current !== operationId) return;
-      setRuntimeStatus(message);
+      const { run } = await createAgentRun({
+        taskType: 'workflow',
+        prompt,
+        input: {
+          stage: 'storyboard',
+          selectedImageModelId: selectedImageModel,
+          sourceImageOrigin: uploadedImageOrigin ?? 'manual',
+          sourceImageDataUrl: uploadedImage,
+        },
+      });
+
+      if (run.status === 'failed') {
+        throw new Error(run.errorMessage ?? '分镜生成失败');
+      }
+
+      const detail = await waitForTerminalRun({
+        runId: run.id,
+        operationRef: storyboardOperationRef,
+        operationId,
+        getDetail: getAgentRunDetail,
+      });
+      if (!detail) {
+        return;
+      }
+      if (detail.run.status === 'failed') {
+        throw new Error(detail.run.errorMessage ?? '分镜生成失败');
+      }
+
+      const artifact = detail.run.artifacts.find(
+        (item) => item.kind === 'image' && item.status === 'ready',
+      );
+      if (!artifact) {
+        throw new Error('分镜生成完成，但没有找到可预览的结果。');
+      }
+
+      const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
+      if (storyboardOperationRef.current !== operationId) {
+        return;
+      }
+
+      setStoryboardImageUrl(access.url);
+      setRuntimeStatus('12宫格分镜图已生成。');
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
     } catch (error) {
-      if (storyboardOperationRef.current !== operationId) return;
+      if (storyboardOperationRef.current !== operationId) {
+        return;
+      }
       setStoryboardGenerating(false);
       setStoryboardGenerated(false);
+      setStoryboardImageUrl(null);
       setRuntimeError(error instanceof Error ? error.message : '分镜生成请求失败');
     }
-  }, [activationRequired, imageModelUnavailableMessage, isLoggedIn, openLoginModal, prompt, runWorkflowAgent, selectedImageModel, storyboardGenerating, uploadedImage]);
+  }, [
+    activationRequired,
+    imageModelUnavailableMessage,
+    isLoggedIn,
+    openLoginModal,
+    prompt,
+    selectedImageModel,
+    storyboardGenerating,
+    uploadedImage,
+    uploadedImageOrigin,
+  ]);
 
   const handleCancelStoryboard = useCallback(() => {
     storyboardOperationRef.current += 1;
     setStoryboardGenerating(false);
     setStoryboardGenerated(false);
+    setStoryboardImageUrl(null);
     clearRuntimeFeedback();
     setStep(0);
   }, [clearRuntimeFeedback]);
 
   const handleRegenerateStoryboard = useCallback(async () => {
-    if (!isLoggedIn) { openLoginModal(); return; }
-    if (activationRequired) return;
-    if (storyboardGenerating) return;
+    if (!isLoggedIn) {
+      openLoginModal();
+      return;
+    }
+    if (activationRequired) {
+      return;
+    }
+    if (storyboardGenerating) {
+      return;
+    }
     if (!selectedImageModel) {
       setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
       return;
     }
+
     const operationId = storyboardOperationRef.current + 1;
     storyboardOperationRef.current = operationId;
     setStoryboardGenerating(true);
     setStoryboardGenerated(false);
+    setStoryboardImageUrl(null);
     setRuntimeStatus(null);
     setRuntimeError(null);
+
     try {
-      const message = await runWorkflowAgent(prompt, {
-        stage: 'storyboard-regenerate',
-        imageModel: selectedImageModel,
-        hasUploadedImage: Boolean(uploadedImage),
-      }, '分镜重新生成已完成，但没有返回可展示的结果说明。');
-      if (storyboardOperationRef.current !== operationId) return;
-      setRuntimeStatus(message);
+      const { run } = await createAgentRun({
+        taskType: 'workflow',
+        prompt,
+        input: {
+          stage: 'storyboard-regenerate',
+          selectedImageModelId: selectedImageModel,
+          sourceImageOrigin: uploadedImageOrigin ?? 'manual',
+          sourceImageDataUrl: uploadedImage,
+        },
+      });
+
+      if (run.status === 'failed') {
+        throw new Error(run.errorMessage ?? '分镜重新生成失败');
+      }
+
+      const detail = await waitForTerminalRun({
+        runId: run.id,
+        operationRef: storyboardOperationRef,
+        operationId,
+        getDetail: getAgentRunDetail,
+      });
+      if (!detail) {
+        return;
+      }
+      if (detail.run.status === 'failed') {
+        throw new Error(detail.run.errorMessage ?? '分镜重新生成失败');
+      }
+
+      const artifact = detail.run.artifacts.find(
+        (item) => item.kind === 'image' && item.status === 'ready',
+      );
+      if (!artifact) {
+        throw new Error('分镜重新生成完成，但没有找到可预览的结果。');
+      }
+
+      const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
+      if (storyboardOperationRef.current !== operationId) {
+        return;
+      }
+
+      setStoryboardImageUrl(access.url);
+      setRuntimeStatus('12宫格分镜图已重新生成。');
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
     } catch (error) {
-      if (storyboardOperationRef.current !== operationId) return;
+      if (storyboardOperationRef.current !== operationId) {
+        return;
+      }
       setStoryboardGenerating(false);
       setStoryboardGenerated(false);
+      setStoryboardImageUrl(null);
       setRuntimeError(error instanceof Error ? error.message : '分镜重新生成请求失败');
     }
   }, [
@@ -976,10 +1134,10 @@ export default function WorkflowPage() {
     isLoggedIn,
     openLoginModal,
     prompt,
-    runWorkflowAgent,
     selectedImageModel,
     storyboardGenerating,
     uploadedImage,
+    uploadedImageOrigin,
   ]);
 
   const handleNextFromStoryboard = useCallback(() => {
@@ -1169,6 +1327,53 @@ export default function WorkflowPage() {
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback]);
 
+  const handleApplyGeneratedImage = useCallback((imageUrl: string) => {
+    const nextState = applyGeneratedWorkflowImage(currentSnapshot(), imageUrl, uploadedImageOrigin === 'manual');
+    if (uploadedImage && uploadedImageOrigin === 'manual') {
+      setPendingGeneratedImage(nextState.imageUrl);
+      return;
+    }
+
+    setUploadedImage(nextState.imageUrl);
+    setUploadedImageOrigin('generated');
+    setPendingGeneratedImage(null);
+    setStep(nextState.resetState.step);
+    setStoryboardGenerated(nextState.resetState.storyboardGenerated);
+    setStoryboardGenerating(nextState.resetState.storyboardGenerating);
+    setStoryboardImageUrl(null);
+    setSelectedScene(nextState.resetState.selectedScene);
+    setCustomSceneUrl(nextState.resetState.customSceneUrl);
+    setAiSceneGenerated(nextState.resetState.aiSceneGenerated);
+    setAiSceneGenerating(nextState.resetState.aiSceneGenerating);
+    setDreaming(nextState.resetState.dreaming);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback, currentSnapshot, uploadedImage, uploadedImageOrigin]);
+
+  const handleConfirmPendingGeneratedImage = useCallback(() => {
+    if (!pendingGeneratedImage) {
+      return;
+    }
+
+    setUploadedImage(pendingGeneratedImage);
+    setUploadedImageOrigin('generated');
+    setPendingGeneratedImage(null);
+    const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
+    setStep(resetState.step);
+    setStoryboardGenerated(resetState.storyboardGenerated);
+    setStoryboardGenerating(resetState.storyboardGenerating);
+    setStoryboardImageUrl(null);
+    setSelectedScene(resetState.selectedScene);
+    setCustomSceneUrl(resetState.customSceneUrl);
+    setAiSceneGenerated(resetState.aiSceneGenerated);
+    setAiSceneGenerating(resetState.aiSceneGenerating);
+    setDreaming(resetState.dreaming);
+    clearRuntimeFeedback();
+  }, [clearRuntimeFeedback, currentSnapshot, pendingGeneratedImage]);
+
+  const handleRejectPendingGeneratedImage = useCallback(() => {
+    setPendingGeneratedImage(null);
+  }, []);
+
   const handleApplyReferenceScene = useCallback((sceneUrl: string) => {
     const nextState = applyGeneratedReferenceScene(currentSnapshot(), sceneUrl);
     setStep(nextState.step);
@@ -1197,6 +1402,16 @@ export default function WorkflowPage() {
         activationRequired={activationRequired}
         openLoginModal={openLoginModal}
         onApply={handleApplyOptimizedPrompt}
+      />
+      <ImageGenerationDialog
+        open={imageGenerationDialogOpen}
+        onOpenChange={setImageGenerationDialogOpen}
+        prompt={prompt}
+        selectedImageModelId={selectedImageModel}
+        isLoggedIn={isLoggedIn}
+        activationRequired={activationRequired}
+        openLoginModal={openLoginModal}
+        onApply={handleApplyGeneratedImage}
       />
       <ReferenceImageDialog
         open={referenceImageDialogOpen}
@@ -1317,11 +1532,40 @@ export default function WorkflowPage() {
                 <StoryboardSingleImage
                   generating={storyboardGenerating}
                   generated={storyboardGenerated}
+                  imageUrl={storyboardImageUrl}
                   modelName={currentImageModel?.name || ''}
                   onCancel={handleCancelStoryboard}
                   onRegenerate={handleRegenerateStoryboard}
                   onNext={handleNextFromStoryboard}
                 />
+                {pendingGeneratedImage ? (
+                  <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-foreground">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-medium">检测到新的生成结果</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          当前已经有手动上传图案。请先确认是否切换到新结果，再继续后续步骤。
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRejectPendingGeneratedImage}
+                          className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
+                        >
+                          保留当前图
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleConfirmPendingGeneratedImage}
+                          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/85"
+                        >
+                          切换为新图
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -1481,6 +1725,13 @@ export default function WorkflowPage() {
             <div className="rounded-2xl border border-border bg-secondary/50 backdrop-blur-md p-5">
               <p className="mb-3 text-sm font-medium text-foreground">快捷操作</p>
               <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setImageGenerationDialogOpen(true)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-border bg-card p-2.5 text-left text-xs text-muted-foreground transition-all hover:border-ring hover:text-foreground"
+                >
+                  <Sparkles size={12} /> AI生图
+                </button>
                 <button
                   type="button"
                   onClick={() => setPromptDialogOpen(true)}

@@ -2,10 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildImageGenerationPrompt,
   buildPromptOptimizationPrompt,
   createReferenceImageDialogState,
   readPromptOptimizationMessage,
 } from './workflow-quick-actions';
+
+test('buildImageGenerationPrompt wraps the current workflow prompt for image generation', () => {
+  const prompt = '石纹更柔和';
+  const built = buildImageGenerationPrompt(prompt);
+
+  assert.match(
+    built,
+    /请根据下面这段 AI 视频工作流提示词生成一张适合当前工作流的参考图/,
+  );
+  assert.match(built, /石纹更柔和/);
+});
 
 test('buildPromptOptimizationPrompt wraps the current workflow prompt in assistant instructions', () => {
   assert.match(

@@ -7,6 +7,15 @@ export function buildPromptOptimizationPrompt(currentPrompt: string) {
   ].join('\n');
 }
 
+export function buildImageGenerationPrompt(currentPrompt: string) {
+  return [
+    '请根据下面这段 AI 视频工作流提示词生成一张适合当前工作流的参考图。',
+    '只返回图像描述正文，不要加解释。',
+    '',
+    currentPrompt.trim(),
+  ].join('\n');
+}
+
 export function readPromptOptimizationMessage(input: { finalMessage: string | null }) {
   const message = input.finalMessage?.trim() ?? '';
   return message.length > 0 ? message : null;

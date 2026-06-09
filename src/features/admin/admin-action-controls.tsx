@@ -1,8 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState, useTransition } from 'react';
-import { CheckCircle2, Loader2, MoreHorizontal, Plus, XCircle } from 'lucide-react';
+import { FormEvent, useEffect, useRef, useState, useTransition } from 'react';
+import { CheckCircle2, Loader2, MoreHorizontal, Pencil, Plus, Upload, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -66,6 +66,43 @@ type SplitActions = {
 type AdminPointAdjustmentState = {
   amount: string;
   reason: string;
+};
+
+type StoryboardCapabilityConfigClient = {
+  capabilityId: string;
+  capabilityCode: string;
+  capabilityName: string;
+  capabilityStatus: 'enabled' | 'disabled' | 'archived';
+  code: 'workflow-storyboard-template';
+  promptText: string;
+  templateAsset: {
+    storageProvider: 'tencent_cos';
+    bucket: string;
+    region: string;
+    objectKey: string;
+    mimeType: string;
+    byteSize: number;
+    width: number;
+    height: number;
+    originalFilename: string;
+    uploadedAt: string;
+  } | null;
+  layout: {
+    width: number;
+    height: number;
+    columns: 4;
+    rows: 3;
+  };
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+  previewUrl: string | null;
+};
+
+type StoryboardConfigResponse = {
+  config?: StoryboardCapabilityConfigClient;
+  error?: {
+    message?: string;
+  };
 };
 
 async function postAdminAction(url: string, body: Record<string, unknown>) {
@@ -691,9 +728,11 @@ export function AdminAiJobActions({ jobId }: { jobId: string }) {
 
 export function AdminAgentCapabilityActions({
   capabilityId,
+  capabilityCode,
   status,
 }: {
   capabilityId: string;
+  capabilityCode: string;
   status: 'enabled' | 'disabled' | 'archived';
 }) {
   const actions = [
@@ -725,7 +764,260 @@ export function AdminAgentCapabilityActions({
       : null,
   ].filter((action): action is NonNullable<typeof action> => Boolean(action));
 
+  if (capabilityCode === 'workflow-storyboard-template') {
+    return (
+      <div className="flex flex-wrap justify-end gap-1.5">
+        <StoryboardCapabilityConfigDialog capabilityId={capabilityId} />
+        <CompactActionMenu actions={actions} />
+      </div>
+    );
+  }
+
   return <ActionButtons actions={actions} />;
+}
+
+function StoryboardCapabilityConfigDialog({ capabilityId }: { capabilityId: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState<StoryboardCapabilityConfigClient | null>(null);
+  const [promptText, setPromptText] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [state, setState] = useState<ActionState | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setLocalPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setLocalPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [selectedFile]);
+
+  async function loadConfig() {
+    setLoading(true);
+    setState(null);
+
+    try {
+      const response = await adminApiRequest(
+        `/api/admin/agent-capabilities/${capabilityId}/storyboard-config`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        },
+      );
+      const payload = await readJsonResponse<StoryboardConfigResponse>(response);
+
+      if (!response.ok || !payload?.config) {
+        throw new Error(payload?.error?.message ?? '分镜模板配置加载失败。');
+      }
+
+      setConfig(payload.config);
+      setPromptText(payload.config.promptText);
+      setSelectedFile(null);
+    } catch (error) {
+      setState({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '分镜模板配置加载失败。',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (nextOpen) {
+      await loadConfig();
+    } else {
+      setState(null);
+      setSelectedFile(null);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!promptText.trim()) {
+      setState({ tone: 'error', message: '请填写完整的分镜提示词。' });
+      return;
+    }
+
+    if (!selectedFile && !config?.templateAsset) {
+      setState({ tone: 'error', message: '请先上传 12 宫格模板图。' });
+      return;
+    }
+
+    setSaving(true);
+    setState(null);
+
+    try {
+      const formData = new FormData();
+      formData.set('promptText', promptText.trim());
+      if (selectedFile) {
+        formData.set('templateFile', selectedFile);
+      }
+
+      const response = await adminApiRequest(
+        `/api/admin/agent-capabilities/${capabilityId}/storyboard-config`,
+        {
+          method: 'PUT',
+          body: formData,
+        },
+      );
+      const payload = await readJsonResponse<StoryboardConfigResponse>(response);
+
+      if (!response.ok || !payload?.config) {
+        throw new Error(payload?.error?.message ?? '分镜模板配置保存失败。');
+      }
+
+      setConfig(payload.config);
+      setPromptText(payload.config.promptText);
+      setSelectedFile(null);
+      setState({ tone: 'success', message: '分镜模板配置已保存。' });
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setState({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '分镜模板配置保存失败。',
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const previewUrl = localPreviewUrl ?? config?.previewUrl ?? null;
+  const busy = loading || saving;
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => void handleOpenChange(nextOpen)}>
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant="outline" className="h-7 rounded-md px-2 text-xs">
+          <Pencil className="h-3.5 w-3.5" />
+          编辑配置
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>工作流分镜模板</DialogTitle>
+          <DialogDescription>
+            上传唯一生效的 12 宫格模板图，并维护完整的 storyboard 提示词。配置缺失时，工作流分镜会直接停止执行。
+          </DialogDescription>
+        </DialogHeader>
+
+        <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor={`storyboard-prompt-${capabilityId}`}>完整提示词</Label>
+                <Textarea
+                  id={`storyboard-prompt-${capabilityId}`}
+                  value={promptText}
+                  onChange={(event) => setPromptText(event.target.value)}
+                  placeholder="在这里维护完整的 storyboard 提示词。"
+                  className="min-h-64 rounded-md text-xs leading-5"
+                  disabled={busy}
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  可用占位符：
+                  <code className="mx-1">{'{{workflow_prompt}}'}</code>
+                  <code className="mr-1">{'{{source_image_origin}}'}</code>
+                  <code className="mr-1">{'{{selected_image_model_id}}'}</code>
+                  <code className="mr-1">{'{{template_width}}'}</code>
+                  <code className="mr-1">{'{{template_height}}'}</code>
+                  <code className="mr-1">{'{{template_columns}}'}</code>
+                  <code>{'{{template_rows}}'}</code>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>模板图</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="h-4 w-4" />
+                    {config?.templateAsset ? '更换模板图' : '上传模板图'}
+                  </Button>
+                  <div className="text-xs text-muted-foreground">
+                    {selectedFile
+                      ? selectedFile.name
+                      : config?.templateAsset?.originalFilename ?? '未上传模板图'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="overflow-hidden rounded-md border border-border bg-muted/20">
+                {previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt="Storyboard template preview"
+                    className="aspect-[3/4] w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex aspect-[3/4] items-center justify-center px-4 text-center text-xs text-muted-foreground">
+                    暂无模板预览
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1 rounded-md border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <div>当前尺寸：{config ? `${config.layout.width} x ${config.layout.height}` : '--'}</div>
+                <div>当前布局：{config ? `${config.layout.columns} x ${config.layout.rows}` : '--'}</div>
+                <div>模板状态：{config?.templateAsset ? '已配置' : '缺失'}</div>
+                <div>提示词状态：{promptText.trim() ? '已配置' : '缺失'}</div>
+                <div>最近更新：{config?.updatedAt ?? '未保存'}</div>
+              </div>
+            </div>
+          </div>
+
+          {state ? (
+            <div
+              className={cn(
+                'flex items-center gap-2 text-xs',
+                state.tone === 'success' ? 'text-emerald-700' : 'text-red-700',
+              )}
+            >
+              {state.tone === 'success' ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span>{state.message}</span>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+              关闭
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              保存配置
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function AdminAiModelActions({

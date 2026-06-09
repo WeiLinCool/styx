@@ -39,6 +39,19 @@ function makeResolvedImageModel(overrides: Partial<ResolvedImageModel> = {}): Re
   };
 }
 
+function isFormDataLike(
+  value: unknown,
+): value is Pick<FormData, 'get' | 'getAll'> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'get' in value &&
+    typeof value.get === 'function' &&
+    'getAll' in value &&
+    typeof value.getAll === 'function'
+  );
+}
+
 test('parseDoubaoImageResponse converts b64_json to image artifact input', () => {
   const result = parseDoubaoImageResponse(
     {
@@ -206,6 +219,108 @@ test('doubao adapter includes provider image field for upscale mode', async () =
   assert.equal(requests[0]?.image, 'data:image/png;base64,SOURCE');
   assert.equal(requests[0]?.scale, '2x');
   assert.equal(Object.hasOwn(requests[0] ?? {}, 'sourceImageDataUrl'), false);
+});
+
+test('openai edit mode uses images/edits multipart upload instead of generations image field', async () => {
+  const requests: Array<{
+    url: string;
+    headers: Headers;
+    body: Pick<FormData, 'get' | 'getAll'> | null;
+  }> = [];
+  const adapter = createDoubaoImageProviderAdapter({
+    fetch: async (url, init) => {
+      requests.push({
+        url: String(url),
+        headers: new Headers(init?.headers),
+        body: isFormDataLike(init?.body) ? init.body : null,
+      });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'abc' }] }), { status: 200 });
+    },
+    readEnv: () => 'test-key',
+  });
+
+  await adapter.runImage({
+    runId: 'run-1',
+    userId: 'user-1',
+    model: makeResolvedImageModel({
+      code: 'gpt-image-2',
+      name: 'GPT Image 2',
+      providerCode: 'openai',
+      providerName: 'OpenAI',
+      baseUrl: 'https://api.openai.com/v1/',
+      model: 'gpt-image-2',
+      supportedModes: ['generate', 'edit'],
+    }),
+    mode: 'edit',
+    prompt: 'replace the pattern only',
+    size: '1024x1536',
+    sourceImageDataUrl: 'data:image/png;base64,SEVMTE8=',
+    additionalImageDataUrls: ['data:image/png;base64,VEVNUExBVEU='],
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.url, 'https://api.openai.com/v1/images/edits');
+  assert.equal(requests[0]?.headers.has('content-type'), false);
+  assert.notEqual(requests[0]?.body, null);
+  assert.equal(requests[0]?.body?.get('model'), 'gpt-image-2');
+  assert.equal(requests[0]?.body?.get('prompt'), 'replace the pattern only');
+  assert.equal(requests[0]?.body?.get('size'), '1024x1536');
+  const uploaded = requests[0]?.body?.getAll('image[]') ?? [];
+  assert.equal(uploaded.length, 2);
+  assert.equal(uploaded[0] instanceof File, true);
+  assert.equal(uploaded[1] instanceof File, true);
+  assert.equal((uploaded[0] as File).name, 'source.png');
+  assert.equal((uploaded[0] as File).type, 'image/png');
+  assert.equal(await (uploaded[0] as File).text(), 'TEMPLATE');
+  assert.equal((uploaded[1] as File).name, 'source.png');
+  assert.equal((uploaded[1] as File).type, 'image/png');
+  assert.equal(await (uploaded[1] as File).text(), 'HELLO');
+});
+
+test('openai edit mode uses images/edits multipart upload when provider metadata points to OpenAI even if provider code differs', async () => {
+  const requests: Array<{
+    url: string;
+    headers: Headers;
+    body: Pick<FormData, 'get' | 'getAll'> | null;
+  }> = [];
+  const adapter = createDoubaoImageProviderAdapter({
+    fetch: async (url, init) => {
+      requests.push({
+        url: String(url),
+        headers: new Headers(init?.headers),
+        body: isFormDataLike(init?.body) ? init.body : null,
+      });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'abc' }] }), { status: 200 });
+    },
+    readEnv: () => 'test-key',
+  });
+
+  await adapter.runImage({
+    runId: 'run-1',
+    userId: 'user-1',
+    model: makeResolvedImageModel({
+      code: 'gpt-image-2',
+      name: 'GPT Image 2',
+      providerCode: 'openai_official',
+      providerName: 'OpenAI Official',
+      baseUrl: 'https://api.openai.com/v1/',
+      model: 'gpt-image-2',
+      supportedModes: ['generate', 'edit'],
+    }),
+    mode: 'edit',
+    prompt: 'replace the pattern only',
+    size: '1024x1536',
+    sourceImageDataUrl: 'data:image/png;base64,SEVMTE8=',
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.url, 'https://api.openai.com/v1/images/edits');
+  assert.equal(requests[0]?.headers.has('content-type'), false);
+  assert.notEqual(requests[0]?.body, null);
+  assert.equal(requests[0]?.body?.get('model'), 'gpt-image-2');
+  const uploaded = requests[0]?.body?.get('image[]');
+  assert.equal(uploaded instanceof File, true);
+  assert.equal(await (uploaded as File).text(), 'HELLO');
 });
 
 test('doubao adapter rejects missing configuration and env values', async () => {

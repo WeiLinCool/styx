@@ -8,6 +8,9 @@ import type {
   AgentCapabilitySnapshot,
   AgentCapabilityStatus,
   AgentTaskType,
+  StoryboardTemplateAsset,
+  WorkflowStoryboardCapabilityConfig,
+  WorkflowStoryboardLayout,
 } from '@/server/agent/types';
 import { db, schema } from '@/server/db';
 import {
@@ -37,6 +40,68 @@ export type AdminAgentCapabilityBundleRow = {
 export type AdminAgentCapabilityData = AdminModuleData<AdminAgentCapabilityRow> & {
   bundles: AdminAgentCapabilityBundleRow[];
 };
+
+export type AdminStoryboardCapabilityConfigRecord = WorkflowStoryboardCapabilityConfig & {
+  capabilityId: string;
+  capabilityCode: string;
+  capabilityName: string;
+  capabilityStatus: AgentCapabilityStatus;
+};
+
+export class StoryboardCapabilityNotFoundError extends Error {
+  constructor() {
+    super('Storyboard capability was not found.');
+    this.name = 'StoryboardCapabilityNotFoundError';
+  }
+}
+
+export class StoryboardCapabilityValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StoryboardCapabilityValidationError';
+  }
+}
+
+const DEFAULT_WORKFLOW_STORYBOARD_LAYOUT: WorkflowStoryboardLayout = {
+  width: 1086,
+  height: 1448,
+  columns: 4,
+  rows: 3,
+};
+
+const DEFAULT_WORKFLOW_STORYBOARD_PROMPT = [
+  '任务：以管理员上传的 12 宫格教程底图为主图/底图，保持底图结构、尺寸、分镜位置、编号、构图、手部、石头、背景与所有原有效果完全不变。',
+  '只将用户上传图案替换到所有允许替换图案的位置，禁止改动任何与图案无关的内容。',
+  '请将用户原始工作流提示词作为补充约束，并严格遵守模板显影步骤、纸浆纸屑残留、湿亮反光和最终转印质感要求。',
+  '',
+  '当前工作流提示词：',
+  '{{workflow_prompt}}',
+].join('\n');
+
+function createDefaultWorkflowStoryboardConfig(): Omit<
+  WorkflowStoryboardCapabilityConfig,
+  'code'
+> {
+  return {
+    promptText: DEFAULT_WORKFLOW_STORYBOARD_PROMPT,
+    templateAsset: null,
+    layout: DEFAULT_WORKFLOW_STORYBOARD_LAYOUT,
+    updatedAt: null,
+    updatedByUserId: null,
+  };
+}
+
+function storyboardSeedCapabilityRecord(): AgentCapabilityRecord {
+  return seedAgentCapabilities.find(
+    (capability) => capability.code === 'workflow-storyboard-template',
+  ) as AgentCapabilityRecord;
+}
+
+function workflowDefaultBundleRecord(): AgentCapabilityBundleRecord {
+  return seedAgentCapabilityBundles.find(
+    (bundle) => bundle.code === 'workflow-default',
+  ) as AgentCapabilityBundleRecord;
+}
 
 export const seedAgentCapabilities = [
   {
@@ -70,6 +135,14 @@ export const seedAgentCapabilities = [
     name: '产物导出 Plugin',
     status: 'enabled',
     config: { formats: ['text', 'json'] },
+  },
+  {
+    id: '55555555-5555-4555-8555-555555555555',
+    kind: 'skill',
+    code: 'workflow-storyboard-template',
+    name: '工作流分镜模板',
+    status: 'enabled',
+    config: createDefaultWorkflowStoryboardConfig(),
   },
 ] satisfies AgentCapabilityRecord[];
 
@@ -121,6 +194,7 @@ export const seedAgentCapabilityBundles = [
       '22222222-2222-4222-8222-222222222222',
       '33333333-3333-4333-8333-333333333333',
       '44444444-4444-4444-8444-444444444444',
+      '55555555-5555-4555-8555-555555555555',
     ],
   },
 ] satisfies AgentCapabilityBundleRecord[];
@@ -160,6 +234,10 @@ export async function resolveDefaultAgentCapabilityBundle(
 
   if (!database) {
     return getDefaultAgentCapabilityBundle(taskType);
+  }
+
+  if (taskType === 'workflow') {
+    await ensureWorkflowStoryboardCapabilitySeed(database);
   }
 
   const [bundle] = await database
@@ -230,7 +308,7 @@ export async function updateAgentCapabilityStatus(input: {
       name: seed.name,
       status: input.status,
       scope: 'global',
-      configSummary: summarizeCapabilityConfig(seed.config),
+      configSummary: summarizeCapabilityConfig(seed.config, seed.code),
     };
   }
 
@@ -262,11 +340,100 @@ export async function updateAgentCapabilityStatus(input: {
     name: updated.name,
     status: updated.status,
     scope: updated.scope,
-    configSummary: summarizeCapabilityConfig(updated.config),
+    configSummary: summarizeCapabilityConfig(updated.config, updated.code),
   };
 }
 
-function summarizeCapabilityConfig(config: Record<string, unknown>) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStoryboardTemplateAsset(value: unknown): value is StoryboardTemplateAsset {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    value.storageProvider === 'tencent_cos' &&
+    typeof value.bucket === 'string' &&
+    typeof value.region === 'string' &&
+    typeof value.objectKey === 'string' &&
+    typeof value.mimeType === 'string' &&
+    typeof value.byteSize === 'number' &&
+    typeof value.width === 'number' &&
+    typeof value.height === 'number' &&
+    typeof value.originalFilename === 'string' &&
+    typeof value.uploadedAt === 'string'
+  );
+}
+
+function isWorkflowStoryboardLayout(value: unknown): value is WorkflowStoryboardLayout {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.width === 'number' &&
+    typeof value.height === 'number' &&
+    value.columns === 4 &&
+    value.rows === 3
+  );
+}
+
+export function readStoryboardCapabilityConfig(
+  snapshot: AgentCapabilitySnapshot,
+): WorkflowStoryboardCapabilityConfig | null {
+  const capability = snapshot.capabilities.find(
+    (item) => item.code === 'workflow-storyboard-template',
+  );
+
+  if (!capability) {
+    return null;
+  }
+
+  const config = isRecord(capability.config) ? capability.config : {};
+  const defaults = createDefaultWorkflowStoryboardConfig();
+
+  return {
+    code: 'workflow-storyboard-template',
+    ...normalizeStoryboardCapabilityConfigRecord(config),
+  };
+}
+
+function normalizeStoryboardCapabilityConfigRecord(
+  config: Record<string, unknown>,
+): Omit<WorkflowStoryboardCapabilityConfig, 'code'> {
+  const defaults = createDefaultWorkflowStoryboardConfig();
+
+  return {
+    promptText:
+      typeof config.promptText === 'string' && config.promptText.trim().length > 0
+        ? config.promptText
+        : defaults.promptText,
+    templateAsset: isStoryboardTemplateAsset(config.templateAsset)
+      ? config.templateAsset
+      : defaults.templateAsset,
+    layout: isWorkflowStoryboardLayout(config.layout) ? config.layout : defaults.layout,
+    updatedAt: typeof config.updatedAt === 'string' ? config.updatedAt : defaults.updatedAt,
+    updatedByUserId:
+      typeof config.updatedByUserId === 'string'
+        ? config.updatedByUserId
+        : defaults.updatedByUserId,
+  };
+}
+
+function summarizeCapabilityConfig(config: Record<string, unknown>, code?: string) {
+  if (code === 'workflow-storyboard-template') {
+    const storyboard = normalizeStoryboardCapabilityConfigRecord(config);
+
+    return [
+      `提示词: ${storyboard.promptText.trim().length > 0 ? '已配置' : '缺失'}`,
+      `模板: ${storyboard.templateAsset ? '已配置' : '缺失'}`,
+      `尺寸: ${storyboard.layout.width}x${storyboard.layout.height}`,
+      `布局: ${storyboard.layout.columns}x${storyboard.layout.rows}`,
+    ].join(' · ');
+  }
+
   const entries = Object.entries(config);
 
   if (entries.length === 0) {
@@ -287,6 +454,55 @@ function summarizeCapabilityConfig(config: Record<string, unknown>) {
       return `${key}: JSON`;
     })
     .join(' · ');
+}
+
+async function ensureWorkflowStoryboardCapabilitySeed(database: NonNullable<typeof db>) {
+  const capability = storyboardSeedCapabilityRecord();
+  const workflowBundle = workflowDefaultBundleRecord();
+
+  const [existingCapability] = await database
+    .select({ id: schema.agentCapabilities.id })
+    .from(schema.agentCapabilities)
+    .where(eq(schema.agentCapabilities.id, capability.id))
+    .limit(1);
+
+  if (!existingCapability) {
+    await database
+      .insert(schema.agentCapabilities)
+      .values({
+        id: capability.id,
+        kind: capability.kind,
+        code: capability.code,
+        name: capability.name,
+        status: capability.status,
+        scope: 'global',
+        config: structuredClone(capability.config),
+        secretMetadata: {},
+      })
+      .onConflictDoNothing();
+  }
+
+  const [existingBundleItem] = await database
+    .select({ capabilityId: schema.agentCapabilityBundleItems.capabilityId })
+    .from(schema.agentCapabilityBundleItems)
+    .where(
+      and(
+        eq(schema.agentCapabilityBundleItems.bundleId, workflowBundle.id),
+        eq(schema.agentCapabilityBundleItems.capabilityId, capability.id),
+      ),
+    )
+    .limit(1);
+
+  if (!existingBundleItem) {
+    await database
+      .insert(schema.agentCapabilityBundleItems)
+      .values({
+        bundleId: workflowBundle.id,
+        capabilityId: capability.id,
+        sortOrder: 40,
+      })
+      .onConflictDoNothing();
+  }
 }
 
 function buildAgentCapabilityAdminData(
@@ -352,7 +568,7 @@ export function getSeedAgentCapabilityAdminData(): AdminAgentCapabilityData {
     name: capability.name,
     status: capability.status,
     scope: 'global',
-    configSummary: summarizeCapabilityConfig(capability.config),
+    configSummary: summarizeCapabilityConfig(capability.config, capability.code),
   }));
 
   const bundles = seedAgentCapabilityBundles.map((bundle) => ({
@@ -373,6 +589,8 @@ export async function getAdminAgentCapabilities(): Promise<AdminAgentCapabilityD
   if (!database) {
     return getSeedAgentCapabilityAdminData();
   }
+
+  await ensureWorkflowStoryboardCapabilitySeed(database);
 
   const rows = await database
     .select({
@@ -395,7 +613,7 @@ export async function getAdminAgentCapabilities(): Promise<AdminAgentCapabilityD
     name: capability.name,
     status: capability.status,
     scope: capability.scope,
-    configSummary: summarizeCapabilityConfig(capability.config),
+    configSummary: summarizeCapabilityConfig(capability.config, capability.code),
   }));
 
   const bundleRows = await database
@@ -447,4 +665,118 @@ export async function getAdminAgentCapabilities(): Promise<AdminAgentCapabilityD
   }
 
   return buildAgentCapabilityAdminData('database', records, Array.from(bundleMap.values()));
+}
+
+export async function getAgentCapabilityStoryboardConfig(
+  capabilityId: string,
+): Promise<AdminStoryboardCapabilityConfigRecord> {
+  const database = requireAgentCapabilityDatabase('agent capability storyboard config read');
+
+  if (!database) {
+    const capability = seedAgentCapabilities.find((item) => item.id === capabilityId);
+    if (!capability || capability.code !== 'workflow-storyboard-template') {
+      throw new StoryboardCapabilityNotFoundError();
+    }
+
+    const config = normalizeStoryboardCapabilityConfigRecord(capability.config);
+    return {
+      capabilityId: capability.id,
+      capabilityCode: capability.code,
+      capabilityName: capability.name,
+      capabilityStatus: capability.status,
+      code: 'workflow-storyboard-template',
+      ...config,
+    };
+  }
+
+  await ensureWorkflowStoryboardCapabilitySeed(database);
+
+  const [capability] = await database
+    .select({
+      id: schema.agentCapabilities.id,
+      code: schema.agentCapabilities.code,
+      name: schema.agentCapabilities.name,
+      status: schema.agentCapabilities.status,
+      config: schema.agentCapabilities.config,
+    })
+    .from(schema.agentCapabilities)
+    .where(eq(schema.agentCapabilities.id, capabilityId))
+    .limit(1);
+
+  if (!capability || capability.code !== 'workflow-storyboard-template') {
+    throw new StoryboardCapabilityNotFoundError();
+  }
+
+  const config = normalizeStoryboardCapabilityConfigRecord(capability.config);
+  return {
+    capabilityId: capability.id,
+    capabilityCode: capability.code,
+    capabilityName: capability.name,
+    capabilityStatus: capability.status,
+    code: 'workflow-storyboard-template',
+    ...config,
+  };
+}
+
+export async function updateAgentCapabilityStoryboardConfig(input: {
+  capabilityId: string;
+  promptText: string;
+  templateAsset?: StoryboardTemplateAsset;
+  updatedByUserId: string;
+}): Promise<AdminStoryboardCapabilityConfigRecord> {
+  const database = requireAgentCapabilityDatabase('agent capability storyboard config mutation');
+
+  if (!database) {
+    throw new Error('DATABASE_URL is required for storyboard config mutation.');
+  }
+
+  await ensureWorkflowStoryboardCapabilitySeed(database);
+
+  const existing = await getAgentCapabilityStoryboardConfig(input.capabilityId);
+  const templateAsset = input.templateAsset ?? existing.templateAsset;
+  if (!templateAsset) {
+    throw new StoryboardCapabilityValidationError('工作流分镜模板未配置，请先上传模板图。');
+  }
+
+  const normalized: Omit<WorkflowStoryboardCapabilityConfig, 'code'> = {
+    promptText: input.promptText.trim(),
+    templateAsset,
+    layout: {
+      width: templateAsset.width,
+      height: templateAsset.height,
+      columns: existing.layout.columns,
+      rows: existing.layout.rows,
+    },
+    updatedAt: new Date().toISOString(),
+    updatedByUserId: input.updatedByUserId,
+  };
+
+  const [updated] = await database
+    .update(schema.agentCapabilities)
+    .set({
+      config: normalized satisfies Omit<WorkflowStoryboardCapabilityConfig, 'code'>,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.agentCapabilities.id, input.capabilityId))
+    .returning({
+      id: schema.agentCapabilities.id,
+      code: schema.agentCapabilities.code,
+      name: schema.agentCapabilities.name,
+      status: schema.agentCapabilities.status,
+      config: schema.agentCapabilities.config,
+    });
+
+  if (!updated || updated.code !== 'workflow-storyboard-template') {
+    throw new StoryboardCapabilityNotFoundError();
+  }
+
+  const config = normalizeStoryboardCapabilityConfigRecord(updated.config);
+  return {
+    capabilityId: updated.id,
+    capabilityCode: updated.code,
+    capabilityName: updated.name,
+    capabilityStatus: updated.status,
+    code: 'workflow-storyboard-template',
+    ...config,
+  };
 }

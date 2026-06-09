@@ -114,6 +114,7 @@ export const adminText = {
     membershipMediaPolicyInvalid: '会员媒体策略请求无效。',
     orderStatusInvalid: '订单状态请求无效。',
     agentCapabilityStatusInvalid: 'Agent 能力状态请求无效。',
+    agentCapabilityStoryboardConfigInvalid: '工作流分镜模板配置请求无效。',
     aiJobReviewInvalid: 'AI 任务复核请求无效。',
     permissionUpdateInvalid: '权限方案更新请求无效。',
     billingRulesInvalid: '计费规则无效。',

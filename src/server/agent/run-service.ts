@@ -20,6 +20,7 @@ import {
   type ImageProviderAdapter,
   type ImageProviderResult,
 } from '@/server/ai/image-provider-adapters';
+import { supportsStoryboardTemplateProvider } from '@/server/ai/image-model-capabilities';
 import {
   createMediaProviderAdapter,
   type MediaProviderAdapter,
@@ -34,7 +35,10 @@ import {
   createDatabaseGeneratedMediaAssetRepository,
   type GeneratedMediaAssetRepository,
 } from '@/server/repositories/generated-media-assets';
-import { resolveDefaultAgentCapabilityBundle } from '@/server/repositories/agent-capabilities';
+import {
+  readStoryboardCapabilityConfig,
+  resolveDefaultAgentCapabilityBundle,
+} from '@/server/repositories/agent-capabilities';
 import type { AgentArtifactInput, AgentRunRepository } from '@/server/repositories/agent-runs';
 import {
   getAgentConversationRepository,
@@ -62,6 +66,14 @@ import {
   validateVideoGenerationSelection,
   type VideoGenerationPolicy,
 } from '@/server/video/video-generation-policy';
+import {
+  WORKFLOW_STORYBOARD_IMAGE_MODE,
+  buildWorkflowStoryboardPrompt,
+  formatWorkflowStoryboardCanonicalSize,
+  normalizeWorkflowStoryboardSourceImageOrigin,
+  resolveWorkflowStoryboardExecutionSize,
+  sanitizeWorkflowStoryboardRunInput,
+} from './workflow-storyboard';
 import type {
   AgentCapabilitySnapshot,
   AgentRunDto,
@@ -70,11 +82,13 @@ import type {
   CreateAgentRunResult,
   DirectMediaArtifactCompletedPayload,
   GeneratedMediaAssetDto,
+  StoryboardTemplateAsset,
   TransientAgentArtifactDto,
 } from './types';
 import {
   createUnconfiguredCapabilitySnapshot,
   type PiAgentRuntime,
+  type PiAgentRunResult,
 } from './pi-runtime';
 import {
   createDirectMediaEventPayload,
@@ -90,8 +104,8 @@ export class AgentCapabilityBundleNotFoundError extends Error {
 }
 
 export class AgentRunModelRequiredError extends Error {
-  constructor() {
-    super('Chat modelId is required.');
+  constructor(message = 'Chat modelId is required.') {
+    super(message);
     this.name = 'AgentRunModelRequiredError';
   }
 }
@@ -166,6 +180,12 @@ type MediaRunScheduler = {
 };
 
 type VideoMaterialSigner = (asset: GeneratedMediaAssetDto) => Promise<string>;
+type WorkflowCapabilityBundleResolver = (
+  taskType: AgentTaskType,
+) => Promise<AgentCapabilitySnapshot | null>;
+type StoryboardTemplateDataUrlResolver = (
+  templateAsset: StoryboardTemplateAsset,
+) => Promise<string>;
 type GeneratedMediaCache = {
   cacheGeneratedMedia(input: CacheGeneratedMediaInput): Promise<CachedGeneratedMedia>;
 };
@@ -199,6 +219,8 @@ export type CreateAgentRunServiceInput = {
   waitForVideoPoll?: (attempt: number) => Promise<void>;
   debitForImageAgentRun?: DebitForImageAgentRun;
   generatedMediaCache?: GeneratedMediaCache;
+  resolveWorkflowCapabilityBundle?: WorkflowCapabilityBundleResolver;
+  readStoryboardTemplateDataUrl?: StoryboardTemplateDataUrlResolver;
 };
 
 export type CreateAndRunAgentRunInput = {
@@ -599,6 +621,10 @@ function readBooleanInput(input: Record<string, unknown>, key: string) {
   return typeof value === 'boolean' ? value : null;
 }
 
+function isWorkflowStoryboardStage(value: unknown) {
+  return value === 'storyboard' || value === 'storyboard-regenerate';
+}
+
 const MAX_SOURCE_IMAGE_DATA_URL_BYTES = 10 * 1024 * 1024;
 const SOURCE_IMAGE_DATA_URL_PATTERN = /^data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 
@@ -932,6 +958,27 @@ async function signVideoMaterialWithTencentCos(asset: GeneratedMediaAssetDto) {
   }
 }
 
+async function readStoryboardTemplateDataUrlFromStorage(templateAsset: StoryboardTemplateAsset) {
+  try {
+    const signedUrl = await createTencentCosClient().createSignedReadUrl(templateAsset.objectKey, 600);
+    const response = await fetch(signedUrl, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`template download failed with status ${response.status}`);
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return `data:${templateAsset.mimeType};base64,${bytes.toString('base64')}`;
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      throw error;
+    }
+
+    throw new ProviderConfigurationError(
+      `工作流分镜模板读取失败：${toErrorMessage(error)}`,
+    );
+  }
+}
+
 function toChatProviderMessages(runs: AgentRunDto[], nextPrompt: string): ChatMessage[] {
   const messages: ChatMessage[] = [];
   for (const run of runs) {
@@ -1049,6 +1096,8 @@ export function createAgentRunService({
   waitForVideoPoll = async () => {},
   debitForImageAgentRun = defaultDebitForImageAgentRun,
   generatedMediaCache,
+  resolveWorkflowCapabilityBundle = resolveDefaultAgentCapabilityBundle,
+  readStoryboardTemplateDataUrl = readStoryboardTemplateDataUrlFromStorage,
 }: CreateAgentRunServiceInput) {
   const resolveGeneratedMediaCache: GeneratedMediaCacheResolver = () =>
     generatedMediaCache ?? null;
@@ -1090,6 +1139,29 @@ export function createAgentRunService({
           mediaAssetRepository,
           signVideoMaterialUrl,
           debitForImageAgentRun,
+        });
+      }
+
+      if (input.taskType === 'workflow') {
+        if (isWorkflowStoryboardStage(input.input.stage)) {
+          return createAndRunWorkflowStoryboardImageAgentRun({
+            input,
+            repository,
+            resolveImageModelForUser,
+            assertCanAffordMinimum,
+            createImageProviderAdapter,
+            debitForImageAgentRun,
+            resolveGeneratedMediaCache,
+            resolveWorkflowCapabilityBundle,
+            readStoryboardTemplateDataUrl,
+          });
+        }
+
+        return createAndRunWorkflowStoryboardAgentRun({
+          input,
+          repository,
+          runtime,
+          resolveGeneratedMediaCache,
         });
       }
 
@@ -1168,6 +1240,352 @@ export function createAgentRunService({
       });
     },
   };
+}
+
+async function createAndRunWorkflowStoryboardAgentRun(input: {
+  input: CreateAndRunAgentRunInput;
+  repository: AgentRunRepository;
+  runtime: PiAgentRuntime;
+  resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
+}): Promise<CreateAgentRunResult> {
+  const { repository, runtime } = input;
+  const request = input.input;
+  const capabilitySnapshot = await resolveDefaultAgentCapabilityBundle(request.taskType);
+  const workflowSnapshot = capabilitySnapshot ?? createUnconfiguredCapabilitySnapshot(request.taskType);
+  const runInput = cloneRecord(request.input);
+  const workflowStage = readStringInput(runInput, 'stage') ?? 'workflow';
+
+  const created = await repository.createRun({
+    userId: request.userId,
+    conversationId: request.conversationId,
+    taskType: request.taskType,
+    prompt: request.prompt,
+    provider: workflowSnapshot.provider,
+    model: workflowSnapshot.model,
+    capabilitySnapshot: workflowSnapshot,
+    input: runInput,
+  });
+
+  await recordEventIfSupported(repository, created.id, 'queued', 'Agent run queued', {
+    taskType: request.taskType,
+    workflowStage,
+  });
+
+  if (!capabilitySnapshot) {
+    const error = new AgentCapabilityBundleNotFoundError(request.taskType);
+    await recordEventIfSupported(repository, created.id, 'failed', error.message, {
+      reason: 'missing_default_capability_bundle',
+    });
+    return runResult(requireUpdatedRun(await repository.failRun(created.id, error.message), 'fail run'));
+  }
+
+  const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+  await recordEventIfSupported(repository, running.id, 'running', 'Agent runtime started', {
+    provider: workflowSnapshot.provider,
+    model: workflowSnapshot.model,
+    workflowStage,
+  });
+  await appendRunEventIfSupported(repository, running.id, {
+    eventType: 'artifact_started',
+    payload: {
+      taskType: request.taskType,
+      stage: workflowStage,
+      startedAt: new Date().toISOString(),
+    },
+  });
+
+  void Promise.resolve()
+    .then(() =>
+      runtime.run({
+        runId: running.id,
+        userId: request.userId,
+        taskType: request.taskType,
+        prompt: request.prompt,
+        provider: workflowSnapshot.provider,
+        model: workflowSnapshot.model,
+        capabilities: structuredClone(workflowSnapshot.capabilities),
+        input: cloneRecord(runInput),
+      }),
+    )
+    .then(async (result) => {
+      await runWorkflowStoryboardOrchestration({
+        repository,
+        resolveGeneratedMediaCache: input.resolveGeneratedMediaCache,
+        userId: request.userId,
+        run: running,
+        capabilitySnapshot: workflowSnapshot,
+        runInput,
+        result,
+      });
+    })
+    .catch(async (error) => {
+      const errorMessage = toErrorMessage(error);
+      await recordEventIfSupported(repository, running.id, 'failed', errorMessage);
+      await repository.failRun(running.id, errorMessage);
+    });
+
+  return runResult(running);
+}
+
+async function createAndRunWorkflowStoryboardImageAgentRun(input: {
+  input: CreateAndRunAgentRunInput;
+  repository: AgentRunRepository;
+  resolveImageModelForUser: (
+    userId: string,
+    modelId: string,
+    mode: ImageModelMode,
+  ) => Promise<ResolvedImageModel>;
+  assertCanAffordMinimum: (
+    userId: string,
+    pricing: ResolvedImageModel['pricing'],
+  ) => Promise<void>;
+  createImageProviderAdapter: (model: ResolvedImageModel) => ImageProviderAdapter;
+  debitForImageAgentRun: DebitForImageAgentRun;
+  resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
+  resolveWorkflowCapabilityBundle: WorkflowCapabilityBundleResolver;
+  readStoryboardTemplateDataUrl: StoryboardTemplateDataUrlResolver;
+}): Promise<CreateAgentRunResult> {
+  const {
+    repository,
+    resolveImageModelForUser,
+    assertCanAffordMinimum,
+  } = input;
+  const request = input.input;
+  const selectedImageModelId = readStringInput(request.input, 'selectedImageModelId');
+  if (!selectedImageModelId) {
+    throw new AgentRunModelRequiredError('workflow storyboard selectedImageModelId is required.');
+  }
+
+  const mode = WORKFLOW_STORYBOARD_IMAGE_MODE;
+  const workflowStage = readStringInput(request.input, 'stage') ?? 'storyboard';
+  const sourceImageDataUrl = readRequiredSourceImageDataUrl(mode, request.input);
+  const sourceImageOrigin = normalizeWorkflowStoryboardSourceImageOrigin(
+    request.input.sourceImageOrigin,
+  );
+  const workflowCapabilitySnapshot = await input.resolveWorkflowCapabilityBundle(request.taskType);
+  if (!workflowCapabilitySnapshot) {
+    throw new ProviderConfigurationError(
+      '工作流分镜模板未配置，请先在管理端 Agent 能力中上传模板图并填写提示词。',
+    );
+  }
+
+  const storyboardConfig = readStoryboardCapabilityConfig(workflowCapabilitySnapshot);
+  if (!storyboardConfig?.templateAsset || storyboardConfig.promptText.trim().length === 0) {
+    throw new ProviderConfigurationError(
+      '工作流分镜模板未配置，请先在管理端 Agent 能力中上传模板图并填写提示词。',
+    );
+  }
+
+  const model = await resolveImageModelForUser(request.userId, selectedImageModelId, mode);
+  if (
+    !supportsStoryboardTemplateProvider({
+      providerCode: model.providerCode,
+      providerName: model.providerName,
+      baseUrl: model.baseUrl,
+      model: model.model,
+    })
+  ) {
+    throw new ProviderConfigurationError(
+      '当前图片模型暂不支持工作流分镜模板模式，请改用支持多图编辑的 OpenAI 图片模型。',
+    );
+  }
+  await assertCanAffordMinimum(request.userId, model.pricing);
+  const canonicalStoryboardSize = formatWorkflowStoryboardCanonicalSize(storyboardConfig);
+  const storyboardExecutionSize = resolveWorkflowStoryboardExecutionSize({
+    providerCode: model.providerCode,
+    providerName: model.providerName,
+    baseUrl: model.baseUrl,
+    model: model.model,
+  }, canonicalStoryboardSize);
+  const templateImageDataUrl = await input.readStoryboardTemplateDataUrl(
+    storyboardConfig.templateAsset,
+  );
+
+  const storyboardPrompt = buildWorkflowStoryboardPrompt({
+    capabilityConfig: storyboardConfig,
+    selectedImageModelId,
+    sourceImageOrigin,
+    workflowPrompt: request.prompt,
+    executionSize: storyboardExecutionSize,
+  });
+  const capabilitySnapshot = toImageCapabilitySnapshot(model, mode);
+  const runInput = sanitizeWorkflowStoryboardRunInput({
+    ...cloneRecord(request.input),
+    stage: workflowStage,
+    selectedImageModelId,
+    sourceImageOrigin,
+    mode,
+    size: canonicalStoryboardSize,
+    executionSize: storyboardExecutionSize,
+    storyboardTemplate: {
+      capabilityCode: storyboardConfig.code,
+      width: storyboardConfig.layout.width,
+      height: storyboardConfig.layout.height,
+      columns: storyboardConfig.layout.columns,
+      rows: storyboardConfig.layout.rows,
+      objectKey: storyboardConfig.templateAsset.objectKey,
+    },
+    modelId: model.id,
+    selectedModel: toSelectedModelSnapshot(model),
+  });
+
+  const created = await repository.createRun({
+    userId: request.userId,
+    conversationId: request.conversationId,
+    taskType: request.taskType,
+    prompt: storyboardPrompt,
+    provider: capabilitySnapshot.provider,
+    model: capabilitySnapshot.model,
+    capabilitySnapshot,
+    input: runInput,
+  });
+
+  await recordEventIfSupported(repository, created.id, 'queued', 'Agent run queued', {
+    taskType: request.taskType,
+    modelId: model.id,
+    mode,
+    workflowStage,
+  });
+
+  const running = requireUpdatedRun(await repository.markRunRunning(created.id), 'mark run running');
+  await recordEventIfSupported(repository, running.id, 'running', 'Workflow storyboard image provider started', {
+    provider: model.providerCode,
+    model: model.model,
+    mode,
+    workflowStage,
+    sourceImageOrigin,
+    sourceImageAvailable: Boolean(sourceImageDataUrl),
+  });
+
+  void runImageProviderOrchestration({
+    repository,
+    request: {
+      ...request,
+      prompt: storyboardPrompt,
+      input: {
+        ...request.input,
+        mode,
+        size: canonicalStoryboardSize,
+        executionSize: storyboardExecutionSize,
+      },
+    },
+    running,
+    model,
+    mode,
+    sourceImageDataUrl,
+    additionalImageDataUrls: [templateImageDataUrl],
+    providerSize: storyboardExecutionSize,
+    runInput,
+    capabilitySnapshot,
+    createImageProviderAdapter: input.createImageProviderAdapter,
+    debitForImageAgentRun: input.debitForImageAgentRun,
+    resolveGeneratedMediaCache: input.resolveGeneratedMediaCache,
+  }).catch(async (error) => {
+    const errorMessage = toErrorMessage(error);
+    const failedSnapshot = toFailedImageSnapshot({ capabilitySnapshot, errorMessage });
+    await recordEventIfSupported(repository, running.id, 'failed', errorMessage);
+    await appendRunEventIfSupported(repository, running.id, {
+      eventType: 'run_failed',
+      payload: {
+        message: errorMessage,
+        failedAt: new Date().toISOString(),
+      },
+    });
+    await repository.failRun(running.id, {
+      errorMessage,
+      capabilitySnapshot: failedSnapshot,
+      input: {
+        ...runInput,
+        billing: failedSnapshot.billing as Record<string, unknown>,
+      },
+    });
+  });
+
+  return runResult(running);
+}
+
+async function runWorkflowStoryboardOrchestration(input: {
+  repository: AgentRunRepository;
+  resolveGeneratedMediaCache: GeneratedMediaCacheResolver;
+  userId: string;
+  run: AgentRunDto;
+  capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
+  runInput: Record<string, unknown>;
+  result: PiAgentRunResult;
+}) {
+  const acceptedArtifacts = input.result.artifacts.filter((artifact) => artifact.kind === 'image');
+  if (acceptedArtifacts.length === 0) {
+    throw new Error('Provider response did not include image output.');
+  }
+
+  const directMediaResults = acceptedArtifacts
+    .map(toDirectMediaResult)
+    .filter((artifact): artifact is NonNullable<ReturnType<typeof toDirectMediaResult>> => artifact !== null);
+  if (directMediaResults.length === 0) {
+    throw new Error('Provider response did not include image output.');
+  }
+
+  const cachedArtifacts = await Promise.all(
+    acceptedArtifacts.map((artifact, index) => {
+      const directMedia = directMediaResults[index];
+      if (!directMedia) {
+        throw new Error('Provider response did not include image output.');
+      }
+
+      return cacheDirectMediaArtifact({
+        cache: input.resolveGeneratedMediaCache(),
+        userId: input.userId,
+        runId: input.run.id,
+        cacheId: `${input.run.id}-${index + 1}`,
+        artifact,
+        directMedia,
+      });
+    }),
+  );
+
+  const completed = requireUpdatedRun(
+    await input.repository.completeRun(input.run.id, {
+      finalMessage: input.result.finalMessage,
+      artifacts: cachedArtifacts,
+      capabilitySnapshot: {
+        ...input.capabilitySnapshot,
+        rawMetadata: {
+          workflow: true,
+          stage: readStringInput(input.runInput, 'stage') ?? 'workflow',
+        },
+      },
+      input: {
+        ...input.runInput,
+        workflowStage: readStringInput(input.runInput, 'stage') ?? 'workflow',
+      },
+    }),
+    'complete run',
+  );
+  const firstCachedArtifact = cachedArtifacts[0];
+  if (!firstCachedArtifact) {
+    throw new Error('Provider response did not include image output.');
+  }
+  const firstCachedArtifactMetadata = firstCachedArtifact.metadata ?? {};
+
+  await appendRunEventIfSupported(input.repository, completed.id, {
+    eventType: 'artifact_completed',
+    payload: createDirectMediaEventPayload(directMediaResults[0], {
+      artifactId: completed.artifacts[0]?.id ?? '',
+    }),
+  });
+  await appendRunEventIfSupported(input.repository, completed.id, {
+    eventType: 'run_completed',
+    payload: {
+      finalMessage: input.result.finalMessage,
+      artifactCount: cachedArtifacts.length,
+      storageStatus: firstCachedArtifactMetadata.storageStatus ?? 'provider_direct',
+      completedAt: new Date().toISOString(),
+    },
+  });
+  await recordEventIfSupported(input.repository, completed.id, 'succeeded', 'Agent run succeeded', {
+    artifactCount: cachedArtifacts.length,
+    storageStatus: firstCachedArtifactMetadata.storageStatus ?? 'provider_direct',
+  });
 }
 
 async function createAndRunVideoAgentRun(input: {
@@ -1743,6 +2161,7 @@ async function runImageProviderOrchestration(input: {
   model: ResolvedImageModel;
   mode: ImageModelMode;
   sourceImageDataUrl?: string;
+  additionalImageDataUrls?: string[];
   providerSize?: string;
   runInput: Record<string, unknown>;
   capabilitySnapshot: AgentCapabilitySnapshot & Record<string, unknown>;
@@ -1769,6 +2188,7 @@ async function runImageProviderOrchestration(input: {
     size: input.providerSize,
     scale: typeof input.request.input.scale === 'string' ? input.request.input.scale : undefined,
     sourceImageDataUrl: input.sourceImageDataUrl,
+    additionalImageDataUrls: input.additionalImageDataUrls,
   });
 
   const acceptedArtifacts = providerResult.artifacts.filter((artifact) => artifact.kind === 'image');

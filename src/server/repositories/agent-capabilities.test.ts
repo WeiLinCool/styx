@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   getSeedAgentCapabilityAdminData,
   getDefaultAgentCapabilityBundle,
+  readStoryboardCapabilityConfig,
   seedAgentCapabilities,
   seedAgentCapabilityBundles,
 } from './agent-capabilities';
@@ -39,4 +40,20 @@ test('seed default bundle resolves model, skill, mcp and plugin capabilities for
   assert.ok(snapshot?.capabilities.some((capability) => capability.kind === 'skill'));
   assert.ok(snapshot?.capabilities.some((capability) => capability.kind === 'mcp_server'));
   assert.ok(snapshot?.capabilities.some((capability) => capability.kind === 'plugin'));
+});
+
+test('readStoryboardCapabilityConfig returns storyboard prompt and layout config from workflow snapshot', () => {
+  const snapshot = getDefaultAgentCapabilityBundle('workflow');
+
+  assert.ok(snapshot);
+
+  const config = readStoryboardCapabilityConfig(snapshot!);
+
+  assert.equal(config?.code, 'workflow-storyboard-template');
+  assert.equal(config?.promptText.includes('{{workflow_prompt}}'), true);
+  assert.equal(config?.layout.width, 1086);
+  assert.equal(config?.layout.height, 1448);
+  assert.equal(config?.layout.columns, 4);
+  assert.equal(config?.layout.rows, 3);
+  assert.equal(config?.templateAsset, null);
 });

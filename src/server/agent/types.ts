@@ -38,6 +38,35 @@ export type AgentCapabilitySnapshot = {
   capabilities: ResolvedAgentCapability[];
 };
 
+export type StoryboardTemplateAsset = {
+  storageProvider: 'tencent_cos';
+  bucket: string;
+  region: string;
+  objectKey: string;
+  mimeType: string;
+  byteSize: number;
+  width: number;
+  height: number;
+  originalFilename: string;
+  uploadedAt: string;
+};
+
+export type WorkflowStoryboardLayout = {
+  width: number;
+  height: number;
+  columns: 4;
+  rows: 3;
+};
+
+export type WorkflowStoryboardCapabilityConfig = {
+  code: 'workflow-storyboard-template';
+  promptText: string;
+  templateAsset: StoryboardTemplateAsset | null;
+  layout: WorkflowStoryboardLayout;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+};
+
 export type AgentArtifactDto = {
   id: string;
   kind: AgentArtifactKind;

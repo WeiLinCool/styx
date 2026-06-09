@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   applyGeneratedReferenceScene,
+  applyGeneratedWorkflowImage,
   createWorkflowVideoModelState,
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
@@ -166,6 +167,26 @@ test('applyGeneratedReferenceScene writes custom scene, clears alternate scene s
       aiSceneGenerated: false,
       aiSceneGenerating: false,
       dreaming: false,
+    },
+  );
+});
+
+test('applyGeneratedWorkflowImage returns the image URL and preserves whether a manual upload exists', () => {
+  assert.deepEqual(
+    applyGeneratedWorkflowImage(makeSnapshot({ step: 0 }), 'data:image/png;base64,xyz', true),
+    {
+      imageUrl: 'data:image/png;base64,xyz',
+      hasManualUpload: true,
+      resetState: {
+        step: 0,
+        storyboardGenerated: false,
+        storyboardGenerating: false,
+        selectedScene: null,
+        customSceneUrl: null,
+        aiSceneGenerated: false,
+        aiSceneGenerating: false,
+        dreaming: false,
+      },
     },
   );
 });

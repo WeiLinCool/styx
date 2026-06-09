@@ -109,3 +109,24 @@ export function applyGeneratedReferenceScene(
     dreaming: false,
   };
 }
+
+export function applyGeneratedWorkflowImage(
+  snapshot: WorkflowStateSnapshot,
+  imageUrl: string,
+  hasManualUpload: boolean,
+) {
+  return {
+    imageUrl,
+    hasManualUpload,
+    resetState: {
+      step: snapshot.step,
+      storyboardGenerated: false,
+      storyboardGenerating: false,
+      selectedScene: null,
+      customSceneUrl: null,
+      aiSceneGenerated: false,
+      aiSceneGenerating: false,
+      dreaming: false,
+    },
+  };
+}

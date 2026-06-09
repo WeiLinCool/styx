@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { createChatProviderAdapter } from '@/server/ai/provider-adapters';
+import { supportsStoryboardTemplateProvider } from '@/server/ai/image-model-capabilities';
 import type { PiAgentRuntime } from '@/server/agent/pi-runtime';
 import type {
   AgentRunDto,
@@ -47,6 +48,7 @@ export type ImageModelMode = 'generate' | 'edit' | 'upscale';
 
 export type PublicImageModelDto = PublicChatModelDto & {
   supportedModes: ImageModelMode[];
+  supportsWorkflowStoryboardTemplate: boolean;
 };
 
 export type PublicVideoModelDto = PublicChatModelDto;
@@ -1255,11 +1257,20 @@ export async function createAiModel(input: {
       throw new Error('AI provider was not found.');
     }
 
+    // Check if code already exists in seed models
+    const trimmedCode = input.code.trim();
+    const existingModel = seedModels.find(
+      (m) => m.providerId === input.providerId && m.code === trimmedCode
+    );
+    if (existingModel) {
+      throw new Error(`AI model with code "${trimmedCode}" already exists.`);
+    }
+
     return toAdminAiModelRow({
       model: {
         id: randomUUID(),
         providerId: input.providerId,
-        code: input.code.trim(),
+        code: trimmedCode,
         name: input.name.trim(),
         model: input.model.trim(),
         executionProtocol: input.executionProtocol,
@@ -1277,6 +1288,18 @@ export async function createAiModel(input: {
       provider,
       requirements: [],
     });
+  }
+
+  // Check if code already exists in database
+  const trimmedCode = input.code.trim();
+  const existingModel = await database
+    .select({ id: schema.aiModels.id })
+    .from(schema.aiModels)
+    .where(eq(schema.aiModels.code, trimmedCode))
+    .limit(1);
+
+  if (existingModel.length > 0) {
+    throw new Error(`AI model with code "${trimmedCode}" already exists.`);
   }
 
   const [created] = await database
@@ -1675,6 +1698,12 @@ function toPublicImageModel(model: ResolvedImageModel): PublicImageModelDto {
   return {
     ...toPublicModel(model),
     supportedModes: model.supportedModes,
+    supportsWorkflowStoryboardTemplate: supportsStoryboardTemplateProvider({
+      providerCode: model.providerCode,
+      providerName: model.providerName,
+      baseUrl: model.baseUrl,
+      model: model.model,
+    }),
   };
 }
 

@@ -4,7 +4,9 @@ import test from 'node:test';
 import {
   filterWorkflowChatModels,
   getWorkflowChatModelLabel,
+  waitForTerminalRun,
 } from './workflow-quick-action-dialogs';
+import type { AgentRunDetailDto } from '@/server/agent/types';
 import type { ChatModelOption } from '@/features/public/agent-runtime-client';
 
 function makeChatModel(overrides: Partial<ChatModelOption> = {}): ChatModelOption {
@@ -50,4 +52,25 @@ test('getWorkflowChatModelLabel combines model and provider names', () => {
     ),
     'Configured Chat · Configured Provider',
   );
+});
+
+test('waitForTerminalRun keeps polling until the run succeeds', async () => {
+  let polls = 0;
+  const operationRef = { current: 1 };
+  const detailByPoll: AgentRunDetailDto[] = [
+    { run: { status: 'running', errorMessage: null } as AgentRunDetailDto['run'], events: [] },
+    { run: { status: 'running', errorMessage: null } as AgentRunDetailDto['run'], events: [] },
+    { run: { status: 'succeeded', errorMessage: null } as AgentRunDetailDto['run'], events: [] },
+  ];
+
+  const detail = await waitForTerminalRun({
+    runId: 'run-1',
+    operationRef,
+    operationId: 1,
+    getDetail: async () => detailByPoll[polls++] ?? detailByPoll[detailByPoll.length - 1],
+    sleep: async () => undefined,
+  });
+
+  assert.equal(detail?.run.status, 'succeeded');
+  assert.equal(polls, 3);
 });

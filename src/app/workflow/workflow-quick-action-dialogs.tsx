@@ -8,6 +8,7 @@ import {
   getAgentRunDetail,
   getGeneratedRunArtifactAccess,
   listChatModels,
+  listImageModels,
   selectChatModelId,
   type ChatModelOption,
 } from '@/features/public/agent-runtime-client';
@@ -26,9 +27,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { DirectMediaResultDto } from '@/server/agent/types';
+import type { AgentRunDetailDto, DirectMediaResultDto } from '@/server/agent/types';
 import {
   buildPromptOptimizationPrompt,
+  buildImageGenerationPrompt,
   readPromptOptimizationMessage,
 } from './workflow-quick-actions';
 
@@ -38,20 +40,24 @@ function delay(ms: number) {
   });
 }
 
-async function waitForTerminalRun(input: {
+export async function waitForTerminalRun(input: {
   runId: string;
   operationRef: MutableRefObject<number>;
   operationId: number;
   maxAttempts?: number;
+  getDetail?: (runId: string) => Promise<AgentRunDetailDto>;
+  sleep?: (ms: number) => Promise<void>;
 }) {
-  const maxAttempts = input.maxAttempts ?? 20;
+  const maxAttempts = input.maxAttempts ?? Number.POSITIVE_INFINITY;
+  const getDetail = input.getDetail ?? getAgentRunDetail;
+  const sleep = input.sleep ?? delay;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (input.operationRef.current !== input.operationId) {
       return null;
     }
 
-    const detail = await getAgentRunDetail(input.runId);
+    const detail = await getDetail(input.runId);
     if (input.operationRef.current !== input.operationId) {
       return null;
     }
@@ -60,7 +66,7 @@ async function waitForTerminalRun(input: {
       return detail;
     }
 
-    await delay(1000);
+    await sleep(1000);
   }
 
   throw new Error('AI 请求超时，请稍后重试。');
@@ -188,11 +194,7 @@ export function PromptOptimizationDialog({
         throw new Error(run.errorMessage ?? '提示词优化失败');
       }
 
-      const detail = await waitForTerminalRun({
-        runId: run.id,
-        operationRef,
-        operationId,
-      });
+      const detail = await waitForTerminalRun({ runId: run.id, operationRef, operationId });
       if (!detail) {
         return;
       }
@@ -410,7 +412,6 @@ export function ReferenceImageDialog({
         runId: run.id,
         operationRef,
         operationId,
-        maxAttempts: 30,
       });
       if (!detail) {
         return;
@@ -538,6 +539,299 @@ export function ReferenceImageDialog({
           >
             <Check size={14} />
             应用为当前场景
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+export type ImageGenerationDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  prompt: string;
+  selectedImageModelId: string | null;
+  isLoggedIn: boolean;
+  activationRequired: boolean;
+  openLoginModal: () => void;
+  onApply: (imageUrl: string) => void;
+};
+
+export function ImageGenerationDialog({
+  open,
+  onOpenChange,
+  prompt,
+  selectedImageModelId,
+  isLoggedIn,
+  activationRequired,
+  openLoginModal,
+  onApply,
+}: ImageGenerationDialogProps) {
+  const [draftPrompt, setDraftPrompt] = useState(prompt);
+  const [generatedImage, setGeneratedImage] = useState<DirectMediaResultDto | null>(null);
+  const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
+  const [selectedChatModelId, setSelectedChatModelId] = useState<string | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const operationRef = useRef(0);
+  const selectedChatModel = chatModels.find((model) => model.id === selectedChatModelId) ?? null;
+  const canGenerate = Boolean(selectedChatModelId) && !loadingModels && !generating;
+
+  useEffect(() => {
+    if (!open) {
+      operationRef.current += 1;
+      return;
+    }
+
+    setDraftPrompt(prompt);
+    setGeneratedImage(null);
+    setError(null);
+
+    if (!isLoggedIn || activationRequired) {
+      setChatModels([]);
+      setSelectedChatModelId(null);
+      setLoadingModels(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingModels(true);
+    void listImageModels('generate')
+      .then((models) => {
+        if (cancelled) {
+          return;
+        }
+
+        setChatModels(models);
+        setSelectedChatModelId(selectChatModelId(models, selectedImageModelId));
+      })
+      .catch((loadError) => {
+        if (cancelled) {
+          return;
+        }
+        setChatModels([]);
+        setSelectedChatModelId(null);
+        setError(loadError instanceof Error ? loadError.message : '生图模型加载失败');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingModels(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      operationRef.current += 1;
+    };
+  }, [activationRequired, isLoggedIn, open, prompt, selectedImageModelId]);
+
+  const handleGenerate = async () => {
+    if (!isLoggedIn) {
+      openLoginModal();
+      return;
+    }
+    if (activationRequired) {
+      setError('账号激活后可使用 AI 生图。');
+      return;
+    }
+    if (!selectedChatModelId) {
+      setError(loadingModels ? '生图模型加载中...' : '当前没有可用的生图模型。');
+      return;
+    }
+    if (!draftPrompt.trim()) {
+      setError('请先填写提示词后再生成图案。');
+      return;
+    }
+
+    const operationId = operationRef.current + 1;
+    operationRef.current = operationId;
+    setGenerating(true);
+    setGeneratedImage(null);
+    setError(null);
+
+    try {
+      const { run } = await createAgentRun({
+        taskType: 'image',
+        prompt: buildImageGenerationPrompt(draftPrompt),
+        modelId: selectedChatModelId,
+        input: {
+          mode: 'generate',
+        },
+      });
+
+      if (run.status === 'failed') {
+        throw new Error(run.errorMessage ?? 'AI 生图失败');
+      }
+
+      const detail = await waitForTerminalRun({
+        runId: run.id,
+        operationRef,
+        operationId,
+      });
+      if (!detail) {
+        return;
+      }
+      if (detail.run.status === 'failed') {
+        throw new Error(detail.run.errorMessage ?? 'AI 生图失败');
+      }
+
+      const artifact = detail.run.artifacts.find(
+        (item) => item.kind === 'image' && item.status === 'ready',
+      );
+      if (!artifact) {
+        throw new Error('生图完成，但没有找到可预览的结果。');
+      }
+
+      const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
+      if (operationRef.current !== operationId) {
+        return;
+      }
+
+      setGeneratedImage({
+        kind: 'image',
+        title: artifact.title,
+        delivery: {
+          mode: 'provider_url',
+          url: access.url,
+          expiresAt: access.expiresAt,
+        },
+        metadata: {
+          ...artifact.metadata,
+          artifactId: artifact.id,
+          storageStatus: readStorageStatus(artifact.metadata.storageStatus),
+        },
+      });
+    } catch (generateError) {
+      if (operationRef.current !== operationId) {
+        return;
+      }
+      setError(generateError instanceof Error ? generateError.message : 'AI 生图失败');
+    } finally {
+      if (operationRef.current === operationId) {
+        setGenerating(false);
+      }
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <Sparkles size={18} />
+            AI 生图
+          </DialogTitle>
+          <DialogDescription>
+            用当前工作流提示词生成一张新的图案。若当前已经上传过手动图案，生成结果会先保留为待确认状态。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3 text-xs text-muted-foreground">
+            {loadingModels
+              ? '正在加载生图模型...'
+              : selectedChatModel
+                ? `当前生图模型：${selectedChatModel.name}`
+                : '当前没有可用的生图模型。'}
+          </div>
+
+          {chatModels.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">选择生图模型</p>
+              <Select
+                value={selectedChatModelId ?? ''}
+                onValueChange={setSelectedChatModelId}
+                disabled={loadingModels || generating}
+              >
+                <SelectTrigger className="w-full rounded-xl border-input bg-card px-4 py-3 text-sm">
+                  <SelectValue placeholder="选择模型" />
+                </SelectTrigger>
+                <SelectContent>
+                  {chatModels.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {getWorkflowChatModelLabel(model)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">生成提示词</p>
+            <textarea
+              value={draftPrompt}
+              onChange={(event) => setDraftPrompt(event.target.value)}
+              rows={6}
+              className="w-full resize-none rounded-xl border border-input bg-card p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+            />
+          </div>
+
+          {error ? (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            {generatedImage ? (
+              <img
+                src={generatedImage.delivery.url}
+                alt={generatedImage.title}
+                className="mx-auto max-h-[420px] w-full object-contain"
+              />
+            ) : (
+              <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 p-8 text-center">
+                {generating ? (
+                  <>
+                    <Loader2 size={28} className="animate-spin text-foreground/40" />
+                    <p className="text-sm font-medium text-foreground">AI 生图中...</p>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={28} className="text-foreground/40" />
+                    <p className="text-sm font-medium text-foreground">生成后在这里预览图案</p>
+                    <p className="text-xs text-muted-foreground">如果当前没有手动上传图案，确认后会直接替换当前图案</p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="cursor-pointer rounded-xl border border-border px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring"
+          >
+            关闭
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={!canGenerate || draftPrompt.trim().length === 0}
+            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-foreground transition-colors hover:border-ring disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            生成图案
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!generatedImage) {
+                return;
+              }
+              onApply(generatedImage.delivery.url);
+              onOpenChange(false);
+            }}
+            disabled={!generatedImage}
+            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/85 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Check size={14} />
+            应用为当前图案
           </button>
         </DialogFooter>
       </DialogContent>

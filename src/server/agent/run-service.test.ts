@@ -15,7 +15,11 @@ import {
   type ResolvedImageModel,
   type ResolvedVideoModel,
 } from '@/server/repositories/ai-models';
-import type { DirectMediaArtifactCompletedPayload, AgentTaskType } from './types';
+import type {
+  AgentCapabilitySnapshot,
+  DirectMediaArtifactCompletedPayload,
+  AgentTaskType,
+} from './types';
 import type { ChatProviderMessage } from '@/server/ai/provider-adapters';
 import { ProviderConfigurationError, ProviderRequestError } from '@/server/ai/provider-adapters';
 import type { VideoProviderCreateRequest } from '@/server/ai/video-provider-adapters';
@@ -123,6 +127,60 @@ function enabledVideoPolicy() {
     durations: [5, 10],
     resolutions: [{ value: '720p', label: '720P' }],
     defaults: { styleCode: 'stone', durationSeconds: 5, resolution: '720p' },
+  };
+}
+
+function storyboardCapabilitySnapshot(): AgentCapabilitySnapshot {
+  return {
+    bundleId: 'workflow-bundle-1',
+    bundleCode: 'workflow-default',
+    provider: 'pi',
+    model: 'pi-default',
+    capabilities: [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        kind: 'model',
+        code: 'pi-default',
+        name: 'Pi 默认模型',
+        config: { provider: 'pi', model: 'pi-default' },
+      },
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        kind: 'skill',
+        code: 'workflow-storyboard-template',
+        name: '工作流分镜模板',
+        config: {
+          promptText: [
+            '任务：以管理员上传的 12 宫格教程底图为主图/底图。',
+            '尺寸={{template_width}}x{{template_height}}',
+            '布局={{template_columns}}x{{template_rows}}',
+            '来源={{source_image_origin}}',
+            '模型={{selected_image_model_id}}',
+            '{{workflow_prompt}}',
+          ].join('\n'),
+          templateAsset: {
+            storageProvider: 'tencent_cos',
+            bucket: 'bucket-a',
+            region: 'ap-shanghai',
+            objectKey: 'admin-config/storyboard/template.png',
+            mimeType: 'image/png',
+            byteSize: 1024,
+            width: 1086,
+            height: 1448,
+            originalFilename: 'template.png',
+            uploadedAt: '2026-06-09T10:00:00.000Z',
+          },
+          layout: {
+            width: 1086,
+            height: 1448,
+            columns: 4,
+            rows: 3,
+          },
+          updatedAt: '2026-06-09T10:00:00.000Z',
+          updatedByUserId: 'admin-1',
+        },
+      },
+    ],
   };
 }
 
@@ -237,19 +295,24 @@ test('createAndRunAgentRun streams direct image artifact while persisting only s
     input: { mode: 'generate', size: '1:1' },
   });
 
-  assert.equal(result.run.status, 'succeeded');
-  assert.equal(result.transientArtifacts.length, 1);
-  assert.equal(result.transientArtifacts[0]?.dataUrl, 'data:image/png;base64,SHOULD_NOT_PERSIST');
-  const stored = result.run;
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(result.transientArtifacts, []);
+
+  const stored = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
   const events = await repository.listRunEvents(result.run.id);
   assert.equal(stored?.status, 'succeeded');
   assert.equal(stored?.artifacts.length, 1);
   assert.equal(stored?.artifacts[0]?.kind, 'image');
   assert.equal(stored?.artifacts[0]?.body, null);
   assert.equal(stored?.artifacts[0]?.url, null);
-  assert.equal(stored?.artifacts[0]?.metadata.transient, true);
   assert.equal(stored?.artifacts[0]?.metadata.mimeType, 'image/png');
-  assert.deepEqual(events.map((event) => event.eventType), []);
+  assert.equal(stored?.artifacts[0]?.metadata.storageStatus, 'provider_direct');
+  assert.equal(stored?.artifacts[0]?.metadata.sourceUrl, 'https://provider.example/generated.png');
+  assert.deepEqual(events.map((event) => event.eventType), [
+    'artifact_started',
+    'artifact_completed',
+    'run_completed',
+  ]);
 });
 
 test('createAndRunAgentRun returns running image run and streams direct media completion', async () => {
@@ -315,6 +378,173 @@ test('createAndRunAgentRun returns running image run and streams direct media co
   assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.kind, 'image');
   assert.equal(directMediaPayload(events[2]?.payload ?? {}).artifact.delivery.url, 'data:image/png;base64,abc');
   assert.equal(typeof directMediaPayload(events[2]?.payload ?? {}).artifact.metadata.artifactId, 'string');
+});
+
+test('workflow storyboard uses selected image edit model and uploaded pattern source', async () => {
+  const repository = createMemoryAgentRunRepository();
+  const providerRequests: Array<{
+    mode: string;
+    prompt: string;
+    size: string | undefined;
+    sourceImageDataUrl: string | undefined;
+    additionalImageDataUrls: string[] | undefined;
+  }> = [];
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        throw new Error('workflow storyboard should use the selected image provider');
+      },
+    },
+    resolveImageModelForUser: async (_userId, modelId, mode) => {
+      assert.equal(modelId, 'model-storyboard');
+      assert.equal(mode, 'edit');
+      return resolvedImageModel({
+        id: 'model-storyboard',
+        code: 'gpt-image-2',
+        name: 'GPT Image 2',
+        providerCode: 'openai',
+        providerName: 'OpenAI',
+        model: 'gpt-image-2',
+        supportedModes: ['generate', 'edit'],
+      });
+    },
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage(request) {
+        providerRequests.push({
+          mode: request.mode,
+          prompt: request.prompt,
+          size: request.size,
+          sourceImageDataUrl: request.sourceImageDataUrl,
+          additionalImageDataUrls: request.additionalImageDataUrls,
+        });
+        return {
+          finalMessage: '12宫格分镜图已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '12宫格分镜图',
+              body: 'data:image/png;base64,RESULT',
+              metadata: { mimeType: 'image/png', width: 1086, height: 1448 },
+            },
+          ],
+          rawMetadata: { provider: 'test' },
+        };
+      },
+    }),
+    debitForImageAgentRun: async (input) => {
+      assert.equal(input.modelSnapshot.id, 'model-storyboard');
+      assert.equal(input.metadata.mode, 'edit');
+      return { entryId: 'ledger-storyboard', balanceAfter: 90 };
+    },
+    resolveWorkflowCapabilityBundle: async () => storyboardCapabilitySnapshot(),
+    readStoryboardTemplateDataUrl: async () => 'data:image/png;base64,TEMPLATE',
+  });
+
+  const result = await service.createAndRunAgentRun({
+    userId: 'user-1',
+    taskType: 'workflow',
+    prompt: '以图一为主图/底图',
+    input: {
+      stage: 'storyboard',
+      selectedImageModelId: 'model-storyboard',
+      sourceImageOrigin: 'manual',
+      sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+    },
+  });
+
+  assert.equal(result.run.status, 'running');
+  const completed = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+  const detail = await repository.getRunDetailForUser(result.run.id, 'user-1');
+  const events = await repository.listRunEvents(result.run.id);
+
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(providerRequests.length, 1);
+  assert.equal(providerRequests[0]?.mode, 'edit');
+  assert.equal(providerRequests[0]?.size, '1086x1448');
+  assert.equal(providerRequests[0]?.sourceImageDataUrl, 'data:image/png;base64,SOURCE');
+  assert.deepEqual(providerRequests[0]?.additionalImageDataUrls, ['data:image/png;base64,TEMPLATE']);
+  assert.match(providerRequests[0]?.prompt ?? '', /1086x1448/);
+  assert.match(providerRequests[0]?.prompt ?? '', /布局=4x3/);
+  assert.match(providerRequests[0]?.prompt ?? '', /来源=manual/);
+  assert.equal(JSON.stringify(detail?.internal?.input ?? {}).includes('sourceImageDataUrl'), false);
+  assert.equal(completed?.selectedModel?.code, 'gpt-image-2');
+  assert.equal(completed?.billing?.status, 'billed');
+  assert.deepEqual(
+    events.map((event) => event.eventType),
+    ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],
+  );
+});
+
+test('workflow storyboard fails closed for providers without storyboard template multi-image support', async () => {
+  const repository = createMemoryAgentRunRepository();
+  let providerCalled = false;
+  const service = createAgentRunService({
+    repository,
+    runtime: {
+      async run() {
+        throw new Error('workflow storyboard should use the selected image provider');
+      },
+    },
+    resolveImageModelForUser: async (_userId, modelId, mode) => {
+      assert.equal(modelId, 'model-storyboard-doubao');
+      assert.equal(mode, 'edit');
+      return resolvedImageModel({
+        id: 'model-storyboard-doubao',
+        code: 'seededit-3-0-i2i',
+        name: 'Doubao SeedEdit',
+        providerCode: 'ark',
+        providerName: 'Doubao',
+        providerType: 'openai_compatible',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/',
+        credentialEnvKey: 'DOUBAO_KEY',
+        model: 'seededit-3-0-i2i',
+        supportedModes: ['generate', 'edit'],
+      });
+    },
+    assertCanAffordMinimum: async () => {},
+    createImageProviderAdapter: () => ({
+      kind: 'development',
+      async runImage() {
+        providerCalled = true;
+        return {
+          finalMessage: '12宫格分镜图已生成',
+          artifacts: [
+            {
+              kind: 'image',
+              title: '12宫格分镜图',
+              body: 'data:image/png;base64,RESULT',
+              metadata: { mimeType: 'image/png', width: 2048, height: 2048 },
+            },
+          ],
+          rawMetadata: { provider: 'doubao' },
+        };
+      },
+    }),
+    debitForImageAgentRun: async () => ({ entryId: 'ledger-storyboard-doubao', balanceAfter: 88 }),
+    resolveWorkflowCapabilityBundle: async () => storyboardCapabilitySnapshot(),
+    readStoryboardTemplateDataUrl: async () => 'data:image/png;base64,TEMPLATE',
+  });
+
+  await assert.rejects(
+    () =>
+      service.createAndRunAgentRun({
+        userId: 'user-1',
+        taskType: 'workflow',
+        prompt: '以图一为主图/底图',
+        input: {
+          stage: 'storyboard',
+          selectedImageModelId: 'model-storyboard-doubao',
+          sourceImageOrigin: 'manual',
+          sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+        },
+      }),
+    /支持多图编辑的 OpenAI 图片模型/,
+  );
+
+  assert.equal(providerCalled, false);
 });
 
 test('createAndRunAgentRun keeps image run succeeded when cache upload fails', async () => {
@@ -742,10 +972,13 @@ test('createAndRunAgentRun returns transient image artifact from provider URL ou
     input: { mode: 'generate', size: '1:1' },
   });
 
-  assert.equal(result.run.status, 'succeeded');
-  assert.equal(result.transientArtifacts.length, 1);
-  assert.equal(result.transientArtifacts[0]?.dataUrl, 'https://provider.example/generated.png');
-  assert.equal(result.run.artifacts[0]?.url, null);
+  assert.equal(result.run.status, 'running');
+  assert.deepEqual(result.transientArtifacts, []);
+
+  const completed = await waitForRunStatus(repository, result.run.id, 'user-1', 'succeeded');
+  assert.equal(completed?.status, 'succeeded');
+  assert.equal(completed?.artifacts[0]?.url, null);
+  assert.equal(completed?.artifacts[0]?.metadata.sourceUrl, 'https://provider.example/generated.png');
 });
 
 test('createAndRunAgentRun records failure when runtime throws', async () => {
@@ -767,12 +1000,12 @@ test('createAndRunAgentRun records failure when runtime throws', async () => {
   });
   const run = result.run;
 
-  assert.equal(run.status, 'failed');
-  const failed = run;
+  assert.equal(run.status, 'running');
+  const failed = await waitForRunStatus(repository, run.id, 'user-1', 'failed');
   const events = await repository.listRunEvents(run.id);
   assert.equal(failed?.status, 'failed');
   assert.equal(failed?.errorMessage, 'pi unavailable');
-  assert.equal(events.at(-1)?.eventType, undefined);
+  assert.deepEqual(events.map((event) => event.eventType), ['artifact_started']);
 });
 
 test('createAndRunAgentRun marks media run failed when run_failed event persistence fails', async () => {
@@ -907,8 +1140,8 @@ test('createAndRunAgentRun keeps completed run succeeded when succeeded event re
   });
   const run = result.run;
 
-  assert.equal(run.status, 'succeeded');
-  const completed = run;
+  assert.equal(run.status, 'running');
+  const completed = await waitForRunStatus(repository, run.id, 'user-1', 'succeeded');
   assert.equal(completed?.status, 'succeeded');
   assert.equal(completed?.errorMessage, null);
 });
@@ -997,7 +1230,9 @@ test('createAndRunAgentRun clones runtime request input and capabilities', async
   });
 
   assert.deepEqual(callerInput, { nested: { value: 'original' } });
-  const run = result.run;
+  assert.equal(result.run.status, 'running');
+  const run = await waitForRunStatus(repository, result.run.id, 'user-1', 'failed');
+  assert.ok(run);
   assert.equal(run.capabilitySummary.model, 'pi-default');
   assert.equal(run.capabilitySummary.capabilities[0].name, 'Pi 默认模型');
 });

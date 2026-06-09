@@ -21,6 +21,7 @@ import {
   listVideoModels,
   formatMediaSaveActionLabel,
   formatMediaSaveStatus,
+  filterStoryboardTemplateImageModels,
   isStorageQuotaExceededSaveError,
   parseDirectMediaArtifactPayload,
   parseImageModel,
@@ -63,6 +64,7 @@ function makeImageModel(overrides: Partial<ImageModelOption> = {}): ImageModelOp
     entitlementLabel: 'Free',
     pricingSummary: '5 credits minimum',
     supportedModes: ['generate'],
+    supportsWorkflowStoryboardTemplate: false,
     ...overrides,
   };
 }
@@ -192,6 +194,7 @@ test('listImageModels returns parsed image model options', async () => {
         entitlementLabel: 'Pro',
         pricingSummary: '5 credits minimum',
         supportedModes: ['generate', 'edit'],
+        supportsWorkflowStoryboardTemplate: false,
       },
     ],
   });
@@ -200,6 +203,7 @@ test('listImageModels returns parsed image model options', async () => {
     const models = await listImageModels('generate');
     assert.equal(models[0]?.id, 'model-1');
     assert.deepEqual(models[0]?.supportedModes, ['generate', 'edit']);
+    assert.equal(models[0]?.supportsWorkflowStoryboardTemplate, false);
   } finally {
     restore();
   }
@@ -212,6 +216,31 @@ test('parseImageModel rejects malformed supported modes', () => {
   assert.equal(parseImageModel({ ...validModel, supportedModes: [] }), null);
   assert.equal(parseImageModel({ ...validModel, supportedModes: ['generate', 'video'] }), null);
   assert.equal(parseImageModel({ ...validModel, supportedModes: 'generate' }), null);
+});
+
+test('parseImageModel defaults storyboard template support to false when the field is absent or malformed', () => {
+  const validModel = makeImageModel({ supportsWorkflowStoryboardTemplate: true });
+  const { supportsWorkflowStoryboardTemplate, ...missingStoryboardSupport } = validModel;
+  void supportsWorkflowStoryboardTemplate;
+
+  assert.equal(parseImageModel(missingStoryboardSupport)?.supportsWorkflowStoryboardTemplate, false);
+  assert.equal(
+    parseImageModel({ ...validModel, supportsWorkflowStoryboardTemplate: 'yes' })
+      ?.supportsWorkflowStoryboardTemplate,
+    false,
+  );
+});
+
+test('filterStoryboardTemplateImageModels keeps only storyboard template capable models', () => {
+  const models = [
+    makeImageModel({ id: 'doubao', supportsWorkflowStoryboardTemplate: false }),
+    makeImageModel({ id: 'openai', supportsWorkflowStoryboardTemplate: true }),
+  ];
+
+  assert.deepEqual(
+    filterStoryboardTemplateImageModels(models).map((model) => model.id),
+    ['openai'],
+  );
 });
 
 test('parseVideoModel accepts chat model shape', () => {

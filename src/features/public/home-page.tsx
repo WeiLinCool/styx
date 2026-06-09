@@ -91,7 +91,7 @@ function Navbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48 rounded-xl border-border bg-popover/95 p-1.5 shadow-xl backdrop-blur-2xl">
               {nav.publicExploreLinks.map((l) => (
-                <DropdownMenuItem key={l.href} asChild className="cursor-pointer rounded-lg px-3 py-2 text-foreground focus:bg-accent/12">
+                <DropdownMenuItem key={l.href} asChild className="cursor-pointer rounded-lg px-3 py-2">
                   <Link href={l.href} className="flex flex-col items-start">
                     <span className="text-[13px] font-medium">{l.label}</span>
                     <span className="text-[11px] text-muted-foreground">{l.desc}</span>
@@ -107,7 +107,7 @@ function Navbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48 rounded-xl border-border bg-popover/95 p-1.5 shadow-xl backdrop-blur-2xl">
               {nav.publicAiToolLinks.map((l) => (
-                <DropdownMenuItem key={l.href} asChild className="cursor-pointer rounded-lg px-3 py-2 text-foreground focus:bg-accent/12">
+                <DropdownMenuItem key={l.href} asChild className="cursor-pointer rounded-lg px-3 py-2">
                   <Link href={l.href} className="flex flex-col items-start">
                     <span className="text-[13px] font-medium">{l.label}</span>
                     <span className="text-[11px] text-muted-foreground">{l.desc}</span>

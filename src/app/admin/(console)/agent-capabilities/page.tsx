@@ -63,7 +63,11 @@ const columns: AdminColumn<AdminAgentCapabilityRow>[] = [
     label: '操作',
     className: 'text-right',
     render: (capability) => (
-      <AdminAgentCapabilityActions capabilityId={capability.id} status={capability.status} />
+      <AdminAgentCapabilityActions
+        capabilityId={capability.id}
+        capabilityCode={capability.code}
+        status={capability.status}
+      />
     ),
   },
 ];

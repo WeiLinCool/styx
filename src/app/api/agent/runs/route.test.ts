@@ -256,6 +256,53 @@ test('parseCreateAgentRunRawBody requires source image for upscale mode', () => 
   );
 });
 
+test('parseCreateAgentRunRawBody requires selected image model for workflow storyboard', () => {
+  assert.throws(
+    () =>
+      parseCreateAgentRunRawBody({
+        taskType: 'workflow',
+        prompt: '生成12宫格分镜',
+        input: {
+          stage: 'storyboard',
+          sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+        },
+      }),
+    /selectedImageModelId/,
+  );
+});
+
+test('parseCreateAgentRunRawBody requires source image for workflow storyboard', () => {
+  assert.throws(
+    () =>
+      parseCreateAgentRunRawBody({
+        taskType: 'workflow',
+        prompt: '生成12宫格分镜',
+        input: {
+          stage: 'storyboard-regenerate',
+          selectedImageModelId: 'model-image',
+        },
+      }),
+    /source image is required/,
+  );
+});
+
+test('parseCreateAgentRunRawBody accepts workflow storyboard upload context', () => {
+  const parsed = parseCreateAgentRunRawBody({
+    taskType: 'workflow',
+    prompt: '生成12宫格分镜',
+    input: {
+      stage: 'storyboard',
+      selectedImageModelId: 'model-image',
+      sourceImageOrigin: 'manual',
+      sourceImageDataUrl: 'data:image/png;base64,SOURCE',
+    },
+  });
+
+  assert.equal(parsed.taskType, 'workflow');
+  assert.equal(parsed.input.stage, 'storyboard');
+  assert.equal(parsed.input.selectedImageModelId, 'model-image');
+});
+
 test('parseCreateAgentRunBody preserves non-chat requests without modelId', () => {
   const parsed = parseCreateAgentRunBody({
     taskType: 'workflow',

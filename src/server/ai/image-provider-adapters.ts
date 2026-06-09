@@ -1,3 +1,4 @@
+import { FormData as UndiciFormData } from 'undici';
 import type {
   ImageModelMode,
   ResolvedImageModel,
@@ -23,6 +24,7 @@ export type ImageProviderRequest = {
   size?: string;
   scale?: string;
   sourceImageDataUrl?: string;
+  additionalImageDataUrls?: string[];
 };
 
 export type ImageProviderResult = {
@@ -42,6 +44,12 @@ type ReadEnv = (key: string) => string | undefined | null;
 type DoubaoImageParseContext = {
   model: string;
   mode: ImageModelMode;
+};
+
+type ProviderRequestTransport = {
+  endpoint: URL;
+  headers: HeadersInit;
+  body: string | UndiciFormData;
 };
 
 export function createDoubaoImageProviderAdapter(input: {
@@ -67,16 +75,16 @@ export function createDoubaoImageProviderAdapter(input: {
         );
       }
 
-      const endpoint = createDoubaoImageEndpoint(baseUrl);
+      const transport = createImageProviderRequestTransport(request, baseUrl);
       let response: Response;
       try {
-        response = await fetchImpl(endpoint, {
+        response = await fetchImpl(transport.endpoint, {
           method: 'POST',
           headers: {
             authorization: `Bearer ${apiKey}`,
-            'content-type': 'application/json',
+            ...transport.headers,
           },
-          body: JSON.stringify(createDoubaoImageRequestBody(request)),
+          body: transport.body as unknown as BodyInit,
           ...proxyRequestInit(),
         } satisfies RequestInitWithDispatcher);
       } catch (error) {
@@ -96,6 +104,46 @@ export function createDoubaoImageProviderAdapter(input: {
       });
     },
   };
+}
+
+function createImageProviderRequestTransport(
+  request: ImageProviderRequest,
+  baseUrl: string,
+): ProviderRequestTransport {
+  if (shouldUseOpenAiImageEditTransport(request)) {
+    return {
+      endpoint: createOpenAiImageEditEndpoint(baseUrl),
+      headers: {},
+      body: createOpenAiImageEditFormData(request),
+    };
+  }
+
+  return {
+    endpoint: createImageGenerationEndpoint(baseUrl),
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(createDoubaoImageRequestBody(request)),
+  };
+}
+
+function shouldUseOpenAiImageEditTransport(request: ImageProviderRequest) {
+  return request.mode === 'edit' && isOpenAiEditModel(request.model);
+}
+
+function isOpenAiEditModel(model: ResolvedImageModel) {
+  const providerCode = model.providerCode.trim().toLowerCase();
+  const providerName = model.providerName.trim().toLowerCase();
+  const baseUrl = model.baseUrl?.trim().toLowerCase() ?? '';
+  const modelName = model.model.trim().toLowerCase();
+
+  return (
+    providerCode === 'openai' ||
+    providerCode.startsWith('openai') ||
+    providerName.includes('openai') ||
+    baseUrl.includes('api.openai.com') ||
+    modelName.startsWith('gpt-image-')
+  );
 }
 
 export function parseDoubaoImageResponse(
@@ -131,6 +179,31 @@ function createDoubaoImageRequestBody(request: ImageProviderRequest): Record<str
         }
       : {}),
   };
+}
+
+function createOpenAiImageEditFormData(request: ImageProviderRequest): UndiciFormData {
+  const sourceImageDataUrl = request.sourceImageDataUrl;
+  const additionalImageDataUrls = Array.isArray(request.additionalImageDataUrls)
+    ? request.additionalImageDataUrls.filter((value) => typeof value === 'string' && value.length > 0)
+    : [];
+  if (!sourceImageDataUrl && additionalImageDataUrls.length === 0) {
+    throw new ProviderRequestError('Provider image edit request is missing a source image.');
+  }
+
+  const formData = new UndiciFormData();
+  formData.set('model', request.model.model);
+  formData.set('prompt', request.prompt);
+  if (request.size) {
+    formData.set('size', request.size);
+  }
+
+  for (const dataUrl of additionalImageDataUrls) {
+    appendImageDataUrlToFormData(formData, dataUrl);
+  }
+  if (sourceImageDataUrl) {
+    appendImageDataUrlToFormData(formData, sourceImageDataUrl);
+  }
+  return formData;
 }
 
 function parseImageArtifacts(
@@ -207,7 +280,7 @@ function ensureTrailingSlash(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
 }
 
-function createDoubaoImageEndpoint(baseUrl: string) {
+function createImageGenerationEndpoint(baseUrl: string) {
   try {
     return new URL('images/generations', ensureTrailingSlash(baseUrl));
   } catch {
@@ -215,8 +288,41 @@ function createDoubaoImageEndpoint(baseUrl: string) {
   }
 }
 
+function createOpenAiImageEditEndpoint(baseUrl: string) {
+  try {
+    return new URL('images/edits', ensureTrailingSlash(baseUrl));
+  } catch {
+    throw new ProviderConfigurationError('Doubao image provider has invalid base URL.');
+  }
+}
+
 function imageTitle(index: number) {
   return index === 0 ? 'Generated image' : `Generated image ${index + 1}`;
+}
+
+function appendImageDataUrlToFormData(formData: UndiciFormData, dataUrl: string) {
+  const match = /^data:(image\/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) {
+    throw new ProviderRequestError('Provider image edit request source image is invalid.');
+  }
+
+  const mimeType = match[1];
+  const bytes = Buffer.from(match[2], 'base64');
+  formData.append(
+    'image[]',
+    new Blob([bytes], { type: mimeType }),
+    `source.${imageExtensionForMimeType(mimeType)}`,
+  );
+}
+
+function imageExtensionForMimeType(mimeType: string) {
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+    return 'jpg';
+  }
+  if (mimeType === 'image/webp') {
+    return 'webp';
+  }
+  return 'png';
 }
 
 function toErrorMessage(error: unknown) {

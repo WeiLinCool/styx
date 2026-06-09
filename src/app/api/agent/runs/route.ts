@@ -62,6 +62,10 @@ const videoRunInputSchema = z.object({
   audioAssetId: z.string().uuid('input.audioAssetId must be a valid UUID.').optional(),
 });
 
+function isWorkflowStoryboardStage(value: unknown) {
+  return value === 'storyboard' || value === 'storyboard-regenerate';
+}
+
 const createAgentRunBodySchema = z
   .object({
     taskType: z.enum(['chat', 'image', 'video', 'workflow']),
@@ -98,6 +102,37 @@ const createAgentRunBodySchema = z
             code: z.ZodIssueCode.custom,
             path: ['input', ...issue.path],
             message: issue.message,
+          });
+        }
+      }
+    }
+
+    if (body.taskType === 'workflow' && isWorkflowStoryboardStage(body.input.stage)) {
+      if (
+        typeof body.input.selectedImageModelId !== 'string' ||
+        body.input.selectedImageModelId.trim().length === 0
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['input', 'selectedImageModelId'],
+          message: 'workflow storyboard input.selectedImageModelId is required.',
+        });
+      }
+
+      const sourceImageDataUrl = body.input.sourceImageDataUrl;
+      if (typeof sourceImageDataUrl !== 'string') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['input', 'sourceImageDataUrl'],
+          message: 'source image is required for workflow storyboard requests.',
+        });
+      } else {
+        const parsed = sourceImageDataUrlSchema.safeParse(sourceImageDataUrl);
+        if (!parsed.success) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['input', 'sourceImageDataUrl'],
+            message: parsed.error.issues[0]?.message ?? 'source image must be a supported data URL.',
           });
         }
       }
