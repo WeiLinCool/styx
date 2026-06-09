@@ -811,3 +811,44 @@ export async function getAdminUsers(): Promise<AdminModuleData<AdminUserRow>> {
     records,
   };
 }
+
+/**
+ * Update user profile fields (displayName, avatarUrl)
+ * @param userId - User ID
+ * @param input - Profile fields to update
+ * @returns Updated user record
+ * @throws AccountDomainError if user not found
+ */
+export async function updateUserProfile(
+  userId: string,
+  input: {
+    displayName?: string;
+    avatarUrl?: string | null;
+  }
+): Promise<typeof schema.users.$inferSelect> {
+  const database = requireDb();
+  
+  const updateData: Partial<typeof schema.users.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+  
+  if (input.displayName !== undefined) {
+    updateData.displayName = input.displayName;
+  }
+  
+  if (input.avatarUrl !== undefined) {
+    updateData.avatarUrl = input.avatarUrl;
+  }
+  
+  const [user] = await database
+    .update(schema.users)
+    .set(updateData)
+    .where(eq(schema.users.id, userId))
+    .returning();
+  
+  if (!user) {
+    throw new AccountDomainError('account_not_found', 'Account not found.', 404);
+  }
+  
+  return user;
+}
