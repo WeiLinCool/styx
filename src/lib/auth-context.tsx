@@ -147,6 +147,20 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (user:
         ...payload.user,
         avatar: avatarUrl || avatarSeed || payload.user.avatar,
       });
+
+      // 如果注册时选择了头像，持久化到服务器
+      if (avatarUrl && payload.user) {
+        try {
+          await fetch('/api/user/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ avatarUrl }),
+          });
+        } catch (error) {
+          console.error('Failed to save avatar during registration:', error);
+          // 不阻塞注册流程
+        }
+      }
     } finally {
       setSubmitting(false);
       setPendingAuthAction(null);
