@@ -130,3 +130,38 @@ export function applyGeneratedWorkflowImage(
     },
   };
 }
+
+export function resolveWorkflowVideoMaterialReadiness(input: {
+  hasSourceImageAsset: boolean;
+  hasSourceImageFile: boolean;
+  hasStoryboardAsset: boolean;
+  hasStoryboardRunArtifact: boolean;
+  hasSceneBackgroundAsset: boolean;
+  hasCustomSceneFile: boolean;
+}) {
+  if (!input.hasSourceImageAsset && !input.hasSourceImageFile) {
+    return {
+      ready: false,
+      message: '请上传本地原图后再生成视频。',
+    };
+  }
+
+  if (!input.hasStoryboardAsset && !input.hasStoryboardRunArtifact) {
+    return {
+      ready: false,
+      message: '请先生成12宫格分镜图。',
+    };
+  }
+
+  if (!input.hasSceneBackgroundAsset && !input.hasCustomSceneFile) {
+    return {
+      ready: false,
+      message: '请上传自定义场景底图后再生成视频。',
+    };
+  }
+
+  return {
+    ready: true,
+    message: null,
+  };
+}

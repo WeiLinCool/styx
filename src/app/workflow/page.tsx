@@ -11,8 +11,11 @@ import {
   getAgentRunDetail,
   getGeneratedRunArtifactAccess,
   listImageModels,
+  saveGeneratedMedia,
+  syncAgentRun,
   getVideoGenerationConfig,
   selectImageModelId,
+  uploadUserMedia,
   type VideoGenerationConfigDto,
   type ImageModelMode,
   type ImageModelOption,
@@ -28,6 +31,7 @@ import {
   applyGeneratedWorkflowImage,
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
+  resolveWorkflowVideoMaterialReadiness,
   resolveWorkflowVideoModelAvailability,
   type WorkflowStateSnapshot,
 } from './workflow-state';
@@ -200,7 +204,7 @@ function WorkflowNav() {
 }
 
 // 上传图案区域
-function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string | null; onUpload: (dataUrl: string) => void }) {
+function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string | null; onUpload: (dataUrl: string, file: File | null) => void }) {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -209,7 +213,7 @@ function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string 
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result;
-      if (typeof result === 'string') onUpload(result);
+      if (typeof result === 'string') onUpload(result, file);
     };
     reader.readAsDataURL(file);
   }, [onUpload]);
@@ -260,7 +264,7 @@ function PatternUploadZone({ uploadedImage, onUpload }: { uploadedImage: string 
           </button>
           <button
             type="button"
-            onClick={() => onUpload('')}
+            onClick={() => onUpload('', null)}
             className="transition-colors hover:text-foreground"
           >
             清空
@@ -479,7 +483,7 @@ function SceneSelector({ selectedScene, customSceneUrl, aiSceneGenerating, aiSce
   aiSceneGenerating: boolean;
   aiSceneGenerated: boolean;
   onSelectPreset: (id: string) => void;
-  onCustomUpload: (url: string) => void;
+  onCustomUpload: (url: string, file: File) => void;
   onAIGenerate: () => void;
   onAiSceneCancel: () => void;
   onAiSceneRegenerate: () => void;
@@ -502,7 +506,7 @@ function SceneSelector({ selectedScene, customSceneUrl, aiSceneGenerating, aiSce
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = (ev) => { const result = ev.target?.result; if (typeof result === 'string') onCustomUpload(result); };
+    reader.onload = (ev) => { const result = ev.target?.result; if (typeof result === 'string') onCustomUpload(result, file); };
     reader.readAsDataURL(file);
   }, [onCustomUpload]);
 
@@ -701,12 +705,22 @@ export default function WorkflowPage() {
   const [storyboardGenerating, setStoryboardGenerating] = useState(false);
   const [storyboardGenerated, setStoryboardGenerated] = useState(false);
   const [storyboardImageUrl, setStoryboardImageUrl] = useState<string | null>(null);
+  const [uploadedImageFile, setUploadedImageFile] = useState<File | null>(null);
+  const [sourceImageAssetId, setSourceImageAssetId] = useState<string | null>(null);
+  const [storyboardRunId, setStoryboardRunId] = useState<string | null>(null);
+  const [storyboardArtifactId, setStoryboardArtifactId] = useState<string | null>(null);
+  const [storyboardAssetId, setStoryboardAssetId] = useState<string | null>(null);
   const [selectedScene, setSelectedScene] = useState<string | null>(null);
   const [customSceneUrl, setCustomSceneUrl] = useState<string | null>(null);
+  const [customSceneFile, setCustomSceneFile] = useState<File | null>(null);
+  const [sceneBackgroundAssetId, setSceneBackgroundAssetId] = useState<string | null>(null);
   const [aiSceneGenerating, setAiSceneGenerating] = useState(false);
   const [aiSceneGenerated, setAiSceneGenerated] = useState(false);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [dreaming, setDreaming] = useState(false);
+  const [dreamRunId, setDreamRunId] = useState<string | null>(null);
+  const [dreamVideoUrl, setDreamVideoUrl] = useState<string | null>(null);
+  const [dreamVideoArtifactId, setDreamVideoArtifactId] = useState<string | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [uploadedImageOrigin, setUploadedImageOrigin] = useState<'manual' | 'generated' | null>(null);
@@ -883,10 +897,23 @@ export default function WorkflowPage() {
     setRuntimeError(null);
   }, []);
 
-  const handlePatternUpload = useCallback((nextImage: string) => {
+  const clearWorkflowMaterialRefs = useCallback(() => {
+    setSourceImageAssetId(null);
+    setStoryboardRunId(null);
+    setStoryboardArtifactId(null);
+    setStoryboardAssetId(null);
+    setSceneBackgroundAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
+  }, []);
+
+  const handlePatternUpload = useCallback((nextImage: string, file: File | null) => {
     setUploadedImage(nextImage || null);
     setUploadedImageOrigin(nextImage ? 'manual' : null);
+    setUploadedImageFile(nextImage ? file : null);
     setPendingGeneratedImage(null);
+    clearWorkflowMaterialRefs();
     const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
     setStep(resetState.step);
     setStoryboardGenerated(resetState.storyboardGenerated);
@@ -898,7 +925,7 @@ export default function WorkflowPage() {
     setAiSceneGenerating(resetState.aiSceneGenerating);
     setDreaming(resetState.dreaming);
     clearRuntimeFeedback();
-  }, [clearRuntimeFeedback, currentSnapshot]);
+  }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot]);
 
   const handleSelectImageModel = useCallback((modelId: string) => {
     if (modelId === selectedImageModel) {
@@ -906,6 +933,7 @@ export default function WorkflowPage() {
     }
     setSelectedImageModel(modelId);
     setPendingGeneratedImage(null);
+    clearWorkflowMaterialRefs();
     const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
     setStep(resetState.step);
     setStoryboardGenerated(resetState.storyboardGenerated);
@@ -917,7 +945,7 @@ export default function WorkflowPage() {
     setAiSceneGenerating(resetState.aiSceneGenerating);
     setDreaming(resetState.dreaming);
     clearRuntimeFeedback();
-  }, [clearRuntimeFeedback, currentSnapshot, selectedImageModel]);
+  }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot, selectedImageModel]);
 
   const handleSelectVideoModel = useCallback((modelId: string) => {
     setSelectedVideoModel(modelId);
@@ -972,6 +1000,12 @@ export default function WorkflowPage() {
     setStoryboardGenerating(true);
     setStoryboardGenerated(false);
     setStoryboardImageUrl(null);
+    setStoryboardRunId(null);
+    setStoryboardArtifactId(null);
+    setStoryboardAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     setRuntimeStatus(null);
     setRuntimeError(null);
 
@@ -1017,6 +1051,9 @@ export default function WorkflowPage() {
       }
 
       setStoryboardImageUrl(access.url);
+      setStoryboardRunId(detail.run.id);
+      setStoryboardArtifactId(artifact.id);
+      setStoryboardAssetId(null);
       setRuntimeStatus('12宫格分镜图已生成。');
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
@@ -1027,6 +1064,9 @@ export default function WorkflowPage() {
       setStoryboardGenerating(false);
       setStoryboardGenerated(false);
       setStoryboardImageUrl(null);
+      setStoryboardRunId(null);
+      setStoryboardArtifactId(null);
+      setStoryboardAssetId(null);
       setRuntimeError(error instanceof Error ? error.message : '分镜生成请求失败');
     }
   }, [
@@ -1046,6 +1086,9 @@ export default function WorkflowPage() {
     setStoryboardGenerating(false);
     setStoryboardGenerated(false);
     setStoryboardImageUrl(null);
+    setStoryboardRunId(null);
+    setStoryboardArtifactId(null);
+    setStoryboardAssetId(null);
     clearRuntimeFeedback();
     setStep(0);
   }, [clearRuntimeFeedback]);
@@ -1071,6 +1114,12 @@ export default function WorkflowPage() {
     setStoryboardGenerating(true);
     setStoryboardGenerated(false);
     setStoryboardImageUrl(null);
+    setStoryboardRunId(null);
+    setStoryboardArtifactId(null);
+    setStoryboardAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     setRuntimeStatus(null);
     setRuntimeError(null);
 
@@ -1116,6 +1165,9 @@ export default function WorkflowPage() {
       }
 
       setStoryboardImageUrl(access.url);
+      setStoryboardRunId(detail.run.id);
+      setStoryboardArtifactId(artifact.id);
+      setStoryboardAssetId(null);
       setRuntimeStatus('12宫格分镜图已重新生成。');
       setStoryboardGenerating(false);
       setStoryboardGenerated(true);
@@ -1126,6 +1178,9 @@ export default function WorkflowPage() {
       setStoryboardGenerating(false);
       setStoryboardGenerated(false);
       setStoryboardImageUrl(null);
+      setStoryboardRunId(null);
+      setStoryboardArtifactId(null);
+      setStoryboardAssetId(null);
       setRuntimeError(error instanceof Error ? error.message : '分镜重新生成请求失败');
     }
   }, [
@@ -1155,16 +1210,26 @@ export default function WorkflowPage() {
     setDreaming(resetState.dreaming);
     setSelectedScene(id);
     setCustomSceneUrl(null);
+    setCustomSceneFile(null);
+    setSceneBackgroundAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     setAiSceneGenerated(false);
     setAiSceneGenerating(false);
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, currentSnapshot]);
 
-  const handleCustomSceneUpload = useCallback((url: string) => {
+  const handleCustomSceneUpload = useCallback((url: string, file: File) => {
     const resetState = resetWorkflowForSceneChange(currentSnapshot());
     setStep(resetState.step);
     setDreaming(resetState.dreaming);
     setCustomSceneUrl(url);
+    setCustomSceneFile(file);
+    setSceneBackgroundAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     setSelectedScene(null);
     setAiSceneGenerated(false);
     setAiSceneGenerating(false);
@@ -1183,6 +1248,10 @@ export default function WorkflowPage() {
     sceneOperationRef.current = operationId;
     setAiSceneGenerating(true);
     setAiSceneGenerated(false);
+    setSceneBackgroundAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     setRuntimeStatus(null);
     setRuntimeError(null);
     try {
@@ -1234,6 +1303,10 @@ export default function WorkflowPage() {
     sceneOperationRef.current = operationId;
     setAiSceneGenerating(true);
     setAiSceneGenerated(false);
+    setSceneBackgroundAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     setRuntimeStatus(null);
     setRuntimeError(null);
     try {
@@ -1270,10 +1343,6 @@ export default function WorkflowPage() {
     if (!isLoggedIn) { openLoginModal(); return; }
     if (activationRequired) return;
     if (dreaming) return;
-    if (!selectedImageModel) {
-      setRuntimeError(imageModelUnavailableMessage ?? '当前没有可用的生图模型。');
-      return;
-    }
     if (videoModelAvailability.status === 'loading') {
       setRuntimeError('视频模型加载中，请稍后再试。');
       return;
@@ -1282,22 +1351,109 @@ export default function WorkflowPage() {
       setRuntimeError(videoModelUnavailableMessage ?? '当前没有可用的视频模型。');
       return;
     }
+    const materialReadiness = resolveWorkflowVideoMaterialReadiness({
+      hasSourceImageAsset: Boolean(sourceImageAssetId),
+      hasSourceImageFile: Boolean(uploadedImageFile),
+      hasStoryboardAsset: Boolean(storyboardAssetId),
+      hasStoryboardRunArtifact: Boolean(storyboardRunId && storyboardArtifactId),
+      hasSceneBackgroundAsset: Boolean(sceneBackgroundAssetId),
+      hasCustomSceneFile: Boolean(customSceneFile),
+    });
+    if (!materialReadiness.ready) {
+      setRuntimeError(materialReadiness.message ?? '请补齐工作流视频材料。');
+      return;
+    }
     const operationId = dreamOperationRef.current + 1;
     dreamOperationRef.current = operationId;
     setStep(3);
     setDreaming(true);
     setRuntimeStatus(null);
     setRuntimeError(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     try {
-      const message = await runWorkflowAgent(prompt, {
-        stage: 'dream',
-        videoModel: selectedVideoModel,
-        selectedScene,
-        hasCustomScene: Boolean(customSceneUrl),
-        hasAiScene: aiSceneGenerated,
-      }, '造梦任务已提交，但没有返回可展示的结果说明。');
+      setRuntimeStatus('正在上传原图、保存分镜图和上传场景底图...');
+      const sourceAssetId =
+        sourceImageAssetId ??
+        (await uploadUserMedia({
+          file: uploadedImageFile as File,
+          title: '工作流原图',
+        })).id;
       if (dreamOperationRef.current !== operationId) return;
-      setRuntimeStatus(message);
+      setSourceImageAssetId(sourceAssetId);
+
+      const storyboardSavedAssetId =
+        storyboardAssetId ??
+        (await saveGeneratedMedia({
+          runId: storyboardRunId as string,
+          artifactId: storyboardArtifactId as string,
+        })).asset.id;
+      if (dreamOperationRef.current !== operationId) return;
+      setStoryboardAssetId(storyboardSavedAssetId);
+
+      const sceneAssetId =
+        sceneBackgroundAssetId ??
+        (await uploadUserMedia({
+          file: customSceneFile as File,
+          title: '工作流场景底图',
+        })).id;
+      if (dreamOperationRef.current !== operationId) return;
+      setSceneBackgroundAssetId(sceneAssetId);
+
+      setRuntimeStatus('视频任务已提交，正在等待模型处理...');
+      const { run } = await createAgentRun({
+        taskType: 'workflow',
+        prompt,
+        input: {
+          stage: 'workflow_video',
+          modelId: selectedVideoModel,
+          sourceImageAssetId: sourceAssetId,
+          storyboardArtifactId: storyboardSavedAssetId,
+          sceneBackgroundAssetId: sceneAssetId,
+          storyboardPromptMap: {
+            storyboardRunId,
+            storyboardArtifactId,
+            workflowPrompt: prompt,
+            sourceImageOrigin: uploadedImageOrigin ?? 'manual',
+            sceneMode: customSceneUrl ? 'custom' : selectedScene ? 'preset' : aiSceneGenerated ? 'ai' : 'unknown',
+          },
+          durationSeconds: videoConfig.defaults.durationSeconds ?? 5,
+          resolution: videoConfig.defaults.resolution ?? '720p',
+          styleCode: videoConfig.defaults.styleCode ?? undefined,
+        },
+      });
+      if (run.status === 'failed') {
+        throw new Error(run.errorMessage ?? '造梦请求失败');
+      }
+      if (dreamOperationRef.current !== operationId) return;
+
+      setDreamRunId(run.id);
+      const syncedRun = await syncAgentRun(run.id).catch(() => run);
+      if (dreamOperationRef.current !== operationId) return;
+      if (syncedRun.status === 'failed') {
+        throw new Error(syncedRun.errorMessage ?? '视频生成请求失败');
+      }
+      if (syncedRun.status !== 'succeeded') {
+        setRuntimeStatus('视频任务已提交，稍后可通过任务同步获取结果。');
+        setDreaming(false);
+        return;
+      }
+
+      const detail = await getAgentRunDetail(run.id);
+      const artifact = detail.run.artifacts.find(
+        (item) => item.kind === 'video' && item.status === 'ready',
+      );
+      if (!artifact) {
+        setRuntimeStatus('视频任务已完成，但暂未找到可预览的视频结果。');
+        setDreaming(false);
+        return;
+      }
+      const access = await getGeneratedRunArtifactAccess(detail.run.id, artifact.id, 'preview');
+      if (dreamOperationRef.current !== operationId) return;
+      setDreamVideoUrl(access.url);
+      setDreamVideoArtifactId(artifact.id);
+      setRuntimeStatus('工作流视频已生成。');
       setDreaming(false);
     } catch (error) {
       if (dreamOperationRef.current !== operationId) return;
@@ -1307,17 +1463,25 @@ export default function WorkflowPage() {
   }, [
     activationRequired,
     aiSceneGenerated,
+    customSceneFile,
     customSceneUrl,
     dreaming,
-    imageModelUnavailableMessage,
     isLoggedIn,
     openLoginModal,
     prompt,
-    runWorkflowAgent,
-    selectedImageModel,
     selectedScene,
     selectedVideoModel,
+    sceneBackgroundAssetId,
+    sourceImageAssetId,
+    storyboardArtifactId,
+    storyboardAssetId,
+    storyboardRunId,
+    uploadedImageFile,
+    uploadedImageOrigin,
     videoConfig.enabled,
+    videoConfig.defaults.durationSeconds,
+    videoConfig.defaults.resolution,
+    videoConfig.defaults.styleCode,
     videoModelAvailability.status,
     videoModelUnavailableMessage,
   ]);
@@ -1336,7 +1500,9 @@ export default function WorkflowPage() {
 
     setUploadedImage(nextState.imageUrl);
     setUploadedImageOrigin('generated');
+    setUploadedImageFile(null);
     setPendingGeneratedImage(null);
+    clearWorkflowMaterialRefs();
     setStep(nextState.resetState.step);
     setStoryboardGenerated(nextState.resetState.storyboardGenerated);
     setStoryboardGenerating(nextState.resetState.storyboardGenerating);
@@ -1347,7 +1513,7 @@ export default function WorkflowPage() {
     setAiSceneGenerating(nextState.resetState.aiSceneGenerating);
     setDreaming(nextState.resetState.dreaming);
     clearRuntimeFeedback();
-  }, [clearRuntimeFeedback, currentSnapshot, uploadedImage, uploadedImageOrigin]);
+  }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot, uploadedImage, uploadedImageOrigin]);
 
   const handleConfirmPendingGeneratedImage = useCallback(() => {
     if (!pendingGeneratedImage) {
@@ -1356,7 +1522,9 @@ export default function WorkflowPage() {
 
     setUploadedImage(pendingGeneratedImage);
     setUploadedImageOrigin('generated');
+    setUploadedImageFile(null);
     setPendingGeneratedImage(null);
+    clearWorkflowMaterialRefs();
     const resetState = resetWorkflowForImageSourceChange(currentSnapshot());
     setStep(resetState.step);
     setStoryboardGenerated(resetState.storyboardGenerated);
@@ -1368,7 +1536,7 @@ export default function WorkflowPage() {
     setAiSceneGenerating(resetState.aiSceneGenerating);
     setDreaming(resetState.dreaming);
     clearRuntimeFeedback();
-  }, [clearRuntimeFeedback, currentSnapshot, pendingGeneratedImage]);
+  }, [clearRuntimeFeedback, clearWorkflowMaterialRefs, currentSnapshot, pendingGeneratedImage]);
 
   const handleRejectPendingGeneratedImage = useCallback(() => {
     setPendingGeneratedImage(null);
@@ -1379,6 +1547,11 @@ export default function WorkflowPage() {
     setStep(nextState.step);
     setSelectedScene(nextState.selectedScene);
     setCustomSceneUrl(nextState.customSceneUrl);
+    setCustomSceneFile(null);
+    setSceneBackgroundAssetId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
     setAiSceneGenerated(nextState.aiSceneGenerated);
     setAiSceneGenerating(nextState.aiSceneGenerating);
     setDreaming(nextState.dreaming);
@@ -1613,9 +1786,20 @@ export default function WorkflowPage() {
                 </div>
                 {dreaming ? (
                   <DreamGeneration videoModel={currentVideoModel?.name || ''} />
+                ) : dreamVideoUrl ? (
+                  <div className="space-y-4">
+                    <div className="overflow-hidden rounded-xl border border-border bg-black">
+                      <video src={dreamVideoUrl} controls className="aspect-video w-full bg-black" />
+                    </div>
+                    <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm text-muted-foreground">
+                      工作流视频已生成{dreamVideoArtifactId ? `，结果 ID：${dreamVideoArtifactId}` : ''}。
+                    </div>
+                  </div>
                 ) : (
                   <div className="rounded-xl border border-border bg-secondary/40 px-4 py-6 text-sm text-muted-foreground">
-                    造梦任务已结束。你可以返回上一步继续调整场景、提示词或视频模型后重新开始。
+                    {dreamRunId
+                      ? `造梦任务已提交，任务 ID：${dreamRunId}。你可以稍后同步任务结果。`
+                      : '造梦任务已结束。你可以返回上一步继续调整场景、提示词或视频模型后重新开始。'}
                   </div>
                 )}
               </div>

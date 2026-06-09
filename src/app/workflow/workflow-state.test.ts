@@ -7,6 +7,7 @@ import {
   createWorkflowVideoModelState,
   resetWorkflowForImageSourceChange,
   resetWorkflowForSceneChange,
+  resolveWorkflowVideoMaterialReadiness,
   resolveWorkflowVideoModelAvailability,
   type WorkflowStateSnapshot,
 } from './workflow-state';
@@ -187,6 +188,68 @@ test('applyGeneratedWorkflowImage returns the image URL and preserves whether a 
         aiSceneGenerating: false,
         dreaming: false,
       },
+    },
+  );
+});
+
+test('resolveWorkflowVideoMaterialReadiness requires real source, storyboard, and scene materials', () => {
+  assert.deepEqual(
+    resolveWorkflowVideoMaterialReadiness({
+      hasSourceImageAsset: false,
+      hasSourceImageFile: false,
+      hasStoryboardAsset: true,
+      hasStoryboardRunArtifact: true,
+      hasSceneBackgroundAsset: true,
+      hasCustomSceneFile: true,
+    }),
+    {
+      ready: false,
+      message: '请上传本地原图后再生成视频。',
+    },
+  );
+
+  assert.deepEqual(
+    resolveWorkflowVideoMaterialReadiness({
+      hasSourceImageAsset: true,
+      hasSourceImageFile: false,
+      hasStoryboardAsset: false,
+      hasStoryboardRunArtifact: false,
+      hasSceneBackgroundAsset: true,
+      hasCustomSceneFile: false,
+    }),
+    {
+      ready: false,
+      message: '请先生成12宫格分镜图。',
+    },
+  );
+
+  assert.deepEqual(
+    resolveWorkflowVideoMaterialReadiness({
+      hasSourceImageAsset: true,
+      hasSourceImageFile: false,
+      hasStoryboardAsset: true,
+      hasStoryboardRunArtifact: false,
+      hasSceneBackgroundAsset: false,
+      hasCustomSceneFile: false,
+    }),
+    {
+      ready: false,
+      message: '请上传自定义场景底图后再生成视频。',
+    },
+  );
+
+  assert.deepEqual(
+    resolveWorkflowVideoMaterialReadiness({
+      hasSourceImageAsset: false,
+      hasSourceImageFile: true,
+      hasStoryboardAsset: false,
+      hasStoryboardRunArtifact: true,
+      hasSceneBackgroundAsset: false,
+      hasCustomSceneFile: true,
+    }),
+    {
+      ready: true,
+      message: null,
     },
   );
 });

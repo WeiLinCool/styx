@@ -66,6 +66,18 @@ function isWorkflowStoryboardStage(value: unknown) {
   return value === 'storyboard' || value === 'storyboard-regenerate';
 }
 
+const workflowVideoRunInputSchema = z.object({
+  stage: z.literal('workflow_video'),
+  modelId: optionalNonEmptyStringSchema.optional(),
+  sourceImageAssetId: z.string().uuid('input.sourceImageAssetId must be a valid UUID.'),
+  storyboardArtifactId: z.string().uuid('input.storyboardArtifactId must be a valid UUID.'),
+  sceneBackgroundAssetId: z.string().uuid('input.sceneBackgroundAssetId must be a valid UUID.'),
+  storyboardPromptMap: z.record(z.string(), z.unknown()),
+  durationSeconds: z.number().int().positive().optional(),
+  resolution: optionalNonEmptyStringSchema.optional(),
+  styleCode: optionalNonEmptyStringSchema.optional(),
+});
+
 const createAgentRunBodySchema = z
   .object({
     taskType: z.enum(['chat', 'image', 'video', 'workflow']),
@@ -133,6 +145,19 @@ const createAgentRunBodySchema = z
             code: z.ZodIssueCode.custom,
             path: ['input', 'sourceImageDataUrl'],
             message: parsed.error.issues[0]?.message ?? 'source image must be a supported data URL.',
+          });
+        }
+      }
+    }
+
+    if (body.taskType === 'workflow' && body.input.stage === 'workflow_video') {
+      const parsed = workflowVideoRunInputSchema.safeParse(body.input);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['input', ...issue.path],
+            message: issue.message,
           });
         }
       }
