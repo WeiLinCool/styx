@@ -95,6 +95,7 @@ export function createLoginHandler(
               displayName: result.user.displayName,
               phone: result.user.phone,
               email: result.user.email,
+              avatar: result.user.avatarUrl || result.user.phone || result.user.email || result.user.displayName,
               accountState: result.user.accountState,
               mustResetPassword: result.user.metadata?.mustResetPassword === true,
               storageUsedBytes: result.user.storageUsedBytes,
