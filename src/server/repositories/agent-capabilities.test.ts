@@ -5,8 +5,10 @@ import {
   getSeedAgentCapabilityAdminData,
   getDefaultAgentCapabilityBundle,
   readStoryboardCapabilityConfig,
+  readWorkflowVideoMvpCapabilityConfig,
   seedAgentCapabilities,
   seedAgentCapabilityBundles,
+  validateWorkflowVideoMvpCapabilityDraft,
 } from './agent-capabilities';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -56,4 +58,37 @@ test('readStoryboardCapabilityConfig returns storyboard prompt and layout config
   assert.equal(config?.layout.columns, 4);
   assert.equal(config?.layout.rows, 3);
   assert.equal(config?.templateAsset, null);
+});
+
+test('readWorkflowVideoMvpCapabilityConfig returns skill-like workflow video config', () => {
+  const snapshot = getDefaultAgentCapabilityBundle('workflow');
+
+  assert.ok(snapshot);
+
+  const config = readWorkflowVideoMvpCapabilityConfig(snapshot!);
+
+  assert.equal(config?.code, 'workflow-video-mvp');
+  assert.equal(config?.modelBinding.providerCode, 'doubao');
+  assert.equal(config?.modelBinding.model, 'doubao-seedance-2-0');
+  assert.equal(config?.modelBinding.executionProtocol, 'video_task_polling');
+  assert.deepEqual(config?.inputSchema.requiredMaterials, [
+    'source_image',
+    'storyboard_image',
+    'scene_background',
+  ]);
+  assert.deepEqual(config?.inputSchema.requiredSnapshots, ['storyboard_prompt_map']);
+  assert.equal(config?.defaults.durationSeconds, 5);
+  assert.equal(config?.defaults.resolution, '720p');
+});
+
+test('validateWorkflowVideoMvpCapabilityDraft rejects empty prompt templates', () => {
+  assert.throws(
+    () =>
+      validateWorkflowVideoMvpCapabilityDraft({
+        description: '工作流视频',
+        promptTemplate: '   ',
+        defaults: { durationSeconds: 5, resolution: '720p' },
+      }),
+    /视频提示词不能为空/,
+  );
 });

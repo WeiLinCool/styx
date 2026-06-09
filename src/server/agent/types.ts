@@ -67,6 +67,34 @@ export type WorkflowStoryboardCapabilityConfig = {
   updatedByUserId: string | null;
 };
 
+export type WorkflowVideoMvpRequiredMaterial =
+  | 'source_image'
+  | 'storyboard_image'
+  | 'scene_background';
+
+export type WorkflowVideoMvpRequiredSnapshot = 'storyboard_prompt_map';
+
+export type WorkflowVideoMvpCapabilityConfig = {
+  code: 'workflow-video-mvp';
+  description: string;
+  inputSchema: {
+    requiredMaterials: WorkflowVideoMvpRequiredMaterial[];
+    requiredSnapshots: WorkflowVideoMvpRequiredSnapshot[];
+  };
+  promptTemplate: string;
+  modelBinding: {
+    providerCode: 'doubao';
+    model: 'doubao-seedance-2-0';
+    executionProtocol: 'video_task_polling';
+  };
+  defaults: {
+    durationSeconds: number;
+    resolution: string;
+  };
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+};
+
 export type AgentArtifactDto = {
   id: string;
   kind: AgentArtifactKind;

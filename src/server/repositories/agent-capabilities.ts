@@ -11,6 +11,7 @@ import type {
   StoryboardTemplateAsset,
   WorkflowStoryboardCapabilityConfig,
   WorkflowStoryboardLayout,
+  WorkflowVideoMvpCapabilityConfig,
 } from '@/server/agent/types';
 import { db, schema } from '@/server/db';
 import {
@@ -91,6 +92,75 @@ function createDefaultWorkflowStoryboardConfig(): Omit<
   };
 }
 
+const WORKFLOW_VIDEO_MVP_REQUIRED_MATERIALS = [
+  'source_image',
+  'storyboard_image',
+  'scene_background',
+] as const;
+
+const WORKFLOW_VIDEO_MVP_REQUIRED_SNAPSHOTS = ['storyboard_prompt_map'] as const;
+
+function createDefaultWorkflowVideoMvpConfig(): Omit<
+  WorkflowVideoMvpCapabilityConfig,
+  'code'
+> {
+  return {
+    description: '将原图、12宫格分镜图、场景底图和提示词地图合成为工作流视频。',
+    inputSchema: {
+      requiredMaterials: [...WORKFLOW_VIDEO_MVP_REQUIRED_MATERIALS],
+      requiredSnapshots: [...WORKFLOW_VIDEO_MVP_REQUIRED_SNAPSHOTS],
+    },
+    promptTemplate: [
+      '请基于以下工作流材料生成短视频：',
+      '原图：{{source_image_url}}',
+      '12宫格分镜图：{{storyboard_image_url}}',
+      '场景底图：{{scene_background_url}}',
+      '提示词地图：{{storyboard_prompt_map}}',
+      '用户补充要求：{{workflow_prompt}}',
+      '视频规格：{{duration_seconds}} 秒，{{resolution}}。',
+    ].join('\n'),
+    modelBinding: {
+      providerCode: 'doubao',
+      model: 'doubao-seedance-2-0',
+      executionProtocol: 'video_task_polling',
+    },
+    defaults: {
+      durationSeconds: 5,
+      resolution: '720p',
+    },
+    updatedAt: null,
+    updatedByUserId: null,
+  };
+}
+
+export function validateWorkflowVideoMvpCapabilityDraft(input: {
+  description: string;
+  promptTemplate: string;
+  defaults: { durationSeconds: number; resolution: string };
+}) {
+  const description = input.description.trim();
+  const promptTemplate = input.promptTemplate.trim();
+  const resolution = input.defaults.resolution.trim();
+
+  if (!promptTemplate) {
+    throw new StoryboardCapabilityValidationError('工作流视频提示词不能为空。');
+  }
+
+  if (!Number.isInteger(input.defaults.durationSeconds) || input.defaults.durationSeconds <= 0) {
+    throw new StoryboardCapabilityValidationError('工作流视频默认时长必须为正整数。');
+  }
+
+  if (!resolution) {
+    throw new StoryboardCapabilityValidationError('工作流视频默认分辨率不能为空。');
+  }
+
+  return {
+    description: description || createDefaultWorkflowVideoMvpConfig().description,
+    promptTemplate,
+    defaults: { durationSeconds: input.defaults.durationSeconds, resolution },
+  };
+}
+
 function storyboardSeedCapabilityRecord(): AgentCapabilityRecord {
   return seedAgentCapabilities.find(
     (capability) => capability.code === 'workflow-storyboard-template',
@@ -144,6 +214,14 @@ export const seedAgentCapabilities = [
     status: 'enabled',
     config: createDefaultWorkflowStoryboardConfig(),
   },
+  {
+    id: '66666666-6666-4666-8666-666666666666',
+    kind: 'skill',
+    code: 'workflow-video-mvp',
+    name: '工作流视频生成',
+    status: 'enabled',
+    config: createDefaultWorkflowVideoMvpConfig(),
+  },
 ] satisfies AgentCapabilityRecord[];
 
 export const seedAgentCapabilityBundles = [
@@ -195,6 +273,7 @@ export const seedAgentCapabilityBundles = [
       '33333333-3333-4333-8333-333333333333',
       '44444444-4444-4444-8444-444444444444',
       '55555555-5555-4555-8555-555555555555',
+      '66666666-6666-4666-8666-666666666666',
     ],
   },
 ] satisfies AgentCapabilityBundleRecord[];
@@ -400,6 +479,24 @@ export function readStoryboardCapabilityConfig(
   };
 }
 
+export function readWorkflowVideoMvpCapabilityConfig(
+  snapshot: AgentCapabilitySnapshot,
+): WorkflowVideoMvpCapabilityConfig | null {
+  const capability = snapshot.capabilities.find(
+    (item) => item.code === 'workflow-video-mvp',
+  );
+
+  if (!capability) {
+    return null;
+  }
+
+  const config = isRecord(capability.config) ? capability.config : {};
+  return {
+    code: 'workflow-video-mvp',
+    ...normalizeWorkflowVideoMvpCapabilityConfigRecord(config),
+  };
+}
+
 function normalizeStoryboardCapabilityConfigRecord(
   config: Record<string, unknown>,
 ): Omit<WorkflowStoryboardCapabilityConfig, 'code'> {
@@ -422,6 +519,45 @@ function normalizeStoryboardCapabilityConfigRecord(
   };
 }
 
+function normalizeWorkflowVideoMvpCapabilityConfigRecord(
+  config: Record<string, unknown>,
+): Omit<WorkflowVideoMvpCapabilityConfig, 'code'> {
+  const defaults = createDefaultWorkflowVideoMvpConfig();
+  const rawDefaults = isRecord(config.defaults) ? config.defaults : {};
+  const durationSeconds =
+    typeof rawDefaults.durationSeconds === 'number' &&
+    Number.isInteger(rawDefaults.durationSeconds) &&
+    rawDefaults.durationSeconds > 0
+      ? rawDefaults.durationSeconds
+      : defaults.defaults.durationSeconds;
+  const resolution =
+    typeof rawDefaults.resolution === 'string' && rawDefaults.resolution.trim().length > 0
+      ? rawDefaults.resolution.trim()
+      : defaults.defaults.resolution;
+
+  return {
+    description:
+      typeof config.description === 'string' && config.description.trim().length > 0
+        ? config.description
+        : defaults.description,
+    inputSchema: defaults.inputSchema,
+    promptTemplate:
+      typeof config.promptTemplate === 'string' && config.promptTemplate.trim().length > 0
+        ? config.promptTemplate
+        : defaults.promptTemplate,
+    modelBinding: defaults.modelBinding,
+    defaults: {
+      durationSeconds,
+      resolution,
+    },
+    updatedAt: typeof config.updatedAt === 'string' ? config.updatedAt : defaults.updatedAt,
+    updatedByUserId:
+      typeof config.updatedByUserId === 'string'
+        ? config.updatedByUserId
+        : defaults.updatedByUserId,
+  };
+}
+
 function summarizeCapabilityConfig(config: Record<string, unknown>, code?: string) {
   if (code === 'workflow-storyboard-template') {
     const storyboard = normalizeStoryboardCapabilityConfigRecord(config);
@@ -431,6 +567,17 @@ function summarizeCapabilityConfig(config: Record<string, unknown>, code?: strin
       `模板: ${storyboard.templateAsset ? '已配置' : '缺失'}`,
       `尺寸: ${storyboard.layout.width}x${storyboard.layout.height}`,
       `布局: ${storyboard.layout.columns}x${storyboard.layout.rows}`,
+    ].join(' · ');
+  }
+
+  if (code === 'workflow-video-mvp') {
+    const video = normalizeWorkflowVideoMvpCapabilityConfigRecord(config);
+
+    return [
+      `提示词: ${video.promptTemplate.trim().length > 0 ? '已配置' : '缺失'}`,
+      '模型: doubao-seedance-2-0',
+      `素材: ${WORKFLOW_VIDEO_MVP_REQUIRED_MATERIALS.join('+')}`,
+      `默认: ${video.defaults.durationSeconds}s/${video.defaults.resolution}`,
     ].join(' · ');
   }
 
@@ -457,51 +604,57 @@ function summarizeCapabilityConfig(config: Record<string, unknown>, code?: strin
 }
 
 async function ensureWorkflowStoryboardCapabilitySeed(database: NonNullable<typeof db>) {
-  const capability = storyboardSeedCapabilityRecord();
+  const capabilities = seedAgentCapabilities.filter(
+    (capability) =>
+      capability.code === 'workflow-storyboard-template' ||
+      capability.code === 'workflow-video-mvp',
+  );
   const workflowBundle = workflowDefaultBundleRecord();
 
-  const [existingCapability] = await database
-    .select({ id: schema.agentCapabilities.id })
-    .from(schema.agentCapabilities)
-    .where(eq(schema.agentCapabilities.id, capability.id))
-    .limit(1);
+  for (const [index, capability] of capabilities.entries()) {
+    const [existingCapability] = await database
+      .select({ id: schema.agentCapabilities.id })
+      .from(schema.agentCapabilities)
+      .where(eq(schema.agentCapabilities.id, capability.id))
+      .limit(1);
 
-  if (!existingCapability) {
-    await database
-      .insert(schema.agentCapabilities)
-      .values({
-        id: capability.id,
-        kind: capability.kind,
-        code: capability.code,
-        name: capability.name,
-        status: capability.status,
-        scope: 'global',
-        config: structuredClone(capability.config),
-        secretMetadata: {},
-      })
-      .onConflictDoNothing();
-  }
+    if (!existingCapability) {
+      await database
+        .insert(schema.agentCapabilities)
+        .values({
+          id: capability.id,
+          kind: capability.kind,
+          code: capability.code,
+          name: capability.name,
+          status: capability.status,
+          scope: 'global',
+          config: structuredClone(capability.config),
+          secretMetadata: {},
+        })
+        .onConflictDoNothing();
+    }
 
-  const [existingBundleItem] = await database
-    .select({ capabilityId: schema.agentCapabilityBundleItems.capabilityId })
-    .from(schema.agentCapabilityBundleItems)
-    .where(
-      and(
-        eq(schema.agentCapabilityBundleItems.bundleId, workflowBundle.id),
-        eq(schema.agentCapabilityBundleItems.capabilityId, capability.id),
-      ),
-    )
-    .limit(1);
+    const [existingBundleItem] = await database
+      .select({ capabilityId: schema.agentCapabilityBundleItems.capabilityId })
+      .from(schema.agentCapabilityBundleItems)
+      .where(
+        and(
+          eq(schema.agentCapabilityBundleItems.bundleId, workflowBundle.id),
+          eq(schema.agentCapabilityBundleItems.capabilityId, capability.id),
+        ),
+      )
+      .limit(1);
 
-  if (!existingBundleItem) {
-    await database
-      .insert(schema.agentCapabilityBundleItems)
-      .values({
-        bundleId: workflowBundle.id,
-        capabilityId: capability.id,
-        sortOrder: 40,
-      })
-      .onConflictDoNothing();
+    if (!existingBundleItem) {
+      await database
+        .insert(schema.agentCapabilityBundleItems)
+        .values({
+          bundleId: workflowBundle.id,
+          capabilityId: capability.id,
+          sortOrder: 40 + index,
+        })
+        .onConflictDoNothing();
+    }
   }
 }
 
