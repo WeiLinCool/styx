@@ -46,3 +46,4 @@ pids/
 .superpowers/
 .worktrees/
 deploy-artifacts
+test-results
