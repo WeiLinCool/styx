@@ -127,6 +127,8 @@ function createDefaultWorkflowVideoMvpConfig(): Omit<
       '用户补充要求：{{workflow_prompt}}',
       '视频规格：{{duration_seconds}} 秒，{{resolution}}。',
     ].join('\n'),
+    storyboardDefaultPrompt:
+      '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板',
     modelBinding: {
       providerCode: 'doubao',
       model: 'doubao-seedance-2-0',
@@ -145,6 +147,7 @@ function createDefaultWorkflowVideoMvpConfig(): Omit<
 export function validateWorkflowVideoMvpCapabilityDraft(input: {
   description: string;
   promptTemplate: string;
+  storyboardDefaultPrompt?: string;
   modelBinding?: {
     providerCode?: string;
     model?: string;
@@ -155,6 +158,7 @@ export function validateWorkflowVideoMvpCapabilityDraft(input: {
 }) {
   const description = input.description.trim();
   const promptTemplate = input.promptTemplate.trim();
+  const storyboardDefaultPrompt = (input.storyboardDefaultPrompt ?? '').trim();
   const resolution = input.defaults.resolution.trim();
   const defaultModelBinding = createDefaultWorkflowVideoMvpConfig().modelBinding;
   const providerCode: 'doubao' =
@@ -194,6 +198,7 @@ export function validateWorkflowVideoMvpCapabilityDraft(input: {
   return {
     description: description || createDefaultWorkflowVideoMvpConfig().description,
     promptTemplate,
+    storyboardDefaultPrompt: storyboardDefaultPrompt || createDefaultWorkflowVideoMvpConfig().storyboardDefaultPrompt,
     modelBinding: {
       providerCode,
       model: modelBindingModel,
@@ -601,6 +606,10 @@ function normalizeWorkflowVideoMvpCapabilityConfigRecord(
       typeof config.promptTemplate === 'string' && config.promptTemplate.trim().length > 0
         ? config.promptTemplate
         : defaults.promptTemplate,
+    storyboardDefaultPrompt:
+      typeof config.storyboardDefaultPrompt === 'string' && config.storyboardDefaultPrompt.trim().length > 0
+        ? config.storyboardDefaultPrompt.trim()
+        : defaults.storyboardDefaultPrompt,
     modelBinding: {
       providerCode,
       model,
@@ -1052,6 +1061,7 @@ export async function saveWorkflowVideoMvpCapabilityConfig(input: {
   adminUserId: string;
   description: string;
   promptTemplate: string;
+  storyboardDefaultPrompt: string;
   modelBinding?: {
     providerCode?: string;
     model?: string;
@@ -1074,6 +1084,7 @@ export async function saveWorkflowVideoMvpCapabilityConfig(input: {
     description: draft.description,
     inputSchema: defaults.inputSchema,
     promptTemplate: draft.promptTemplate,
+    storyboardDefaultPrompt: draft.storyboardDefaultPrompt,
     modelBinding: draft.modelBinding,
     defaults: draft.defaults,
     sceneBackgrounds: draft.sceneBackgrounds,

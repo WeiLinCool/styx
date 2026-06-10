@@ -89,18 +89,19 @@ function makeVideoConfig(overrides: Partial<VideoGenerationConfigDto> = {}): Vid
       durationSeconds: 5,
       resolution: '720p',
     },
-    models: [
+models: [
       {
         id: 'model-video',
-        code: 'seedance',
-        name: 'Seedance',
+        code: 'doubao-seedance',
+        name: 'Doubao Seedance',
         providerName: 'Doubao',
-        isDefault: true,
-        entitlementLabel: 'Pro',
+        isDefault: false,
+        entitlementLabel: '会员',
         pricingSummary: '3 credits minimum',
       },
     ],
     workflowSceneBackgrounds: [],
+    workflowStoryboardDefaultPrompt: null,
     ...overrides,
   };
 }

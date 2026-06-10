@@ -74,6 +74,8 @@ test('GET workflow-video-config returns skill-like config', async () => {
         requiredSnapshots: ['storyboard_prompt_map'],
       },
       promptTemplate: '生成 {{workflow_prompt}}',
+      storyboardDefaultPrompt:
+        '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板',
       modelBinding: {
         providerCode: 'doubao',
         model: 'doubao-seedance-2-0',
@@ -113,7 +115,7 @@ test('PUT workflow-video-config saves parsed config', async () => {
       savedPrompt = input.promptTemplate;
       savedBackgrounds = input.sceneBackgrounds;
       savedModel = input.modelBinding?.model ?? '';
-      return {
+return {
         capabilityId,
         capabilityCode: 'workflow-video-mvp',
         capabilityName: '工作流视频生成',
@@ -125,6 +127,7 @@ test('PUT workflow-video-config saves parsed config', async () => {
           requiredSnapshots: ['storyboard_prompt_map'],
         },
         promptTemplate: input.promptTemplate,
+        storyboardDefaultPrompt: input.storyboardDefaultPrompt,
         modelBinding: {
           providerCode: 'doubao',
           model: input.modelBinding?.model ?? '',
@@ -132,8 +135,8 @@ test('PUT workflow-video-config saves parsed config', async () => {
         },
         defaults: input.defaults,
         sceneBackgrounds: normalizeWorkflowSceneBackgrounds(input.sceneBackgrounds),
-        updatedAt: '2026-06-09T10:00:00.000Z',
-        updatedByUserId: input.adminUserId,
+        updatedAt: '2025-01-01T00:00:00Z',
+        updatedByUserId: 'admin-1',
       };
     },
   });
@@ -241,6 +244,7 @@ test('PUT workflow-video-config reads decrypted JSON body before validation', as
           requiredSnapshots: ['storyboard_prompt_map'],
         },
         promptTemplate: input.promptTemplate,
+        storyboardDefaultPrompt: input.storyboardDefaultPrompt,
         modelBinding: input.modelBinding ?? {
           providerCode: 'doubao',
           model: 'doubao-seedance-2-0',

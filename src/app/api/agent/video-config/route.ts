@@ -94,6 +94,11 @@ function toVideoConfigDto(
           }))
       : [];
 
+  const workflowStoryboardDefaultPrompt =
+    policy.enabled && workflowVideoConfig && workflowVideoConfig.storyboardDefaultPrompt.trim()
+      ? workflowVideoConfig.storyboardDefaultPrompt.trim()
+      : null;
+
   return {
     enabled: policy.enabled,
     upgradeRequired: policy.upgradeRequired,
@@ -117,6 +122,7 @@ function toVideoConfigDto(
         },
     models: policy.enabled ? models : [],
     workflowSceneBackgrounds,
+    workflowStoryboardDefaultPrompt,
   };
 }
 

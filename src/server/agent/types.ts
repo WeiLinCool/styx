@@ -91,6 +91,7 @@ export type WorkflowVideoMvpCapabilityConfig = {
     requiredSnapshots: WorkflowVideoMvpRequiredSnapshot[];
   };
   promptTemplate: string;
+  storyboardDefaultPrompt: string;
   modelBinding: {
     providerCode: 'doubao';
     model: string;

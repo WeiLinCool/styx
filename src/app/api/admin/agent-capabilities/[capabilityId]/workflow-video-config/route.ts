@@ -28,6 +28,10 @@ const bodySchema = z.object({
     .string({ message: 'promptTemplate is required.' })
     .transform((value) => value.trim())
     .pipe(z.string().min(1, 'promptTemplate is required.')),
+  storyboardDefaultPrompt: z
+    .string()
+    .transform((value) => value.trim())
+    .default('石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板'),
   defaults: z.object({
     durationSeconds: z.number().int().positive(),
     resolution: z.string().transform((value) => value.trim()).pipe(z.string().min(1)),
@@ -72,6 +76,7 @@ export function createWorkflowVideoConfigRouteHandlers(dependencies: {
     adminUserId: string;
     description: string;
     promptTemplate: string;
+    storyboardDefaultPrompt: string;
     modelBinding?: {
       providerCode: 'doubao';
       model: string;

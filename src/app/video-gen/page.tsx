@@ -52,20 +52,21 @@ const IMAGE_UPLOAD_ACCEPT = 'image/png,image/jpeg,image/webp';
 const AUDIO_UPLOAD_ACCEPT = 'audio/mpeg,audio/wav,audio/mp4,audio/x-wav';
 
 const emptyVideoConfig: VideoGenerationConfigDto = {
-  enabled: false,
-  upgradeRequired: false,
-  message: null,
-  styles: [],
-  durations: [],
-  resolutions: [],
-  defaults: {
-    styleCode: null,
-    durationSeconds: null,
-    resolution: null,
-  },
-  models: [],
-  workflowSceneBackgrounds: [],
-};
+    enabled: false,
+    upgradeRequired: false,
+    message: null,
+    styles: [],
+    durations: [],
+    resolutions: [],
+    defaults: {
+      styleCode: null,
+      durationSeconds: null,
+      resolution: null,
+    },
+    models: [],
+    workflowSceneBackgrounds: [],
+    workflowStoryboardDefaultPrompt: null,
+  };
 
 function reconcileSelectedValue<T extends string | number>(
   values: T[],

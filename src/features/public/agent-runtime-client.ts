@@ -63,6 +63,7 @@ export type VideoGenerationConfigDto = {
   };
   models: VideoModelOption[];
   workflowSceneBackgrounds: WorkflowSceneBackgroundOption[];
+  workflowStoryboardDefaultPrompt: string | null;
 };
 
 export type AgentRuntimeApiErrorCode =
@@ -381,21 +382,22 @@ export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfi
   const message = typeof payload.message === 'string' ? payload.message : null;
 
   if (!enabled) {
-    return {
-      enabled: false,
-      upgradeRequired,
-      message,
-      styles: [],
-      durations: [],
-      resolutions: [],
-      defaults: {
-        styleCode: null,
-        durationSeconds: null,
-        resolution: null,
-      },
-      models: [],
-      workflowSceneBackgrounds: [],
-    };
+return {
+    enabled: false,
+    upgradeRequired: false,
+    message: null,
+    styles: [],
+    durations: [],
+    resolutions: [],
+    defaults: {
+      styleCode: null,
+      durationSeconds: null,
+      resolution: null,
+    },
+    models: [],
+    workflowSceneBackgrounds: [],
+    workflowStoryboardDefaultPrompt: null,
+  };
   }
 
   const rawStyles = Array.isArray(payload.styles) ? payload.styles : [];
@@ -425,6 +427,10 @@ export function parseVideoGenerationConfig(value: unknown): VideoGenerationConfi
     workflowSceneBackgrounds: rawWorkflowSceneBackgrounds
       .map(parseWorkflowSceneBackground)
       .filter((background): background is WorkflowSceneBackgroundOption => background !== null),
+    workflowStoryboardDefaultPrompt:
+      typeof payload.workflowStoryboardDefaultPrompt === 'string'
+        ? payload.workflowStoryboardDefaultPrompt
+        : null,
   };
 }
 

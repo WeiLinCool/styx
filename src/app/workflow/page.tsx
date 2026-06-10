@@ -76,8 +76,8 @@ import {
 } from 'lucide-react';
 import UserAvatar from '@/components/user-avatar';
 
-// 默认提示词
-const DEFAULT_PROMPT = '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板';
+// 默认提示词将在videoConfig加载后从API获取
+const DEFAULT_FALLBACK_PROMPT = '石头印画风格，将图案转化为石纹肌理效果，保留原始构图，增添天然石纹质感和裂缝光影细节，色调温暖沉稳，边缘自然风化，背景深色石板';
 const WORKFLOW_DRAFT_STORAGE_KEY = 'lingwei.workflow-video-mvp.draft.v1';
 const WORKFLOW_VIDEO_SYNC_INTERVAL_MS = 3000;
 const WORKFLOW_VIDEO_SYNC_MAX_ATTEMPTS = 120;
@@ -111,6 +111,7 @@ const emptyVideoConfig: VideoGenerationConfigDto = {
   },
   models: [],
   workflowSceneBackgrounds: [],
+  workflowStoryboardDefaultPrompt: null,
 };
 
 function wait(ms: number): Promise<void> {
@@ -665,7 +666,7 @@ export default function WorkflowPage() {
   const [storyboardArtifactId, setStoryboardArtifactId] = useState<string | null>(null);
   const [storyboardAssetId, setStoryboardAssetId] = useState<string | null>(null);
   const [selectedSceneBackgroundId, setSelectedSceneBackgroundId] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+  const [prompt, setPrompt] = useState(DEFAULT_FALLBACK_PROMPT);
   const [dreaming, setDreaming] = useState(false);
   const [dreamRunId, setDreamRunId] = useState<string | null>(null);
   const [dreamVideoUrl, setDreamVideoUrl] = useState<string | null>(null);
@@ -772,7 +773,7 @@ export default function WorkflowPage() {
     setStoryboardArtifactId(draft.storyboardArtifactId);
     setStoryboardAssetId(draft.storyboardAssetId);
     setSelectedSceneBackgroundId(draft.selectedSceneBackgroundId);
-    setPrompt(draft.prompt || DEFAULT_PROMPT);
+    setPrompt(draft.prompt || DEFAULT_FALLBACK_PROMPT);
     setSelectedVideoModel(draft.selectedVideoModel);
     setSelectedDurationSeconds(draft.selectedDurationSeconds);
     setSelectedResolution(draft.selectedResolution);
@@ -780,6 +781,8 @@ export default function WorkflowPage() {
     setDreamRunId(draft.dreamRunId);
     setDreamVideoUrl(draft.dreamVideoUrl);
     setDreamVideoArtifactId(draft.dreamVideoArtifactId);
+    // 不自动选择历史记录，保持空白工作流状态
+    setSelectedWorkflowHistoryRunId(null);
 
     if (!draft.uploadedImage && draft.sourceImageAssetId) {
       void getSavedMediaAssetAccess(draft.sourceImageAssetId, 'preview')
@@ -934,6 +937,11 @@ export default function WorkflowPage() {
           status: nextVideoModelState.status,
           message: nextVideoModelState.message,
         }));
+
+        // 当管理端配置了默认提示词时，使用管理端配置，否则保持当前状态（可能是草稿恢复的值）
+        if (config.workflowStoryboardDefaultPrompt && !draftHydratedRef.current) {
+          setPrompt(config.workflowStoryboardDefaultPrompt);
+        }
       })
       .catch(() => {
         if (cancelled) {
@@ -1029,7 +1037,8 @@ export default function WorkflowPage() {
         );
         const workflowRuns = runs.filter((run) => workflowRunIds.has(run.id));
         setWorkflowHistoryRuns(workflowRuns);
-        setSelectedWorkflowHistoryRunId((current) => current ?? workflowRuns[0]?.id ?? null);
+        // 不自动选择第一条历史记录，保持空白工作流状态
+        setSelectedWorkflowHistoryRunId(null);
       } catch (error) {
         if (cancelled) {
           return;
@@ -1451,7 +1460,23 @@ export default function WorkflowPage() {
     clearRuntimeFeedback();
   }, [clearRuntimeFeedback, currentSnapshot]);
 
-  const loadWorkflowVideoRunPreview = useCallback(async (runId: string) => {
+const loadWorkflowVideoRunPreview = useCallback(async (runId: string) => {
+    // 先清除当前工作流的所有状态和缓存
+    setUploadedImage(null);
+    setUploadedImageOrigin(null);
+    setUploadedImageFile(null);
+    setSourceImageAssetId(null);
+    setStoryboardRunId(null);
+    setStoryboardArtifactId(null);
+    setStoryboardAssetId(null);
+    setStoryboardImageUrl(null);
+    setStoryboardGenerated(false);
+    setStoryboardGenerating(false);
+    setSelectedSceneBackgroundId(null);
+    setDreamRunId(null);
+    setDreamVideoUrl(null);
+    setDreamVideoArtifactId(null);
+    setDreaming(false);
     setSelectedWorkflowHistoryRunId(runId);
     setRuntimeError(null);
     setRuntimeStatus('正在加载工作流视频记录...');
@@ -1477,7 +1502,7 @@ export default function WorkflowPage() {
       setStoryboardAssetId(restore.storyboardAssetId);
       setSelectedSceneBackgroundId(restore.selectedSceneBackgroundId);
       setSelectedVideoModel(restore.selectedVideoModel);
-      setPrompt(restore.prompt || DEFAULT_PROMPT);
+      setPrompt(restore.prompt || DEFAULT_FALLBACK_PROMPT);
       setDreamRunId(restore.dreamRunId);
       setDreamVideoArtifactId(restore.dreamVideoArtifactId);
       setDreaming(shouldContinueWorkflowVideoSync(detail.run.status));
@@ -1830,18 +1855,20 @@ export default function WorkflowPage() {
                         这段提示词会随上传图案一起传递给 12 宫格分镜。
                       </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+<div className="flex shrink-0 items-center gap-2">
+                      {/* 
                       <button
                         type="button"
                         onClick={() => {
-                          setPrompt(DEFAULT_PROMPT);
-                          clearRuntimeFeedback();
+                          setPrompt(DEFAULT_FALLBACK_PROMPT);
                         }}
                         className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
                       >
                         <RotateCcw size={12} />
                         恢复默认
                       </button>
+                      */}
+                      {/* 
                       <button
                         type="button"
                         onClick={() => setPromptDialogOpen(true)}
@@ -1850,17 +1877,18 @@ export default function WorkflowPage() {
                         <Wand2 size={12} />
                         AI优化
                       </button>
+                      */}
                     </div>
                   </div>
-                  <textarea
+<textarea
                     value={prompt}
-                    onChange={(event) => {
-                      setPrompt(event.target.value);
-                      clearRuntimeFeedback();
-                    }}
+                    disabled
+                    className="w-full resize-none rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground"
                     rows={5}
-                    className="w-full resize-none rounded-xl border border-input bg-card p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                   />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    提示词由管理端配置，暂不支持自定义修改
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-md p-6">
                   {imageModelAvailability.status === 'ready' && decoratedImageModels.length > 0 ? (
@@ -2137,10 +2165,9 @@ export default function WorkflowPage() {
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-medium text-foreground">提示词</p>
                     <button
-                      onClick={() => {
-                        setPrompt(DEFAULT_PROMPT);
-                        clearRuntimeFeedback();
-                      }}
+onClick={() => {
+                    setPrompt(DEFAULT_FALLBACK_PROMPT);
+                  }}
                       className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                     >
                       <RotateCcw size={10} />

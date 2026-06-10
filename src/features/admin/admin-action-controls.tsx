@@ -117,6 +117,7 @@ type WorkflowVideoCapabilityConfigClient = {
     requiredSnapshots: Array<'storyboard_prompt_map'>;
   };
   promptTemplate: string;
+  storyboardDefaultPrompt: string;
   modelBinding: {
     providerCode: 'doubao';
     model: string;
@@ -1083,6 +1084,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
   const [config, setConfig] = useState<WorkflowVideoCapabilityConfigClient | null>(null);
   const [description, setDescription] = useState('');
   const [promptTemplate, setPromptTemplate] = useState('');
+  const [storyboardDefaultPrompt, setStoryboardDefaultPrompt] = useState('');
   const [modelBindingModel, setModelBindingModel] = useState('doubao-seedance-2-0');
   const [durationSeconds, setDurationSeconds] = useState('5');
   const [resolution, setResolution] = useState('720p');
@@ -1111,6 +1113,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
       setConfig(payload.config);
       setDescription(payload.config.description);
       setPromptTemplate(payload.config.promptTemplate);
+      setStoryboardDefaultPrompt(payload.config.storyboardDefaultPrompt);
       setModelBindingModel(payload.config.modelBinding.model);
       setDurationSeconds(String(payload.config.defaults.durationSeconds));
       setResolution(payload.config.defaults.resolution);
@@ -1170,6 +1173,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
           body: JSON.stringify({
             description: description.trim(),
             promptTemplate: promptTemplate.trim(),
+            storyboardDefaultPrompt: storyboardDefaultPrompt.trim(),
             modelBinding: {
               providerCode: 'doubao',
               model: modelBindingModel.trim(),
@@ -1197,6 +1201,7 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
       setConfig(payload.config);
       setDescription(payload.config.description);
       setPromptTemplate(payload.config.promptTemplate);
+      setStoryboardDefaultPrompt(payload.config.storyboardDefaultPrompt);
       setModelBindingModel(payload.config.modelBinding.model);
       setDurationSeconds(String(payload.config.defaults.durationSeconds));
       setResolution(payload.config.defaults.resolution);
@@ -1277,6 +1282,21 @@ function WorkflowVideoCapabilityConfigDialog({ capabilityId }: { capabilityId: s
                   <code className="mr-1">{'{{storyboard_prompt_map}}'}</code>
                   <code className="mr-1">{'{{duration_seconds}}'}</code>
                   <code>{'{{resolution}}'}</code>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`workflow-video-storyboard-prompt-${capabilityId}`}>12宫格转换提示词</Label>
+                <Textarea
+                  id={`workflow-video-storyboard-prompt-${capabilityId}`}
+                  value={storyboardDefaultPrompt}
+                  onChange={(event) => setStoryboardDefaultPrompt(event.target.value)}
+                  placeholder="用于12宫格分镜图生成的默认转换提示词。"
+                  className="min-h-32 rounded-md text-xs leading-5"
+                  disabled={busy}
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  用于12宫格分镜图生成的默认转换提示词，用户端将显示此提示词但暂不支持自定义修改。
                 </div>
               </div>
             </div>
