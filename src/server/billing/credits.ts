@@ -210,19 +210,23 @@ export async function debitForImageAgentRun(input: {
   modelSnapshot: ResolvedImageModel | Record<string, unknown>;
   metadata: Record<string, unknown>;
   amount?: number;
+  usageType?: 'image' | 'video';
 }): Promise<CreditLedgerDebitResult & { amount: number }> {
   const amount = input.amount ?? calculateImageCreditCost({ pricing: input.pricing });
+  const usageType = input.usageType ?? 'image';
+  const usageSuffix = `${usageType}-usage`;
+  const usageReason = `${usageType} usage`;
 
   if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
     return {
-      entryId: `dev-ledger:${input.runId}:image-usage`,
+      entryId: `dev-ledger:${input.runId}:${usageSuffix}`,
       balanceAfter: 0,
       amount,
     };
   }
 
   const database = requireCreditDatabase();
-  const idempotencyKey = `agent-run:${input.runId}:image-usage`;
+  const idempotencyKey = `agent-run:${input.runId}:${usageSuffix}`;
 
   return database.transaction(async (tx) => {
     await tx.execute(sql`select id from ${schema.users} where id = ${input.userId} for update`);
@@ -245,7 +249,7 @@ export async function debitForImageAgentRun(input: {
       entryType: 'debit',
       amount: -amount,
       idempotencyKey,
-      reason: 'image usage',
+      reason: usageReason,
       metadata: {
         ...input.metadata,
         pricing: input.pricing,

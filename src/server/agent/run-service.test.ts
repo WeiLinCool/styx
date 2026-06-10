@@ -1411,7 +1411,7 @@ test('workflow video sync records generated video billing and artifact', async (
   const assetRepository = createMemoryGeneratedMediaAssetRepository();
   const source = await createImageAsset(assetRepository, { objectKey: 'workflow/source.png' });
   const storyboard = await createImageAsset(assetRepository, { objectKey: 'workflow/storyboard.png' });
-  const debits: Array<{ amount: number; runId: string }> = [];
+  const debits: Array<{ amount: number; runId: string; usageType?: 'image' | 'video' }> = [];
   const service = createAgentRunService({
     repository,
     runtime: createDeterministicPiRuntime(),
@@ -1446,7 +1446,7 @@ test('workflow video sync records generated video billing and artifact', async (
       },
     }),
     debitForImageAgentRun: async (input) => {
-      debits.push({ amount: input.amount, runId: input.runId });
+      debits.push({ amount: input.amount, runId: input.runId, usageType: input.usageType });
       return { entryId: 'ledger-workflow-video', balanceAfter: 84 };
     },
     generatedMediaCache: testGeneratedMediaCache(),
@@ -1478,7 +1478,7 @@ test('workflow video sync records generated video billing and artifact', async (
   assert.equal(completed.billing?.status, 'billed');
   assert.equal(completed.billing?.creditCost, 6);
   assert.equal(completed.billing?.ledgerEntryId, 'ledger-workflow-video');
-  assert.deepEqual(debits, [{ amount: 6, runId: result.run.id }]);
+  assert.deepEqual(debits, [{ amount: 6, runId: result.run.id, usageType: 'video' }]);
   assert.deepEqual(
     events.map((event) => event.eventType),
     ['artifact_started', 'billing_recorded', 'artifact_completed', 'run_completed'],

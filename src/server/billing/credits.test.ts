@@ -8,6 +8,7 @@ import {
   calculateCreditBalance,
   createMemoryCreditLedger,
   debitForAgentRun,
+  debitForImageAgentRun,
   validateAdjustCreditsInput,
   validateGrantCreditsInput,
 } from './credits';
@@ -218,6 +219,83 @@ test('memory ledger can apply signed adjustments idempotently', async () => {
   assert.equal(first.balanceAfter, second.balanceAfter);
   assert.equal(second.balanceAfter, 15);
   assert.equal(await ledger.getBalance('user-1'), 15);
+});
+
+test('debitForImageAgentRun uses video ledger suffix for video usage', async () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
+  delete process.env.DATABASE_URL;
+  process.env.NODE_ENV = 'test';
+
+  try {
+    const result = await debitForImageAgentRun({
+      userId: 'user-1',
+      runId: 'run-video-1',
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 0,
+        completionCreditsPer1k: 1,
+        minimumCredits: 6,
+      },
+      modelSnapshot: {},
+      metadata: {},
+      amount: 144.4,
+      usageType: 'video',
+    });
+
+    assert.equal(result.entryId, 'dev-ledger:run-video-1:video-usage');
+    assert.equal(result.amount, 144.4);
+  } finally {
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  }
+});
+
+test('debitForImageAgentRun keeps image ledger suffix by default', async () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
+  delete process.env.DATABASE_URL;
+  process.env.NODE_ENV = 'test';
+
+  try {
+    const result = await debitForImageAgentRun({
+      userId: 'user-1',
+      runId: 'run-image-1',
+      pricing: {
+        unit: 'token',
+        promptCreditsPer1k: 0,
+        completionCreditsPer1k: 1,
+        minimumCredits: 6,
+      },
+      modelSnapshot: {},
+      metadata: {},
+      amount: 6,
+    });
+
+    assert.equal(result.entryId, 'dev-ledger:run-image-1:image-usage');
+    assert.equal(result.amount, 6);
+  } finally {
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  }
 });
 
 test('validateGrantCreditsInput rejects non-positive grant amounts', async () => {

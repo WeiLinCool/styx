@@ -177,6 +177,7 @@ type DebitForImageAgentRun = (input: {
   modelSnapshot: ResolvedImageModel | ResolvedVideoModel;
   metadata: Record<string, unknown>;
   amount: number;
+  usageType?: 'image' | 'video';
 }) => Promise<{ entryId: string; balanceAfter: number }>;
 
 type ChatMessage = {
@@ -2353,6 +2354,7 @@ async function syncVideoAgentRunForUser(input: {
       providerTaskId,
     },
     amount: creditCost,
+    usageType: 'video',
   });
 
   const completedSnapshot = {
@@ -2722,6 +2724,7 @@ async function runImageProviderOrchestration(input: {
         rawMetadata: providerResult.rawMetadata,
       },
       amount: creditCost,
+      usageType: input.request.taskType === 'video' ? 'video' : 'image',
     });
   } catch (error) {
     const errorMessage = toErrorMessage(error);
